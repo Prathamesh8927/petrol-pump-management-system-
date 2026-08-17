@@ -1,42 +1,925 @@
-.login-container {
-  min-height: 100vh;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background: #f4f6f8;
-}
+/* =====================================================
+   MYPUMP LOGIN PAGE
+===================================================== */
 
-.login-container form {
-  width: 350px;
-  padding: 30px;
-  background: white;
-  border-radius: 10px;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-}
-
-.login-container h1 {
-  text-align: center;
-  margin-bottom: 25px;
-}
-
-.login-container div {
-  margin-bottom: 15px;
-}
-
-.login-container label {
-  display: block;
-  margin-bottom: 6px;
-  font-weight: 600;
-}
-
-.login-container input {
+.login-page {
   width: 100%;
-  padding: 10px;
+  min-height: 100vh;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 24px;
+
+  background:
+    linear-gradient(
+      135deg,
+      #eef4ff 0%,
+      #f8fafc 55%,
+      #eef2f7 100%
+    );
+
   box-sizing: border-box;
 }
 
-.login-container button {
+
+/* =====================================================
+   LOGIN CARD
+===================================================== */
+
+.login-card {
   width: 100%;
-  padding: 11px;
-  cursor: pointer;
+  max-width: 420px;
+
+  padding: 32px;
+
+  background: #ffffff;
+
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+
+  box-shadow:
+    0 18px 45px
+    rgba(15, 23, 42, 0.1);
+
+  box-sizing: border-box;
+}
+
+
+/* =====================================================
+   LOGIN HEADER
+===================================================== */
+
+.login-header {
+  text-align: center;
+
+  margin-bottom: 26px;
+}
+
+.login-header h1 {
+  margin: 0 0 8px;
+
+  color: #2563eb;
+
+  font-size: 31px;
+  font-weight: 800;
+}
+
+.login-header p {
+  margin: 0;
+
+  color: #64748b;
+
+  font-size: 14px;
+}
+
+
+/* =====================================================
+   LOGIN FORM
+===================================================== */
+
+.login-card .form-group {
+  margin-bottom: 18px;
+}
+
+.login-card .form-group label {
+  display: block;
+
+  margin-bottom: 7px;
+
+  color: #374151;
+
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.login-card .form-group input {
+  width: 100%;
+
+  padding: 11px 12px;
+
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+
+  background: #ffffff;
+
+  color: #111827;
+
+  outline: none;
+
+  box-sizing: border-box;
+
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.login-card .form-group input:focus {
+  border-color: #2563eb;
+
+  box-shadow:
+    0 0 0 3px
+    rgba(37, 99, 235, 0.1);
+}
+
+
+/* =====================================================
+   TANKER FULL SCREEN OVERLAY
+===================================================== */
+
+.login-tanker-overlay {
+  position: fixed;
+
+  inset: 0;
+
+  width: 100vw;
+  height: 100vh;
+
+  overflow: hidden;
+
+  z-index: 99999;
+
+  /*
+    Sky on top
+    Road on bottom
+  */
+
+  background:
+    linear-gradient(
+      to bottom,
+
+      #cfe8ff 0%,
+      #eaf5ff 54%,
+
+      #6b7280 54%,
+      #374151 100%
+    );
+
+  opacity: 1;
+
+  animation:
+    overlayExit
+    4.4s
+    linear
+    forwards;
+}
+
+
+/* =====================================================
+   ROAD DIVIDER
+===================================================== */
+
+.login-tanker-overlay::before {
+  content: "";
+
+  position: absolute;
+
+  left: 0;
+  right: 0;
+
+  bottom: 22%;
+
+  height: 5px;
+
+  background:
+    repeating-linear-gradient(
+      to right,
+
+      #ffffff 0 70px,
+
+      transparent 70px 120px
+    );
+
+  opacity: 0.9;
+}
+
+
+/* =====================================================
+   WELCOME TEXT
+===================================================== */
+
+.login-success-text {
+  position: absolute;
+
+  top: 18%;
+  left: 50%;
+
+  transform:
+    translateX(-50%);
+
+  margin: 0;
+
+  color: #0f172a;
+
+  font-size: 32px;
+  font-weight: 800;
+
+  letter-spacing: -0.5px;
+
+  text-align: center;
+
+  white-space: nowrap;
+
+  z-index: 3;
+
+  animation:
+    welcomeFade
+    4s
+    ease
+    forwards;
+}
+
+
+/* =====================================================
+   ROAD AREA
+===================================================== */
+
+.login-tanker-road {
+  position: absolute;
+
+  left: 0;
+  right: 0;
+
+  bottom: 18%;
+
+  height: 190px;
+
+  overflow: visible;
+
+  z-index: 2;
+}
+
+
+/* =====================================================
+   TANKER
+
+   IMPORTANT:
+
+   Tank body = LEFT
+   Driver cabin = RIGHT
+
+   Therefore tanker FRONT faces RIGHT.
+
+   Movement:
+   LEFT ----------------------> RIGHT
+
+   Do NOT add scaleX(-1).
+===================================================== */
+
+.login-tanker {
+  position: absolute;
+
+  left: -470px;
+
+  bottom: 28px;
+
+  width: 430px;
+  height: 145px;
+
+  transform:
+    translate3d(0, 0, 0);
+
+  animation:
+    tankerDrive
+    4s
+    cubic-bezier(
+      0.22,
+      0.65,
+      0.3,
+      1
+    )
+    forwards;
+
+  filter:
+    drop-shadow(
+      0 16px 12px
+      rgba(0, 0, 0, 0.26)
+    );
+
+  will-change:
+    left,
+    transform;
+}
+
+
+/* =====================================================
+   TANKER TANK BODY
+===================================================== */
+
+.tanker-body {
+  position: absolute;
+
+  left: 22px;
+
+  bottom: 38px;
+
+  width: 300px;
+  height: 84px;
+
+  border:
+    3px solid
+    #4b5563;
+
+  border-radius:
+    44px 44px
+    18px 18px;
+
+  background:
+    linear-gradient(
+      180deg,
+
+      #f8fafc 0%,
+
+      #d1d5db 22%,
+
+      #9ca3af 48%,
+
+      #e5e7eb 52%,
+
+      #6b7280 100%
+    );
+
+  overflow: hidden;
+
+  box-shadow:
+    inset
+    0 4px 7px
+    rgba(255, 255, 255, 0.45);
+
+  box-sizing: border-box;
+}
+
+
+/* =====================================================
+   TANKER SHINE
+===================================================== */
+
+.tanker-body-shine {
+  position: absolute;
+
+  top: 12px;
+  left: 55px;
+
+  width: 170px;
+  height: 9px;
+
+  border-radius: 999px;
+
+  background:
+    rgba(
+      255,
+      255,
+      255,
+      0.68
+    );
+
+  transform:
+    rotate(-3deg);
+}
+
+
+/* =====================================================
+   PETROL DIESEL LABEL
+===================================================== */
+
+.tanker-label {
+  position: absolute;
+
+  left: 50%;
+  top: 52%;
+
+  transform:
+    translate(
+      -50%,
+      -50%
+    );
+
+  padding:
+    6px 12px;
+
+  border-radius: 6px;
+
+  background:
+    rgba(
+      17,
+      24,
+      39,
+      0.84
+    );
+
+  color: #ffffff;
+
+  font-size: 12px;
+  font-weight: 800;
+
+  letter-spacing: 0.9px;
+
+  white-space: nowrap;
+}
+
+
+/* =====================================================
+   DRIVER CAB
+
+   CAB IS ON RIGHT SIDE
+
+   THIS MAKES TANKER FACE RIGHT
+===================================================== */
+
+.tanker-cab {
+  position: absolute;
+
+  right: 0;
+
+  bottom: 31px;
+
+  width: 118px;
+  height: 88px;
+
+  border-radius:
+    10px
+    18px
+    7px
+    7px;
+
+  background:
+    linear-gradient(
+      145deg,
+
+      #fb923c 0%,
+
+      #f97316 55%,
+
+      #c2410c 100%
+    );
+
+  border:
+    2px solid
+    #9a3412;
+
+  box-shadow:
+    inset
+    0 4px 7px
+    rgba(
+      255,
+      255,
+      255,
+      0.22
+    );
+
+  box-sizing: border-box;
+}
+
+
+/* =====================================================
+   FRONT BUMPER
+===================================================== */
+
+.tanker-cab::before {
+  content: "";
+
+  position: absolute;
+
+  right: -13px;
+
+  bottom: 11px;
+
+  width: 18px;
+  height: 24px;
+
+  border-radius:
+    3px
+    8px
+    8px
+    3px;
+
+  background:
+    #c2410c;
+}
+
+
+/* =====================================================
+   CAB WINDOW
+===================================================== */
+
+.tanker-window {
+  position: absolute;
+
+  top: 12px;
+
+  right: 16px;
+
+  width: 48px;
+  height: 29px;
+
+  border:
+    2px solid
+    #1f2937;
+
+  border-radius:
+    5px
+    10px
+    5px
+    5px;
+
+  background:
+    linear-gradient(
+      135deg,
+
+      #dbeafe 0%,
+
+      #93c5fd 50%,
+
+      #60a5fa 100%
+    );
+
+  box-sizing: border-box;
+}
+
+
+/* =====================================================
+   FRONT GRILL
+===================================================== */
+
+.tanker-grill {
+  position: absolute;
+
+  right: 7px;
+
+  bottom: 10px;
+
+  width: 30px;
+  height: 17px;
+
+  border-radius: 3px;
+
+  background:
+    repeating-linear-gradient(
+      to bottom,
+
+      #4b5563 0 2px,
+
+      #111827 2px 4px
+    );
+}
+
+
+/* =====================================================
+   TANKER WHEELS
+===================================================== */
+
+.tanker-wheel {
+  position: absolute;
+
+  bottom: 4px;
+
+  width: 47px;
+  height: 47px;
+
+  border:
+    3px solid
+    #020617;
+
+  border-radius: 50%;
+
+  background:
+    radial-gradient(
+      circle,
+
+      #cbd5e1 0 16%,
+
+      #64748b 17% 29%,
+
+      #111827 30% 68%,
+
+      #020617 69% 100%
+    );
+
+  box-sizing: border-box;
+
+  animation:
+    tankerWheelSpin
+    0.78s
+    linear
+    infinite;
+
+  will-change:
+    transform;
+}
+
+
+/* BACK WHEEL */
+
+.tanker-wheel-1 {
+  left: 62px;
+}
+
+
+/* MIDDLE WHEEL */
+
+.tanker-wheel-2 {
+  left: 235px;
+}
+
+
+/* FRONT WHEEL */
+
+.tanker-wheel-3 {
+  right: 38px;
+}
+
+
+/* =====================================================
+   WHEEL CENTER
+===================================================== */
+
+.wheel-center {
+  position: absolute;
+
+  inset: 14px;
+
+  border-radius: 50%;
+
+  background:
+    #d1d5db;
+
+  border:
+    2px solid
+    #64748b;
+}
+
+
+/* =====================================================
+   TANKER MOVEMENT
+
+   SLOW LEFT → RIGHT
+===================================================== */
+
+@keyframes tankerDrive {
+
+  0% {
+
+    left: -470px;
+
+    transform:
+      translateY(0)
+      rotate(0deg);
+  }
+
+
+  18% {
+
+    transform:
+      translateY(-2px)
+      rotate(0.15deg);
+  }
+
+
+  40% {
+
+    transform:
+      translateY(1px)
+      rotate(-0.12deg);
+  }
+
+
+  62% {
+
+    transform:
+      translateY(-1px)
+      rotate(0.1deg);
+  }
+
+
+  82% {
+
+    transform:
+      translateY(1px)
+      rotate(-0.08deg);
+  }
+
+
+  100% {
+
+    left:
+      calc(
+        100vw + 80px
+      );
+
+    transform:
+      translateY(0)
+      rotate(0deg);
+  }
+
+}
+
+
+/* =====================================================
+   WHEEL ROTATION
+===================================================== */
+
+@keyframes tankerWheelSpin {
+
+  from {
+
+    transform:
+      rotate(0deg);
+
+  }
+
+
+  to {
+
+    transform:
+      rotate(360deg);
+
+  }
+
+}
+
+
+/* =====================================================
+   WELCOME TEXT ANIMATION
+===================================================== */
+
+@keyframes welcomeFade {
+
+  0% {
+
+    opacity: 0;
+
+    transform:
+      translateX(-50%)
+      translateY(10px);
+
+  }
+
+
+  15% {
+
+    opacity: 1;
+
+    transform:
+      translateX(-50%)
+      translateY(0);
+
+  }
+
+
+  76% {
+
+    opacity: 1;
+
+  }
+
+
+  100% {
+
+    opacity: 0;
+
+  }
+
+}
+
+
+/* =====================================================
+   OVERLAY FADE AFTER TANKER PASSES
+===================================================== */
+
+@keyframes overlayExit {
+
+  0% {
+
+    opacity: 1;
+
+  }
+
+
+  90% {
+
+    opacity: 1;
+
+  }
+
+
+  100% {
+
+    opacity: 0;
+
+  }
+
+}
+
+
+/* =====================================================
+   MOBILE
+===================================================== */
+
+@media (max-width: 700px) {
+
+  .login-page {
+    padding: 18px;
+  }
+
+
+  .login-card {
+
+    max-width: 390px;
+
+    padding:
+      26px 22px;
+
+  }
+
+
+  .login-success-text {
+
+    top: 17%;
+
+    width:
+      calc(
+        100% - 40px
+      );
+
+    font-size: 24px;
+
+    white-space: normal;
+
+  }
+
+
+  .login-tanker-road {
+
+    bottom: 19%;
+
+  }
+
+
+  /*
+     Mobile animation needs scale
+     because tanker is 430px wide.
+  */
+
+  @keyframes tankerDrive {
+
+    0% {
+
+      left: -470px;
+
+      transform:
+        scale(0.76)
+        translateY(0);
+
+    }
+
+
+    25% {
+
+      transform:
+        scale(0.76)
+        translateY(-2px);
+
+    }
+
+
+    55% {
+
+      transform:
+        scale(0.76)
+        translateY(1px);
+
+    }
+
+
+    100% {
+
+      left:
+        calc(
+          100vw + 70px
+        );
+
+      transform:
+        scale(0.76)
+        translateY(0);
+
+    }
+
+  }
+
+}
+.login-welcome-small {
+  margin-bottom: 6px;
+
+  font-size: 18px;
+  font-weight: 600;
+
+  color: #475569;
+}
+
+.login-welcome-pump {
+  font-size: 32px;
+  font-weight: 800;
+
+  color: #0f172a;
 }
