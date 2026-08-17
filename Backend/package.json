@@ -8,7 +8,9 @@
   "main": "app.js",
   "scripts": {
     "start": "nodemon server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "create-superadmin": "node scripts/createSuperAdmin.js",
+    "add-existing-client": "node scripts/addExistingPumpAsClient.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

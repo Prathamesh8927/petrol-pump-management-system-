@@ -1,10 +1,11 @@
 import {
-  useContext,
-} from "react";
+  Navigate,
+  useLocation,
+} from "react-router-dom";
 
 import {
-  Navigate,
-} from "react-router-dom";
+  useContext,
+} from "react";
 
 import {
   AuthContext,
@@ -13,32 +14,32 @@ import {
 const ProtectedRoute = ({
   children,
 }) => {
-  const auth =
+  const {
+    user,
+    loading,
+  } =
     useContext(
       AuthContext
     );
 
-  if (!auth) {
-    return (
-      <div>
-        Authentication context
-        not available.
-      </div>
-    );
-  }
+  const location =
+    useLocation();
 
-  const {
-    user,
-    loading,
-  } = auth;
+  /* =====================================================
+     AUTH LOADING
+  ===================================================== */
 
   if (loading) {
     return (
       <div
         style={{
-          padding: "30px",
-          textAlign:
-            "center",
+          minHeight: "100vh",
+
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+
+          color: "#64748b",
         }}
       >
         Loading...
@@ -46,12 +47,59 @@ const ProtectedRoute = ({
     );
   }
 
+  /* =====================================================
+     NOT LOGGED IN
+  ===================================================== */
+
   if (!user) {
     return (
       <Navigate
         to="/login"
         replace
+        state={{
+          from:
+            location.pathname,
+        }}
       />
+    );
+  }
+
+  /* =====================================================
+     SUPER ADMIN
+
+     Superadmin should use its own
+     /superadmin application.
+  ===================================================== */
+
+  if (
+    user.role ===
+    "superadmin"
+  ) {
+    return (
+      <Navigate
+        to="/superadmin"
+        replace
+      />
+    );
+  }
+
+  /* =====================================================
+     NORMAL PUMP USERS
+  ===================================================== */
+
+  if (!user.pumpId) {
+    return (
+      <div
+        style={{
+          padding: "40px",
+
+          textAlign:
+            "center",
+        }}
+      >
+        Pump information not assigned
+        to this account.
+      </div>
     );
   }
 

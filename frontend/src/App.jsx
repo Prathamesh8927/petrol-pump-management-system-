@@ -9,6 +9,22 @@ import {
 } from "react-hot-toast";
 
 /* =====================================================
+   SUPER ADMIN
+===================================================== */
+
+import SuperAdminRoute
+  from "./components/SuperAdminRoute";
+
+import SuperAdminLayout
+  from "./layouts/SuperAdminLayout";
+
+import SuperAdminDashboard
+  from "./pages/superadmin/SuperAdminDashboard";
+
+import Clients
+  from "./pages/superadmin/Clients";
+
+/* =====================================================
    AUTH
 ===================================================== */
 
@@ -18,73 +34,118 @@ import Login from "./pages/auth/Login";
    LAYOUT
 ===================================================== */
 
-import DashboardLayout from "./layouts/DashboardLayout";
-import ProtectedRoute from "./components/ProtectedRoute";
+import DashboardLayout
+  from "./layouts/DashboardLayout";
+
+import ProtectedRoute
+  from "./components/ProtectedRoute";
 
 /* =====================================================
    DASHBOARD
 ===================================================== */
 
-import Dashboard from "./pages/dashboard/Dashboard";
+import Dashboard
+  from "./pages/dashboard/Dashboard";
 
 /* =====================================================
    FUEL
 ===================================================== */
 
-import FuelStock from "./pages/fuel/FuelStock";
-import AddFuelPurchase from "./pages/fuel/AddFuelPurchase";
-import FuelPurchaseHistory from "./pages/fuel/FuelPurchaseHistory";
-import FuelPrice from "./pages/fuel/FuelPrice";
+import FuelStock
+  from "./pages/fuel/FuelStock";
+
+import AddFuelPurchase
+  from "./pages/fuel/AddFuelPurchase";
+
+import FuelPurchaseHistory
+  from "./pages/fuel/FuelPurchaseHistory";
+
+import FuelPrice
+  from "./pages/fuel/FuelPrice";
 
 /* =====================================================
    NOZZLES
 ===================================================== */
 
-import NozzleList from "./pages/nozzle/NozzleList";
-import AddReading from "./pages/nozzle/AddReading";
-import ReadingHistory from "./pages/nozzle/ReadingHistory";
+import NozzleList
+  from "./pages/nozzle/NozzleList";
+
+import AddReading
+  from "./pages/nozzle/AddReading";
+
+import ReadingHistory
+  from "./pages/nozzle/ReadingHistory";
 
 /* =====================================================
    SALES
 ===================================================== */
 
-import DailySales from "./pages/sales/DailySales";
-import SalesHistory from "./pages/sales/SalesHistory";
-import PaymentSummary from "./pages/sales/PaymentSummary";
+import DailySales
+  from "./pages/sales/DailySales";
+
+import SalesHistory
+  from "./pages/sales/SalesHistory";
+
+import PaymentSummary
+  from "./pages/sales/PaymentSummary";
 
 /* =====================================================
    EXPENSES
 ===================================================== */
 
-import AddExpense from "./pages/expenses/AddExpense";
-import ExpenseHistory from "./pages/expenses/ExpenseHistory";
+import AddExpense
+  from "./pages/expenses/AddExpense";
+
+import ExpenseHistory
+  from "./pages/expenses/ExpenseHistory";
 
 /* =====================================================
    LEDGER
 ===================================================== */
 
-import Customers from "./pages/ledger/Customers";
-import CustomerLedger from "./pages/ledger/CustomerLedger";
-import Payments from "./pages/ledger/Payments";
-import PendingCredit from "./pages/ledger/PendingCredit";
+import Customers
+  from "./pages/ledger/Customers";
+
+import CustomerLedger
+  from "./pages/ledger/CustomerLedger";
+
+import Payments
+  from "./pages/ledger/Payments";
+
+import PendingCredit
+  from "./pages/ledger/PendingCredit";
 
 /* =====================================================
    REPORTS
 ===================================================== */
 
-import DailyReport from "./pages/reports/DailyReports.jsx";
-import WeeklyReport from "./pages/reports/WeeklyReport";
-import MonthlyReport from "./pages/reports/MonthlyReports.jsx";
-import CustomReport from "./pages/reports/CustomerReport";
-import DailyClosing from "./pages/reports/DailyClosing";
+import DailyReport
+  from "./pages/reports/DailyReports.jsx";
+
+import WeeklyReport
+  from "./pages/reports/WeeklyReport";
+
+import MonthlyReport
+  from "./pages/reports/MonthlyReports.jsx";
+
+import CustomReport
+  from "./pages/reports/CustomerReport";
+
+import DailyClosing
+  from "./pages/reports/DailyClosing";
 
 /* =====================================================
    SETTINGS
 ===================================================== */
 
-import PumpSettings from "./pages/settings/PumpSettings";
-import FuelSettings from "./pages/settings/FuelSettings";
-import UserManagement from "./pages/settings/UserManagement";
+import PumpSettings
+  from "./pages/settings/PumpSettings";
+
+import FuelSettings
+  from "./pages/settings/FuelSettings";
+
+import UserManagement
+  from "./pages/settings/UserManagement";
 
 /* =====================================================
    APP
@@ -93,6 +154,10 @@ import UserManagement from "./pages/settings/UserManagement";
 function App() {
   return (
     <>
+      {/* =================================================
+          TOAST
+      ================================================= */}
+
       <Toaster
         position="top-right"
         toastOptions={{
@@ -114,7 +179,7 @@ function App() {
         />
 
         {/* =================================================
-            PROTECTED APPLICATION
+            NORMAL PUMP APPLICATION
         ================================================= */}
 
         <Route
@@ -157,8 +222,6 @@ function App() {
             }
           />
 
-          {/* ADD FUEL PURCHASE */}
-
           <Route
             path="/fuel/purchase"
             element={
@@ -166,16 +229,12 @@ function App() {
             }
           />
 
-          {/* PURCHASE HISTORY */}
-
           <Route
             path="/fuel/purchases"
             element={
               <FuelPurchaseHistory />
             }
           />
-
-          {/* OLD / ALTERNATIVE PURCHASE HISTORY URL */}
 
           <Route
             path="/fuel/history"
@@ -186,8 +245,6 @@ function App() {
               />
             }
           />
-
-          {/* FUEL PRICE */}
 
           <Route
             path="/fuel/price"
@@ -217,8 +274,6 @@ function App() {
             }
           />
 
-          {/* ADD READING */}
-
           <Route
             path="/nozzle/readings/add"
             element={
@@ -226,16 +281,12 @@ function App() {
             }
           />
 
-          {/* READING HISTORY */}
-
           <Route
             path="/nozzle/readings"
             element={
               <ReadingHistory />
             }
           />
-
-          {/* OLD NOZZLE URLS */}
 
           <Route
             path="/nozzle/reading"
@@ -354,8 +405,6 @@ function App() {
               LEDGER
           =============================================== */}
 
-          {/* CUSTOMER LIST / ADD CUSTOMER */}
-
           <Route
             path="/ledger"
             element={
@@ -370,16 +419,12 @@ function App() {
             }
           />
 
-          {/* INDIVIDUAL CUSTOMER LEDGER */}
-
           <Route
             path="/ledger/customer"
             element={
               <CustomerLedger />
             }
           />
-
-          {/* PAYMENT */}
 
           <Route
             path="/ledger/payment"
@@ -397,8 +442,6 @@ function App() {
               />
             }
           />
-
-          {/* PENDING CREDIT */}
 
           <Route
             path="/ledger/pending"
@@ -459,8 +502,6 @@ function App() {
             }
           />
 
-          {/* DAILY CLOSING */}
-
           <Route
             path="/reports/closing"
             element={
@@ -500,6 +541,38 @@ function App() {
             path="/settings/users"
             element={
               <UserManagement />
+            }
+          />
+
+        </Route>
+
+        {/* =================================================
+            SUPER ADMIN APPLICATION
+        ================================================= */}
+
+        <Route
+          element={
+            <SuperAdminRoute>
+              <SuperAdminLayout />
+            </SuperAdminRoute>
+          }
+        >
+
+          {/* SUPER ADMIN DASHBOARD */}
+
+          <Route
+            path="/superadmin"
+            element={
+              <SuperAdminDashboard />
+            }
+          />
+
+          {/* CLIENT MANAGEMENT */}
+
+          <Route
+            path="/superadmin/clients"
+            element={
+              <Clients />
             }
           />
 

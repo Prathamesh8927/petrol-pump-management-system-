@@ -3,6 +3,9 @@ import dotenv from "dotenv";
 import cors from "cors";
 import mongoose from "mongoose";
 
+import superAdminRoutes
+  from "./routes/superAdminRoutes.js";
+
 import connectDB from "./config/db.js";
 
 import authRoutes from "./routes/authRoutes.js";
@@ -125,6 +128,10 @@ app.use(
 app.use(
   "/api/sales",
   salesRoutes
+);
+app.use(
+  "/api/superadmin",
+  superAdminRoutes
 );
 
 /* =====================================================

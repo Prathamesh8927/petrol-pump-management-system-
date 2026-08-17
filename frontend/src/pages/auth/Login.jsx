@@ -115,11 +115,6 @@ const Login = () => {
           error
         );
 
-        /*
-          Pump settings failure must
-          NOT stop successful login.
-        */
-
         return "MyPump";
       }
     };
@@ -160,13 +155,66 @@ const Login = () => {
            AUTHENTICATE
         =============================================== */
 
-        await login(
-          cleanEmail,
-          password
+        const result =
+          await login(
+            cleanEmail,
+            password
+          );
+
+        const loggedInUser =
+          result?.user;
+
+        console.log(
+          "LOGGED IN USER:",
+          loggedInUser
         );
 
+        console.log(
+          "LOGGED IN ROLE:",
+          loggedInUser?.role
+        );
+
+        if (!loggedInUser) {
+          throw new Error(
+            "User information was not returned"
+          );
+        }
+
         /* ===============================================
-           GET PUMP NAME
+           SUPER ADMIN
+        =============================================== */
+
+        if (
+          loggedInUser.role ===
+          "superadmin"
+        ) {
+          setPumpName(
+            "MyPump Super Admin"
+          );
+
+          toast.success(
+            "Super Admin login successful"
+          );
+
+          setShowTanker(true);
+
+          setTimeout(
+            () => {
+              navigate(
+                "/superadmin",
+                {
+                  replace: true,
+                }
+              );
+            },
+            4300
+          );
+
+          return;
+        }
+
+        /* ===============================================
+           OWNER / MANAGER / STAFF
         =============================================== */
 
         const currentPumpName =
@@ -180,17 +228,7 @@ const Login = () => {
           "Login successful"
         );
 
-        /* ===============================================
-           START ANIMATION
-        =============================================== */
-
-        setShowTanker(
-          true
-        );
-
-        /* ===============================================
-           REDIRECT AFTER ANIMATION
-        =============================================== */
+        setShowTanker(true);
 
         setTimeout(
           () => {
@@ -217,8 +255,8 @@ const Login = () => {
         toast.error(
           error.response?.data
             ?.message ||
-            error.message ||
-            "Login failed"
+          error.message ||
+          "Login failed"
         );
       } finally {
         setLoading(false);
@@ -231,10 +269,6 @@ const Login = () => {
 
   return (
     <>
-
-      {/* ===============================================
-          LOGIN FORM
-      =============================================== */}
 
       <div className="login-page">
 
@@ -271,8 +305,7 @@ const Login = () => {
                 value={email}
                 onChange={(event) =>
                   setEmail(
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
                 placeholder="Enter your email"
@@ -296,13 +329,10 @@ const Login = () => {
 
               <input
                 type="password"
-                value={
-                  password
-                }
+                value={password}
                 onChange={(event) =>
                   setPassword(
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
                 placeholder="Enter your password"
@@ -340,9 +370,9 @@ const Login = () => {
 
       </div>
 
-      {/* ===============================================
+      {/* =================================================
           TANKER ANIMATION
-      =============================================== */}
+      ================================================= */}
 
       <LoginTankerAnimation
         show={

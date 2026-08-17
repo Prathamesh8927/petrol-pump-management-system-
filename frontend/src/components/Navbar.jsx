@@ -1,34 +1,204 @@
-import { useContext } from "react";
-import { useNavigate } from "react-router-dom";
-import { LogOut } from "lucide-react";
+import {
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 
-import { AuthContext } from "../context/AuthContext";
+import {
+  LogOut,
+  User,
+} from "lucide-react";
+
+import {
+  useNavigate,
+} from "react-router-dom";
+
+import {
+  AuthContext,
+} from "../context/AuthContext";
+
+import api from "../services/api";
 
 const Navbar = () => {
-  const { user, logout } =
-    useContext(AuthContext);
+  const navigate =
+    useNavigate();
 
-  const navigate = useNavigate();
+  const {
+    user,
+    logout,
+  } =
+    useContext(
+      AuthContext
+    );
 
-  const handleLogout = () => {
-    logout();
-    navigate("/login");
-  };
+  const [
+    pump,
+    setPump,
+  ] = useState(null);
+
+  /* =====================================================
+     LOAD PUMP INFORMATION
+
+     IMPORTANT:
+     Super Admin has no pumpId.
+     Therefore do NOT request /settings/pump.
+  ===================================================== */
+
+  useEffect(() => {
+    const loadPump =
+      async () => {
+        if (!user) {
+          return;
+        }
+
+        /* ===============================================
+           SUPER ADMIN
+        =============================================== */
+
+        if (
+          user.role ===
+          "superadmin"
+        ) {
+          setPump(null);
+
+          return;
+        }
+
+        /* ===============================================
+           NORMAL PUMP USER
+        =============================================== */
+
+        if (!user.pumpId) {
+          setPump(null);
+
+          return;
+        }
+
+        try {
+          const response =
+            await api.get(
+              "/settings/pump"
+            );
+
+          const data =
+            response.data?.pump ||
+            response.data?.settings ||
+            response.data;
+
+          setPump(
+            data || null
+          );
+        } catch (error) {
+          console.error(
+            "NAVBAR PUMP ERROR:",
+            error
+          );
+
+          setPump(null);
+        }
+      };
+
+    loadPump();
+  }, [
+    user,
+  ]);
+
+  /* =====================================================
+     LOGOUT
+  ===================================================== */
+
+  const handleLogout =
+    () => {
+      logout();
+
+      navigate(
+        "/login",
+        {
+          replace: true,
+        }
+      );
+    };
+
+  /* =====================================================
+     TITLE
+  ===================================================== */
+
+  const displayName =
+    user?.role ===
+    "superadmin"
+      ? "MyPump Super Admin"
+      : pump?.pumpName ||
+        "MyPump";
+
+  const displayRole =
+    user?.role ===
+    "superadmin"
+      ? "Super Admin"
+      : user?.role ||
+        "User";
 
   return (
     <header className="navbar">
+
       <div>
+
         <h3>
-          {user?.pumpName ||
-            "Petrol Pump"}
+          {displayName}
         </h3>
 
         <small>
-          Welcome, {user?.name}
+          {user?.name
+            ? `${user.name} • ${displayRole}`
+            : displayRole}
         </small>
+
       </div>
 
-      
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "12px",
+        }}
+      >
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "7px",
+            color: "#475569",
+            fontSize: "14px",
+          }}
+        >
+          <User
+            size={17}
+          />
+
+          <span>
+            {user?.email ||
+              ""}
+          </span>
+        </div>
+
+        <button
+          type="button"
+          className="logout-button"
+          onClick={
+            handleLogout
+          }
+        >
+          <LogOut
+            size={17}
+          />
+
+          <span>
+            Logout
+          </span>
+        </button>
+
+      </div>
+
     </header>
   );
 };
