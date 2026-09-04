@@ -1,0 +1,1074 @@
+/* =========================================================
+   SUPER ADMIN — REGISTRATION REQUESTS
+========================================================= */
+
+.superadmin-requests-page {
+  width: 100%;
+  min-height: 100%;
+  padding: 30px;
+  box-sizing: border-box;
+  background: #f6f8fc;
+  color: #111827;
+}
+
+/* =========================================================
+   PAGE HEADER
+========================================================= */
+
+.sar-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+
+.sar-header-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.sar-header-icon {
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: #2563eb;
+  color: white;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.2);
+}
+
+.sar-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sar-breadcrumb span {
+  color: #cbd5e1;
+}
+
+.sar-page-header h1 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.2;
+  font-weight: 750;
+  color: #0f172a;
+  letter-spacing: -0.5px;
+}
+
+.sar-page-header p {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.sar-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid #dbe2ea;
+  border-radius: 9px;
+  background: white;
+  color: #334155;
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.sar-refresh-btn:hover:not(:disabled) {
+  border-color: #2563eb;
+  color: #2563eb;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+}
+
+.sar-refresh-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* =========================================================
+   STATS
+========================================================= */
+
+.sar-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.sar-stat-card {
+  min-height: 130px;
+  padding: 19px;
+  box-sizing: border-box;
+  border: 1px solid #e5eaf1;
+  border-radius: 14px;
+  background: white;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.035);
+}
+
+.sar-stat-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sar-stat-icon {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.sar-stat-label {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.sar-stat-card strong {
+  display: block;
+  margin-top: 13px;
+  color: #0f172a;
+  font-size: 27px;
+  line-height: 1;
+}
+
+.sar-stat-card p {
+  margin: 7px 0 0;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.pending-card .sar-stat-icon {
+  background: #fff7ed;
+  color: #ea580c;
+}
+
+.approved-card .sar-stat-icon {
+  background: #ecfdf5;
+  color: #059669;
+}
+
+.rejected-card .sar-stat-icon {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.total-card .sar-stat-icon {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+/* =========================================================
+   TOOLBAR
+========================================================= */
+
+.sar-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 16px;
+}
+
+.sar-search-box {
+  position: relative;
+  flex: 1;
+  max-width: 560px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 13px;
+  box-sizing: border-box;
+  border: 1px solid #dbe2ea;
+  border-radius: 9px;
+  background: white;
+  color: #94a3b8;
+  transition: 0.2s ease;
+}
+
+.sar-search-box:focus-within {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+
+.sar-search-box input {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.sar-search-box input::placeholder {
+  color: #94a3b8;
+}
+
+.sar-clear-search {
+  width: 25px;
+  height: 25px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.sar-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: white;
+}
+
+.sar-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.sar-tabs button:hover {
+  background: #f8fafc;
+  color: #334155;
+}
+
+.sar-tabs button.active {
+  background: #2563eb;
+  color: white;
+  box-shadow: 0 3px 8px rgba(37, 99, 235, 0.18);
+}
+
+/* =========================================================
+   TABLE CARD
+========================================================= */
+
+.sar-table-card {
+  overflow: hidden;
+  border: 1px solid #e5eaf1;
+  border-radius: 14px;
+  background: white;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.035);
+}
+
+.sar-table-header {
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  border-bottom: 1px solid #edf0f4;
+}
+
+.sar-table-header h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.sar-table-header p {
+  margin: 4px 0 0;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.sar-results-badge {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+/* =========================================================
+   TABLE
+========================================================= */
+
+.sar-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.sar-table {
+  width: 100%;
+  min-width: 1000px;
+  border-collapse: collapse;
+}
+
+.sar-table th {
+  height: 46px;
+  padding: 0 18px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e5eaf1;
+  color: #64748b;
+  text-align: left;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.35px;
+}
+
+.sar-table td {
+  padding: 15px 18px;
+  border-bottom: 1px solid #f0f2f5;
+  color: #334155;
+  vertical-align: middle;
+  font-size: 13px;
+}
+
+.sar-table tbody tr {
+  transition: background 0.15s ease;
+}
+
+.sar-table tbody tr:hover {
+  background: #f8fbff;
+}
+
+.sar-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* =========================================================
+   PERSON
+========================================================= */
+
+.sar-person {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 190px;
+}
+
+.sar-avatar {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.sar-person-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sar-person-info strong {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sar-person-info span {
+  overflow: hidden;
+  max-width: 180px;
+  color: #94a3b8;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* =========================================================
+   PUMP
+========================================================= */
+
+.sar-pump {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 170px;
+}
+
+.sar-pump-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #0f172a;
+}
+
+.sar-pump-name svg {
+  color: #2563eb;
+}
+
+.sar-pump-name strong {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.sar-pump > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+/* =========================================================
+   CONTACT
+========================================================= */
+
+.sar-contact {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 150px;
+}
+
+.sar-contact span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.sar-contact svg {
+  flex-shrink: 0;
+  color: #94a3b8;
+}
+
+/* =========================================================
+   DATE
+========================================================= */
+
+.sar-date {
+  color: #475569;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* =========================================================
+   STATUS
+========================================================= */
+
+.sar-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sar-status.pending {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.sar-status.approved {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.sar-status.rejected {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+/* =========================================================
+   ACTIONS
+========================================================= */
+
+.sar-action-head {
+  text-align: center !important;
+}
+
+.sar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.sar-actions button {
+  height: 32px;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  background: white;
+  cursor: pointer;
+  transition: 0.18s ease;
+}
+
+.sar-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.view-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.view-action:hover {
+  border-color: #2563eb !important;
+  color: #2563eb;
+  background: #eff6ff !important;
+}
+
+.approve-action,
+.reject-action {
+  width: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.approve-action {
+  color: #059669;
+}
+
+.approve-action:hover {
+  border-color: #10b981 !important;
+  background: #ecfdf5 !important;
+}
+
+.reject-action {
+  color: #dc2626;
+}
+
+.reject-action:hover {
+  border-color: #ef4444 !important;
+  background: #fef2f2 !important;
+}
+
+/* =========================================================
+   EMPTY / LOADING
+========================================================= */
+
+.sar-state {
+  min-height: 340px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.sar-loading-icon,
+.sar-empty-icon {
+  width: 66px;
+  height: 66px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 15px;
+  border-radius: 18px;
+}
+
+.sar-loading-icon {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.sar-empty-icon {
+  background: #ecfdf5;
+  color: #059669;
+}
+
+.sar-state h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 16px;
+}
+
+.sar-state p {
+  max-width: 400px;
+  margin: 7px 0 0;
+  color: #94a3b8;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.sar-reset-btn {
+  margin-top: 18px;
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid #dbe2ea;
+  border-radius: 8px;
+  background: white;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+/* =========================================================
+   MODAL
+========================================================= */
+
+.sar-modal-overlay {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  box-sizing: border-box;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(3px);
+}
+
+.sar-modal {
+  width: min(720px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  border-radius: 16px;
+  background: white;
+  box-shadow: 0 25px 70px rgba(15, 23, 42, 0.22);
+}
+
+.sar-reject-modal {
+  width: min(560px, 100%);
+}
+
+.sar-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 21px 23px;
+  border-bottom: 1px solid #edf0f4;
+}
+
+.sar-modal-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.sar-modal-icon {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.sar-modal-icon.rejection-icon {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.sar-modal-header h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 750;
+}
+
+.sar-modal-header p {
+  margin: 5px 0 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.sar-close-btn {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #64748b;
+  cursor: pointer;
+  transition: 0.18s ease;
+}
+
+.sar-close-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+/* =========================================================
+   DETAIL BODY
+========================================================= */
+
+.sar-detail-body {
+  padding: 22px 23px;
+}
+
+.sar-detail-section {
+  margin-bottom: 23px;
+}
+
+.sar-detail-section:last-child {
+  margin-bottom: 0;
+}
+
+.sar-section-title {
+  margin-bottom: 13px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.sar-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.sar-detail-grid > div {
+  padding: 13px 14px;
+  border: 1px solid #edf0f4;
+  border-radius: 9px;
+  background: #fafbfc;
+}
+
+.sar-detail-grid > div.full {
+  grid-column: 1 / -1;
+}
+
+.sar-detail-grid span {
+  display: block;
+  margin-bottom: 5px;
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.sar-detail-grid strong {
+  display: block;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.sar-status-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sar-submitted {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.sar-rejection-info {
+  margin-top: 12px;
+  padding: 13px;
+  border: 1px solid #fecaca;
+  border-radius: 9px;
+  background: #fef2f2;
+}
+
+.sar-rejection-info span {
+  color: #b91c1c;
+  font-size: 10px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.sar-rejection-info p {
+  margin: 6px 0 0;
+  color: #7f1d1d;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* =========================================================
+   MODAL FOOTER
+========================================================= */
+
+.sar-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+  padding: 17px 23px;
+  border-top: 1px solid #edf0f4;
+}
+
+.sar-modal-footer button {
+  min-height: 39px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 15px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.18s ease;
+}
+
+.sar-modal-footer button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sar-modal-approve {
+  border: 1px solid #059669;
+  background: #059669;
+  color: white;
+}
+
+.sar-modal-approve:hover:not(:disabled) {
+  background: #047857;
+}
+
+.sar-modal-reject {
+  border: 1px solid #dc2626;
+  background: #dc2626;
+  color: white;
+}
+
+.sar-modal-reject:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+.sar-cancel-btn {
+  border: 1px solid #dbe2ea;
+  background: white;
+  color: #475569;
+}
+
+.sar-cancel-btn:hover {
+  background: #f8fafc;
+}
+
+/* =========================================================
+   REJECTION FORM
+========================================================= */
+
+.sar-reject-content {
+  padding: 22px 23px;
+}
+
+.sar-warning-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding: 12px;
+  border: 1px solid #fed7aa;
+  border-radius: 9px;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.sar-warning-box svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.sar-warning-box p {
+  margin: 0;
+  color: #9a3412;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.sar-form-label {
+  display: block;
+  margin-bottom: 8px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sar-form-label span {
+  margin-left: 3px;
+  color: #dc2626;
+}
+
+.sar-reject-content textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 11px 12px;
+  box-sizing: border-box;
+  resize: vertical;
+  border: 1px solid #dbe2ea;
+  border-radius: 9px;
+  outline: none;
+  background: white;
+  color: #334155;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  transition: 0.2s ease;
+}
+
+.sar-reject-content textarea::placeholder {
+  color: #a1aab8;
+}
+
+.sar-reject-content textarea:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+
+/* =========================================================
+   ANIMATION
+========================================================= */
+
+.sar-spin {
+  animation: sar-spin 0.9s linear infinite;
+}
+
+@keyframes sar-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* =========================================================
+   RESPONSIVE
+========================================================= */
+
+@media (max-width: 1100px) {
+  .sar-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .sar-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sar-search-box {
+    max-width: none;
+  }
+
+  .sar-tabs {
+    align-self: flex-start;
+  }
+}
+
+@media (max-width: 700px) {
+  .superadmin-requests-page {
+    padding: 18px;
+  }
+
+  .sar-page-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .sar-refresh-btn {
+    width: 100%;
+  }
+
+  .sar-stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sar-header-content {
+    align-items: flex-start;
+  }
+
+  .sar-page-header h1 {
+    font-size: 23px;
+  }
+
+  .sar-tabs {
+    width: 100%;
+  }
+
+  .sar-tabs button {
+    flex: 1;
+    padding: 0 8px;
+  }
+
+  .sar-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sar-detail-grid > div.full {
+    grid-column: auto;
+  }
+
+  .sar-modal-footer {
+    flex-direction: column-reverse;
+  }
+
+  .sar-modal-footer button {
+    width: 100%;
+  }
+}

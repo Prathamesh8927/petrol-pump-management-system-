@@ -10,22 +10,34 @@ import {
   updateClient,
   updateClientStatus,
   deleteClient,
+
   getSuperAdminSummary,
   getSuperAdminUsers,
+
+  getRegistrationRequests,
+  getRegistrationRequestById,
+  getPendingRegistrationCount,
+  approveRegistrationRequest,
+  rejectRegistrationRequest,
 } from "../controllers/superAdminController.js";
 
-const router = express.Router();
+const router =
+  express.Router();
 
 /* =====================================================
-   SECURITY
+   SUPER ADMIN SECURITY
 ===================================================== */
 
-router.use(authMiddleware);
+router.use(
+  authMiddleware
+);
 
-router.use(superAdminMiddleware);
+router.use(
+  superAdminMiddleware
+);
 
 /* =====================================================
-   SUMMARY
+   DASHBOARD
 ===================================================== */
 
 router.get(
@@ -40,6 +52,68 @@ router.get(
 router.get(
   "/users",
   getSuperAdminUsers
+);
+
+/* =====================================================
+   REGISTRATION REQUESTS
+===================================================== */
+
+/*
+   Get all requests
+
+   Optional:
+   ?status=pending
+   ?status=approved
+   ?status=rejected
+   ?search=abc
+*/
+
+router.get(
+  "/requests",
+  getRegistrationRequests
+);
+
+/*
+   Pending request count
+*/
+
+router.get(
+  "/requests/pending-count",
+  getPendingRegistrationCount
+);
+
+/*
+   IMPORTANT:
+   Keep pending-count BEFORE /requests/:id
+   so Express does not treat "pending-count"
+   as an ID.
+*/
+
+/*
+   Get one request
+*/
+
+router.get(
+  "/requests/:id",
+  getRegistrationRequestById
+);
+
+/*
+   Approve request
+*/
+
+router.patch(
+  "/requests/:id/approve",
+  approveRegistrationRequest
+);
+
+/*
+   Reject request
+*/
+
+router.patch(
+  "/requests/:id/reject",
+  rejectRegistrationRequest
 );
 
 /* =====================================================

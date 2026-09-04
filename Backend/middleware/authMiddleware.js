@@ -7,89 +7,108 @@ const authMiddleware = async (
   next
 ) => {
   try {
+    /* =================================================
+       CHECK AUTHORIZATION HEADER
+    ================================================= */
+
     const authHeader =
       req.headers.authorization;
 
-    /* =====================================
-       CHECK TOKEN EXISTS
-    ===================================== */
-
     if (
       !authHeader ||
-      !authHeader.startsWith(
-        "Bearer "
-      )
+      !authHeader.startsWith("Bearer ")
     ) {
       return res.status(401).json({
         success: false,
-        message:
-          "Authentication required",
+        message: "Authentication required",
         code: "NO_TOKEN",
       });
     }
 
+    /* =================================================
+       EXTRACT TOKEN
+    ================================================= */
+
     const token =
-      authHeader.split(" ")[1];
+      authHeader.substring(7).trim();
 
-    /* =====================================
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication token missing",
+        code: "NO_TOKEN",
+      });
+    }
+
+    /* =================================================
        VERIFY TOKEN
-    ===================================== */
+    ================================================= */
 
-    const decoded =
-      jwt.verify(
-        token,
-        process.env.JWT_SECRET
-      );
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET
+    );
 
-    /* =====================================
-       GET USER
-    ===================================== */
+    /* =================================================
+       GET USER ID
+
+       New tokens use userId.
+       id is kept as fallback for older tokens.
+    ================================================= */
+
+    const userId =
+      decoded.userId ||
+      decoded.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid authentication token",
+        code: "INVALID_TOKEN",
+      });
+    }
+
+    /* =================================================
+       FIND USER
+    ================================================= */
 
     const user =
-      await User.findById(
-        decoded.userId
-      ).select("-password");
+      await User.findById(userId)
+        .select("-password");
 
     if (!user) {
       return res.status(401).json({
         success: false,
-        message:
-          "User account not found",
-        code:
-          "USER_NOT_FOUND",
+        message: "User account not found",
+        code: "USER_NOT_FOUND",
       });
     }
 
-    /*
-      Old users may not contain
-      active field.
+    /* =================================================
+       ACCOUNT STATUS
+    ================================================= */
 
-      Therefore only block when
-      it is explicitly false.
-    */
-
-    if (
-      user.active === false
-    ) {
+    if (user.active === false) {
       return res.status(403).json({
         success: false,
         message:
           "Your account is inactive",
-        code:
-          "ACCOUNT_INACTIVE",
+        code: "ACCOUNT_INACTIVE",
       });
     }
 
-    /* =====================================
+    /* =================================================
        ATTACH USER
-    ===================================== */
+    ================================================= */
 
     req.user = user;
 
-    /*
-      Fallback for older database
-      records/token structure.
-    */
+    /* =================================================
+       OPTIONAL TOKEN FALLBACK
+
+       Keeps compatibility with old tokens
+       containing pumpId.
+    ================================================= */
 
     if (
       !req.user.pumpId &&
@@ -99,11 +118,15 @@ const authMiddleware = async (
         decoded.pumpId;
     }
 
+    /* =================================================
+       CONTINUE
+    ================================================= */
+
     next();
   } catch (error) {
-    /* =====================================
+    /* =================================================
        TOKEN EXPIRED
-    ===================================== */
+    ================================================= */
 
     if (
       error.name ===
@@ -117,18 +140,19 @@ const authMiddleware = async (
         success: false,
         message:
           "Session expired. Please login again.",
-        code:
-          "TOKEN_EXPIRED",
+        code: "TOKEN_EXPIRED",
       });
     }
 
-    /* =====================================
+    /* =================================================
        INVALID TOKEN
-    ===================================== */
+    ================================================= */
 
     if (
       error.name ===
-      "JsonWebTokenError"
+        "JsonWebTokenError" ||
+      error.name ===
+        "NotBeforeError"
     ) {
       console.log(
         "AUTH MIDDLEWARE: Invalid token"
@@ -138,10 +162,13 @@ const authMiddleware = async (
         success: false,
         message:
           "Invalid authentication token",
-        code:
-          "INVALID_TOKEN",
+        code: "INVALID_TOKEN",
       });
     }
+
+    /* =================================================
+       OTHER ERROR
+    ================================================= */
 
     console.error(
       "AUTH MIDDLEWARE ERROR:",

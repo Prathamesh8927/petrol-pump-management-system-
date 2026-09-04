@@ -1,15 +1,13 @@
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
-import mongoose from "mongoose";
-
-import superAdminRoutes from "./routes/superAdminRoutes.js";
 
 import connectDB from "./config/db.js";
 
 import authRoutes from "./routes/authRoutes.js";
 import fuelRoutes from "./routes/fuelRoutes.js";
 import salesRoutes from "./routes/salesRoutes.js";
+import superAdminRoutes from "./routes/superAdminRoutes.js";
 import nozzleRoutes from "./routes/nozzleRoutes.js";
 import expenseRoutes from "./routes/expenseRoutes.js";
 import ledgerRoutes from "./routes/ledgerRoutes.js";
@@ -34,9 +32,8 @@ const allowedOrigins = [
 
 app.use(
   cors({
-    origin: function (origin, callback) {
-      // Allow requests without an Origin header
-      // such as Postman or server-to-server requests
+    origin: (origin, callback) => {
+      // Allow requests such as Postman/server-to-server
       if (!origin) {
         return callback(null, true);
       }
@@ -45,8 +42,10 @@ app.use(
         return callback(null, true);
       }
 
+      console.log("CORS BLOCKED ORIGIN:", origin);
+
       return callback(
-        new Error(`CORS: Origin ${origin} not allowed`)
+        new Error(`CORS origin not allowed: ${origin}`)
       );
     },
 
@@ -71,16 +70,11 @@ app.use(
 );
 
 /* =====================================================
-   BODY PARSER
+   BODY PARSERS
 ===================================================== */
 
 app.use(express.json());
-
-app.use(
-  express.urlencoded({
-    extended: true,
-  })
-);
+app.use(express.urlencoded({ extended: true }));
 
 /* =====================================================
    REQUEST LOGGER
@@ -88,43 +82,27 @@ app.use(
 
 app.use((req, res, next) => {
   console.log(
-    `${new Date().toISOString()} | ${req.method} ${req.originalUrl}`
+    `${req.method} ${req.originalUrl}`
   );
 
   next();
 });
 
 /* =====================================================
-   ROOT
+   BASIC ROUTES
 ===================================================== */
 
 app.get("/", (req, res) => {
-  return res.status(200).json({
+  res.json({
     success: true,
-    message: "MyPump API is running",
+    message: "Petrol Pump Management API is running",
   });
 });
 
-/* =====================================================
-   HEALTH
-===================================================== */
-
 app.get("/api/health", (req, res) => {
-  return res.status(200).json({
+  res.json({
     success: true,
-
-    application: "MyPump",
-
-    status: "healthy",
-
-    database:
-      mongoose.connection.readyState === 1
-        ? "connected"
-        : "disconnected",
-
-    uptime: Math.floor(process.uptime()),
-
-    timestamp: new Date().toISOString(),
+    message: "Backend is healthy",
   });
 });
 
@@ -132,154 +110,77 @@ app.get("/api/health", (req, res) => {
    API ROUTES
 ===================================================== */
 
-/* ================= AUTH ================= */
+app.use("/api/auth", authRoutes);
 
-app.use(
-  "/api/auth",
-  authRoutes
-);
+app.use("/api/fuel", fuelRoutes);
 
-/* ================= FUEL ================= */
+app.use("/api/sales", salesRoutes);
 
-app.use(
-  "/api/fuel",
-  fuelRoutes
-);
+app.use("/api/superadmin", superAdminRoutes);
 
-/* ================= SALES ================= */
+app.use("/api/nozzles", nozzleRoutes);
 
-app.use(
-  "/api/sales",
-  salesRoutes
-);
+app.use("/api/nozzle", nozzleRoutes);
 
-/* ================= SUPERADMIN ================= */
+app.use("/api/expenses", expenseRoutes);
 
-app.use(
-  "/api/superadmin",
-  superAdminRoutes
-);
+app.use("/api/ledger", ledgerRoutes);
 
-/* =====================================================
-   NOZZLE
+app.use("/api/reports", reportRoutes);
 
-   /api/nozzles = FINAL
-   /api/nozzle  = COMPATIBILITY
-===================================================== */
+app.use("/api/settings", settingsRoutes);
 
-app.use(
-  "/api/nozzles",
-  nozzleRoutes
-);
-
-app.use(
-  "/api/nozzle",
-  nozzleRoutes
-);
-
-/* ================= EXPENSES ================= */
-
-app.use(
-  "/api/expenses",
-  expenseRoutes
-);
-
-/* ================= LEDGER ================= */
-
-app.use(
-  "/api/ledger",
-  ledgerRoutes
-);
-
-/* ================= REPORTS ================= */
-
-app.use(
-  "/api/reports",
-  reportRoutes
-);
-
-/* ================= SETTINGS ================= */
-
-app.use(
-  "/api/settings",
-  settingsRoutes
-);
-
-/* ================= DASHBOARD ================= */
-
-app.use(
-  "/api/dashboard",
-  dashboardRoutes
-);
-
-/* ================= DAILY CLOSING ================= */
+app.use("/api/dashboard", dashboardRoutes);
 
 app.use(
   "/api/daily-closing",
   dailyClosingRoutes
 );
 
-/* ================= AUDIT ================= */
-
-app.use(
-  "/api/audit",
-  auditRoutes
-);
+app.use("/api/audit", auditRoutes);
 
 /* =====================================================
-   404 HANDLER
+   404
 ===================================================== */
 
 app.use((req, res) => {
-  return res.status(404).json({
+  res.status(404).json({
     success: false,
-
-    message: "Route not found",
-
-    method: req.method,
-
-    path: req.originalUrl,
+    message: `Route not found: ${req.method} ${req.originalUrl}`,
   });
 });
 
 /* =====================================================
-   GLOBAL ERROR HANDLER
+   ERROR HANDLER
 ===================================================== */
 
-app.use(
-  (error, req, res, next) => {
-    console.error(
-      "SERVER ERROR:",
-      error
-    );
+app.use((error, req, res, next) => {
+  console.error(
+    "SERVER ERROR:",
+    error
+  );
 
-    /*
-     * Handle CORS errors cleanly
-     */
-    if (
-      error.message &&
-      error.message.startsWith("CORS:")
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: error.message,
-      });
-    }
-
-    return res.status(
-      error.status || 500
-    ).json({
+  if (
+    error.message?.startsWith(
+      "CORS origin not allowed"
+    )
+  ) {
+    return res.status(403).json({
       success: false,
-
-      message:
-        error.message ||
-        "Internal server error",
+      message: error.message,
     });
   }
-);
+
+  res.status(500).json({
+    success: false,
+    message:
+      error.message ||
+      "Internal server error",
+  });
+});
 
 /* =====================================================
-   SERVER
+   START SERVER
 ===================================================== */
 
 const PORT =
@@ -287,23 +188,16 @@ const PORT =
 
 connectDB()
   .then(() => {
-    app.listen(
-      PORT,
-      () => {
-        console.log(
-          `MyPump server running on http://localhost:${PORT}`
-        );
-
-        console.log(
-          `Health check: http://localhost:${PORT}/api/health`
-        );
-      }
-    );
+    app.listen(PORT, () => {
+      console.log(
+        `Server running on http://localhost:${PORT}`
+      );
+    });
   })
   .catch((error) => {
     console.error(
-      "Server startup failed:",
-      error.message
+      "Database connection failed:",
+      error
     );
 
     process.exit(1);

@@ -6,134 +6,224 @@ import {
 
 import {
   Building2,
+  ClipboardCheck,
   LayoutDashboard,
   LogOut,
+  RefreshCw,
   Users,
 } from "lucide-react";
 
-const SuperAdminLayout =
-  () => {
-    const navigate =
-      useNavigate();
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
 
-    const logout =
-      () => {
-        localStorage.removeItem(
-          "token"
+import api from "../services/api";
+
+const SuperAdminLayout = () => {
+  const navigate =
+    useNavigate();
+
+  const [pendingCount, setPendingCount] =
+    useState(0);
+
+  const [loadingCount, setLoadingCount] =
+    useState(false);
+
+  const loadPendingCount =
+    useCallback(async () => {
+      try {
+        setLoadingCount(true);
+
+        const response =
+          await api.get(
+            "/superadmin/requests/pending-count"
+          );
+
+        setPendingCount(
+          Number(
+            response.data?.count || 0
+          )
         );
-
-        localStorage.removeItem(
-          "user"
+      } catch (error) {
+        console.error(
+          "PENDING COUNT ERROR:",
+          error
         );
+      } finally {
+        setLoadingCount(false);
+      }
+    }, []);
 
-        navigate(
-          "/login",
-          {
-            replace: true,
-          }
-        );
+  useEffect(() => {
+    loadPendingCount();
 
-        window.location.reload();
-      };
+    const interval =
+      setInterval(
+        loadPendingCount,
+        30000
+      );
 
-    return (
-      <div className="super-admin-layout">
+    return () =>
+      clearInterval(interval);
+  }, [loadPendingCount]);
 
-        <aside className="super-admin-sidebar">
+  const logout = () => {
+    localStorage.removeItem(
+      "token"
+    );
 
-          <div className="super-admin-brand">
+    localStorage.removeItem(
+      "user"
+    );
 
-            <div className="super-admin-logo">
-              MP
-            </div>
+    navigate("/login", {
+      replace: true,
+    });
 
-            <div>
-              <strong>
-                MyPump
-              </strong>
+    window.location.reload();
+  };
 
-              <span>
-                Super Admin
-              </span>
-            </div>
+  return (
+    <div className="super-admin-layout">
 
+      <aside className="super-admin-sidebar">
+
+        <div className="super-admin-brand">
+
+          <div className="super-admin-logo">
+            MP
           </div>
 
-          <nav className="super-admin-nav">
+          <div>
+            <strong>
+              MyPump
+            </strong>
 
-            <NavLink
-              to="/superadmin"
-              end
-            >
-              <LayoutDashboard
-                size={19}
-              />
+            <span>
+              Super Admin
+            </span>
+          </div>
 
-              Dashboard
-            </NavLink>
+        </div>
 
-            <NavLink
-              to="/superadmin/clients"
-            >
-              <Building2
-                size={19}
-              />
+        <nav className="super-admin-nav">
 
-              Clients
-            </NavLink>
+          <NavLink
+            to="/superadmin"
+            end
+          >
+            <LayoutDashboard
+              size={19}
+            />
 
-            <NavLink
-              to="/superadmin/users"
-            >
-              <Users
-                size={19}
-              />
+            Dashboard
+          </NavLink>
 
-              Users
-            </NavLink>
+          <NavLink
+            to="/superadmin/requests"
+          >
+            <ClipboardCheck
+              size={19}
+            />
 
-          </nav>
+            <span>
+              Requests
+            </span>
+
+            {pendingCount > 0 && (
+              <span className="super-admin-request-badge">
+                {pendingCount > 99
+                  ? "99+"
+                  : pendingCount}
+              </span>
+            )}
+          </NavLink>
+
+          <NavLink
+            to="/superadmin/clients"
+          >
+            <Building2
+              size={19}
+            />
+
+            Clients
+          </NavLink>
+
+          <NavLink
+            to="/superadmin/users"
+          >
+            <Users
+              size={19}
+            />
+
+            Users
+          </NavLink>
+
+        </nav>
+
+        <button
+          type="button"
+          className="super-admin-logout"
+          onClick={logout}
+        >
+          <LogOut
+            size={18}
+          />
+
+          Logout
+        </button>
+
+      </aside>
+
+      <main className="super-admin-main">
+
+        <header className="super-admin-topbar">
+
+          <div>
+            <h2>
+              Super Admin
+            </h2>
+
+            <p>
+              MyPump Client Management
+            </p>
+          </div>
 
           <button
             type="button"
-            className="super-admin-logout"
-            onClick={logout}
+            className="super-admin-refresh"
+            onClick={
+              loadPendingCount
+            }
+            disabled={
+              loadingCount
+            }
+            title="Refresh requests"
           >
-            <LogOut
-              size={18}
+            <RefreshCw
+              size={17}
+              className={
+                loadingCount
+                  ? "spin"
+                  : ""
+              }
             />
-
-            Logout
           </button>
 
-        </aside>
+        </header>
 
-        <main className="super-admin-main">
+        <div className="super-admin-content">
 
-          <header className="super-admin-topbar">
+          <Outlet />
 
-            <div>
-              <h2>
-                Super Admin
-              </h2>
+        </div>
 
-              <p>
-                MyPump Client Management
-              </p>
-            </div>
+      </main>
 
-          </header>
-
-          <div className="super-admin-content">
-
-            <Outlet />
-
-          </div>
-
-        </main>
-
-      </div>
-    );
-  };
+    </div>
+  );
+};
 
 export default SuperAdminLayout;
