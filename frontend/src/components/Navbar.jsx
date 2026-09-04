@@ -128,7 +128,7 @@ const Navbar = () => {
     "superadmin"
       ? "MyPump Super Admin"
       : pump?.pumpName ||
-        "MyPump";
+        "ShivShambho";
 
   const displayRole =
     user?.role ===

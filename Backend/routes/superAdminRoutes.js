@@ -10,10 +10,8 @@ import {
   updateClient,
   updateClientStatus,
   deleteClient,
-
   getSuperAdminSummary,
   getSuperAdminUsers,
-
   getRegistrationRequests,
   getRegistrationRequestById,
   getPendingRegistrationCount,
@@ -21,133 +19,102 @@ import {
   rejectRegistrationRequest,
 } from "../controllers/superAdminController.js";
 
-const router =
-  express.Router();
+import {
+  getPasswordResetRequests,
+  getPendingPasswordResetCount,
+  approvePasswordReset,
+  rejectPasswordReset,
+} from "../controllers/passwordResetController.js";
 
-/* =====================================================
-   SUPER ADMIN SECURITY
-===================================================== */
+const router = express.Router();
 
-router.use(
-  authMiddleware
-);
+/*
+  All Super Admin routes require authentication
+  and Super Admin role.
+*/
 
-router.use(
-  superAdminMiddleware
-);
+router.use(authMiddleware);
+router.use(superAdminMiddleware);
 
-/* =====================================================
+/* =========================================================
    DASHBOARD
-===================================================== */
+========================================================= */
 
-router.get(
-  "/summary",
-  getSuperAdminSummary
-);
+router.get("/summary", getSuperAdminSummary);
 
-/* =====================================================
+/* =========================================================
    USERS
-===================================================== */
+========================================================= */
 
-router.get(
-  "/users",
-  getSuperAdminUsers
-);
+router.get("/users", getSuperAdminUsers);
 
-/* =====================================================
+/* =========================================================
    REGISTRATION REQUESTS
-===================================================== */
+========================================================= */
 
-/*
-   Get all requests
-
-   Optional:
-   ?status=pending
-   ?status=approved
-   ?status=rejected
-   ?search=abc
-*/
-
-router.get(
-  "/requests",
-  getRegistrationRequests
-);
-
-/*
-   Pending request count
-*/
+router.get("/requests", getRegistrationRequests);
 
 router.get(
   "/requests/pending-count",
   getPendingRegistrationCount
 );
 
-/*
-   IMPORTANT:
-   Keep pending-count BEFORE /requests/:id
-   so Express does not treat "pending-count"
-   as an ID.
-*/
-
-/*
-   Get one request
-*/
-
 router.get(
   "/requests/:id",
   getRegistrationRequestById
 );
-
-/*
-   Approve request
-*/
 
 router.patch(
   "/requests/:id/approve",
   approveRegistrationRequest
 );
 
-/*
-   Reject request
-*/
-
 router.patch(
   "/requests/:id/reject",
   rejectRegistrationRequest
 );
 
-/* =====================================================
+/* =========================================================
+   PASSWORD RESET REQUESTS
+========================================================= */
+
+router.get(
+  "/password-requests",
+  getPasswordResetRequests
+);
+
+router.get(
+  "/password-requests/pending-count",
+  getPendingPasswordResetCount
+);
+
+router.patch(
+  "/password-requests/:id/approve",
+  approvePasswordReset
+);
+
+router.patch(
+  "/password-requests/:id/reject",
+  rejectPasswordReset
+);
+
+/* =========================================================
    CLIENTS
-===================================================== */
+========================================================= */
 
-router.get(
-  "/clients",
-  getClients
-);
+router.get("/clients", getClients);
 
-router.post(
-  "/clients",
-  addClient
-);
+router.post("/clients", addClient);
 
-router.get(
-  "/clients/:id",
-  getClientById
-);
+router.get("/clients/:id", getClientById);
 
-router.put(
-  "/clients/:id",
-  updateClient
-);
+router.put("/clients/:id", updateClient);
 
 router.patch(
   "/clients/:id/status",
   updateClientStatus
 );
 
-router.delete(
-  "/clients/:id",
-  deleteClient
-);
+router.delete("/clients/:id", deleteClient);
 
 export default router;

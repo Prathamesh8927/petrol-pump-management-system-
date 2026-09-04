@@ -98,7 +98,7 @@ const SuperAdminLayout = () => {
 
           <div>
             <strong>
-              MyPump
+              ShivShambho
             </strong>
 
             <span>
@@ -187,7 +187,7 @@ const SuperAdminLayout = () => {
             </h2>
 
             <p>
-              MyPump Client Management
+              ShivShambho Client Management
             </p>
           </div>
 

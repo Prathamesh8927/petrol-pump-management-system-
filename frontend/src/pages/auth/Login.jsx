@@ -63,6 +63,17 @@ const Login = () => {
     useState("MyPump");
 
   /* =====================================================
+     SUPER ADMIN ACCOUNT CHECK
+     
+     This message will ONLY appear when the
+     Super Admin email is entered.
+  ===================================================== */
+
+  const isSuperAdminEmail =
+    email.trim().toLowerCase() ===
+    "superadmin@mypump.com";
+
+  /* =====================================================
      LOAD PUMP NAME
   ===================================================== */
 
@@ -109,6 +120,10 @@ const Login = () => {
     const cleanEmail =
       email.trim().toLowerCase();
 
+    /* -----------------------------------------------
+       VALIDATION
+    ------------------------------------------------ */
+
     if (!cleanEmail) {
       toast.error(
         "Enter your email"
@@ -125,6 +140,10 @@ const Login = () => {
 
     try {
       setLoading(true);
+
+      /* ---------------------------------------------
+         LOGIN
+      --------------------------------------------- */
 
       const result =
         await login(
@@ -146,9 +165,9 @@ const Login = () => {
         );
       }
 
-      /* ===============================================
+      /* =============================================
          SUPER ADMIN
-      =============================================== */
+      ============================================= */
 
       if (
         loggedInUser.role ===
@@ -176,9 +195,9 @@ const Login = () => {
         return;
       }
 
-      /* ===============================================
-         CLIENT
-      =============================================== */
+      /* =============================================
+         CLIENT / OWNER / MANAGER / STAFF
+      ============================================= */
 
       const currentPumpName =
         await loadPumpName();
@@ -201,17 +220,77 @@ const Login = () => {
           }
         );
       }, 4300);
+
     } catch (error) {
       console.error(
         "LOGIN PAGE ERROR:",
         error
       );
 
+      /* =============================================
+         BACKEND ERROR CODE HANDLING
+      ============================================= */
+
+      const errorData =
+        error?.response?.data;
+
+      const errorCode =
+        errorData?.code;
+
+      /* ---------------------------------------------
+         REGISTRATION PENDING
+      --------------------------------------------- */
+
+      if (
+        errorCode ===
+        "REGISTRATION_PENDING"
+      ) {
+        toast.error(
+          "Your registration is waiting for Super Admin approval."
+        );
+
+        return;
+      }
+
+      /* ---------------------------------------------
+         REGISTRATION REJECTED
+      --------------------------------------------- */
+
+      if (
+        errorCode ===
+        "REGISTRATION_REJECTED"
+      ) {
+        toast.error(
+          errorData?.message ||
+          "Your registration request was rejected."
+        );
+
+        return;
+      }
+
+      /* ---------------------------------------------
+         ACCOUNT DISABLED
+      --------------------------------------------- */
+
+      if (
+        errorCode ===
+        "ACCOUNT_DISABLED"
+      ) {
+        toast.error(
+          "Your account is currently disabled. Contact the Super Admin."
+        );
+
+        return;
+      }
+
+      /* ---------------------------------------------
+         INVALID LOGIN / GENERAL ERROR
+      --------------------------------------------- */
+
       toast.error(
-        error.response?.data
-          ?.message ||
-          error.message ||
-          "Login failed"
+        errorData?.message ||
+        error.message ||
+        "Login failed"
       );
     } finally {
       setLoading(false);
@@ -228,6 +307,10 @@ const Login = () => {
 
         <div className="login-card">
 
+          {/* ===========================================
+              HEADER
+          =========================================== */}
+
           <div className="login-header">
 
             <h1>
@@ -240,13 +323,20 @@ const Login = () => {
 
           </div>
 
+
+          {/* ===========================================
+              LOGIN FORM
+          =========================================== */}
+
           <form
             onSubmit={
               handleSubmit
             }
           >
 
-            {/* EMAIL */}
+            {/* =========================================
+                EMAIL
+            ========================================= */}
 
             <div className="form-group">
 
@@ -273,7 +363,10 @@ const Login = () => {
 
             </div>
 
-            {/* PASSWORD */}
+
+            {/* =========================================
+                PASSWORD
+            ========================================= */}
 
             <div className="form-group">
 
@@ -300,7 +393,36 @@ const Login = () => {
 
             </div>
 
-            {/* LOGIN */}
+
+            {/* =========================================
+                FORGOT PASSWORD
+            ========================================= */}
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                marginBottom: "14px",
+              }}
+            >
+
+              <Link
+                to="/forgot-password"
+                className="register-link"
+                style={{
+                  fontSize: "14px",
+                  textDecoration: "none",
+                }}
+              >
+                Forgot Password?
+              </Link>
+
+            </div>
+
+
+            {/* =========================================
+                LOGIN BUTTON
+            ========================================= */}
 
             <button
               type="submit"
@@ -313,12 +435,15 @@ const Login = () => {
                 width: "100%",
               }}
             >
+
               {loading
                 ? "Signing in..."
                 : "Login"}
+
             </button>
 
           </form>
+
 
           {/* ===========================================
               CREATE ACCOUNT
@@ -339,27 +464,39 @@ const Login = () => {
 
           </div>
 
+
           {/* ===========================================
-              SUPER ADMIN
+              SUPER ADMIN MESSAGE
+              
+              ONLY SHOWS FOR:
+              superadmin@mypump.com
           =========================================== */}
 
-          <div className="login-admin-note">
+          {isSuperAdminEmail && (
+            <div className="login-admin-note">
 
-            <span>
-              Super Admin access is restricted
-              to authorized administrators.
-            </span>
+              <span>
+                Super Admin access is restricted
+                to authorized administrators.
+              </span>
 
-          </div>
+            </div>
+          )}
 
         </div>
 
       </div>
 
+
+      {/* ===============================================
+          TANKER ANIMATION
+      =============================================== */}
+
       <LoginTankerAnimation
         show={showTanker}
         pumpName={pumpName}
       />
+
     </>
   );
 };

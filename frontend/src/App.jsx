@@ -30,6 +30,9 @@ import SuperAdminUsers
 import SuperAdminRequests
   from "./pages/superadmin/SuperAdminRequests";
 
+import SuperAdminPasswordRequests
+  from "./pages/superadmin/SuperAdminPasswordRequests";
+
 /* =====================================================
    AUTH
 ===================================================== */
@@ -39,6 +42,12 @@ import Login
 
 import Register
   from "./pages/auth/Register";
+
+import ForgotPassword
+  from "./pages/auth/ForgotPassword";
+
+import ResetPassword
+  from "./pages/auth/ResetPassword";
 
 /* =====================================================
    LAYOUT
@@ -178,7 +187,7 @@ function App() {
       <Routes>
 
         {/* =================================================
-            PUBLIC
+            PUBLIC AUTH ROUTES
         ================================================= */}
 
         <Route
@@ -194,6 +203,23 @@ function App() {
             <Register />
           }
         />
+
+        {/* Password Recovery */}
+
+        <Route
+          path="/forgot-password"
+          element={
+            <ForgotPassword />
+          }
+        />
+
+        <Route
+          path="/reset-password/:requestId"
+          element={
+            <ResetPassword />
+          }
+        />
+
 
         {/* =================================================
             NORMAL PUMP APPLICATION
@@ -217,6 +243,7 @@ function App() {
               <Dashboard />
             }
           />
+
 
           {/* ===============================================
               FUEL
@@ -269,6 +296,7 @@ function App() {
               <FuelPrice />
             }
           />
+
 
           {/* ===============================================
               NOZZLES
@@ -345,6 +373,7 @@ function App() {
             }
           />
 
+
           {/* ===============================================
               SALES
           =============================================== */}
@@ -390,6 +419,7 @@ function App() {
             }
           />
 
+
           {/* ===============================================
               EXPENSES
           =============================================== */}
@@ -417,6 +447,7 @@ function App() {
               <ExpenseHistory />
             }
           />
+
 
           {/* ===============================================
               LEDGER
@@ -477,6 +508,7 @@ function App() {
             }
           />
 
+
           {/* ===============================================
               REPORTS
           =============================================== */}
@@ -526,6 +558,7 @@ function App() {
             }
           />
 
+
           {/* ===============================================
               SETTINGS
           =============================================== */}
@@ -563,6 +596,7 @@ function App() {
 
         </Route>
 
+
         {/* =================================================
             SUPER ADMIN APPLICATION
         ================================================= */}
@@ -586,6 +620,7 @@ function App() {
             }
           />
 
+
           {/* ===============================================
               REGISTRATION REQUESTS
           =============================================== */}
@@ -597,6 +632,19 @@ function App() {
             }
           />
 
+
+          {/* ===============================================
+              PASSWORD RESET REQUESTS
+          =============================================== */}
+
+          <Route
+            path="/superadmin/password-requests"
+            element={
+              <SuperAdminPasswordRequests />
+            }
+          />
+
+
           {/* ===============================================
               CLIENT MANAGEMENT
           =============================================== */}
@@ -607,6 +655,7 @@ function App() {
               <Clients />
             }
           />
+
 
           {/* ===============================================
               USER MANAGEMENT
@@ -621,6 +670,7 @@ function App() {
 
         </Route>
 
+
         {/* =================================================
             ROOT
         ================================================= */}
@@ -634,6 +684,7 @@ function App() {
             />
           }
         />
+
 
         {/* =================================================
             UNKNOWN ROUTE

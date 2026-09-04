@@ -1,4 +1,5 @@
 import { useState } from "react";
+import logo from "../assets/logo.png";
 
 import {
   NavLink,
@@ -35,10 +36,6 @@ const Sidebar = () => {
   ===================================== */
 
   const menus = [
-    /* ===============================
-       FUEL
-    =============================== */
-
     {
       id: "fuel",
       name: "Fuel",
@@ -67,10 +64,6 @@ const Sidebar = () => {
       ],
     },
 
-    /* ===============================
-       NOZZLES
-    =============================== */
-
     {
       id: "nozzle",
       name: "Nozzles",
@@ -93,10 +86,6 @@ const Sidebar = () => {
         },
       ],
     },
-
-    /* ===============================
-       SALES
-    =============================== */
 
     {
       id: "sales",
@@ -121,10 +110,6 @@ const Sidebar = () => {
       ],
     },
 
-    /* ===============================
-       EXPENSES
-    =============================== */
-
     {
       id: "expenses",
       name: "Expenses",
@@ -142,10 +127,6 @@ const Sidebar = () => {
         },
       ],
     },
-
-    /* ===============================
-       LEDGER
-    =============================== */
 
     {
       id: "ledger",
@@ -175,10 +156,6 @@ const Sidebar = () => {
       ],
     },
 
-    /* ===============================
-       REPORTS
-    =============================== */
-
     {
       id: "reports",
       name: "Reports",
@@ -206,10 +183,6 @@ const Sidebar = () => {
         },
       ],
     },
-
-    /* ===============================
-       SETTINGS
-    =============================== */
 
     {
       id: "settings",
@@ -242,11 +215,6 @@ const Sidebar = () => {
   const closeInnerSidebar = () => {
     setIsInnerOpen(false);
 
-    /*
-      Wait until slide-out animation
-      completes before clearing content.
-    */
-
     setTimeout(() => {
       setActiveMenu(null);
     }, 350);
@@ -257,11 +225,6 @@ const Sidebar = () => {
   ===================================== */
 
   const toggleMenu = (menuId) => {
-    /*
-      Clicking same menu again
-      closes the inner sidebar.
-    */
-
     if (
       activeMenu === menuId &&
       isInnerOpen
@@ -269,11 +232,6 @@ const Sidebar = () => {
       closeInnerSidebar();
       return;
     }
-
-    /*
-      If another menu is already open,
-      replace its content.
-    */
 
     setActiveMenu(menuId);
 
@@ -289,16 +247,7 @@ const Sidebar = () => {
   const handleInnerNavigation = (
     path
   ) => {
-    /*
-      Navigate to selected page.
-    */
-
     navigate(path);
-
-    /*
-      Automatically close inner sidebar.
-    */
-
     closeInnerSidebar();
   };
 
@@ -319,20 +268,12 @@ const Sidebar = () => {
   const isMenuActive = (menu) => {
     return menu.items.some(
       (item) => {
-        /*
-          Exact route.
-        */
-
         if (
           location.pathname ===
           item.path
         ) {
           return true;
         }
-
-        /*
-          Nested routes.
-        */
 
         if (
           item.path !== "/" &&
@@ -394,12 +335,47 @@ const Sidebar = () => {
             cursor: "pointer",
           }}
         >
-          <div className="brand-icon">
-            MP
+          <div
+            className="brand-icon"
+            style={{
+              width: "42px",
+              height: "42px",
+              minWidth: "42px",
+              minHeight: "42px",
+              maxWidth: "42px",
+              maxHeight: "42px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              overflow: "hidden",
+              borderRadius: "50%",
+              flexShrink: 0,
+              padding: 0,
+              margin: 0,
+            }}
+          >
+            <img
+              src={logo}
+              alt="ShivShambho Logo"
+              style={{
+                width: "42px",
+                height: "42px",
+                minWidth: "42px",
+                minHeight: "42px",
+                maxWidth: "42px",
+                maxHeight: "42px",
+                objectFit: "cover",
+                objectPosition: "center",
+                display: "block",
+                borderRadius: "50%",
+                margin: 0,
+                padding: 0,
+              }}
+            />
           </div>
 
           <span>
-            MyPump
+            ShivShambho
           </span>
         </div>
 

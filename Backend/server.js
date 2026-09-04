@@ -4,6 +4,10 @@ import cors from "cors";
 
 import connectDB from "./config/db.js";
 
+/* =====================================================
+   ROUTES
+===================================================== */
+
 import authRoutes from "./routes/authRoutes.js";
 import fuelRoutes from "./routes/fuelRoutes.js";
 import salesRoutes from "./routes/salesRoutes.js";
@@ -17,9 +21,18 @@ import dashboardRoutes from "./routes/dashboardRoutes.js";
 import dailyClosingRoutes from "./routes/dailyClosingRoutes.js";
 import auditRoutes from "./routes/auditRoutes.js";
 
+/* =====================================================
+   PASSWORD RECOVERY
+===================================================== */
+
+import passwordResetRoutes
+  from "./routes/passwordResetRoutes.js";
+
+
 dotenv.config();
 
 const app = express();
+
 
 /* =====================================================
    CORS
@@ -33,7 +46,9 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests such as Postman/server-to-server
+
+      // Allow requests without an Origin header
+      // such as Postman or server-to-server requests.
       if (!origin) {
         return callback(null, true);
       }
@@ -42,10 +57,15 @@ app.use(
         return callback(null, true);
       }
 
-      console.log("CORS BLOCKED ORIGIN:", origin);
+      console.log(
+        "CORS BLOCKED ORIGIN:",
+        origin
+      );
 
       return callback(
-        new Error(`CORS origin not allowed: ${origin}`)
+        new Error(
+          `CORS origin not allowed: ${origin}`
+        )
       );
     },
 
@@ -69,115 +89,246 @@ app.use(
   })
 );
 
+
 /* =====================================================
    BODY PARSERS
 ===================================================== */
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(
+  express.json()
+);
+
+app.use(
+  express.urlencoded({
+    extended: true,
+  })
+);
+
 
 /* =====================================================
    REQUEST LOGGER
 ===================================================== */
 
-app.use((req, res, next) => {
-  console.log(
-    `${req.method} ${req.originalUrl}`
-  );
+app.use(
+  (req, res, next) => {
 
-  next();
-});
+    console.log(
+      `${req.method} ${req.originalUrl}`
+    );
+
+    next();
+  }
+);
+
 
 /* =====================================================
    BASIC ROUTES
 ===================================================== */
 
-app.get("/", (req, res) => {
-  res.json({
-    success: true,
-    message: "Petrol Pump Management API is running",
-  });
-});
+app.get(
+  "/",
+  (req, res) => {
 
-app.get("/api/health", (req, res) => {
-  res.json({
-    success: true,
-    message: "Backend is healthy",
-  });
-});
+    res.status(200).json({
+      success: true,
+      message:
+        "Petrol Pump Management API is running",
+    });
+
+  }
+);
+
+
+app.get(
+  "/api/health",
+  (req, res) => {
+
+    res.status(200).json({
+      success: true,
+      message:
+        "Backend is healthy",
+    });
+
+  }
+);
+
 
 /* =====================================================
    API ROUTES
 ===================================================== */
 
-app.use("/api/auth", authRoutes);
+/* ---------------- AUTH ---------------- */
 
-app.use("/api/fuel", fuelRoutes);
+app.use(
+  "/api/auth",
+  authRoutes
+);
 
-app.use("/api/sales", salesRoutes);
 
-app.use("/api/superadmin", superAdminRoutes);
+/* ---------------- FUEL ---------------- */
 
-app.use("/api/nozzles", nozzleRoutes);
+app.use(
+  "/api/fuel",
+  fuelRoutes
+);
 
-app.use("/api/nozzle", nozzleRoutes);
 
-app.use("/api/expenses", expenseRoutes);
+/* ---------------- SALES ---------------- */
 
-app.use("/api/ledger", ledgerRoutes);
+app.use(
+  "/api/sales",
+  salesRoutes
+);
 
-app.use("/api/reports", reportRoutes);
 
-app.use("/api/settings", settingsRoutes);
+/* ---------------- SUPER ADMIN ---------------- */
 
-app.use("/api/dashboard", dashboardRoutes);
+app.use(
+  "/api/superadmin",
+  superAdminRoutes
+);
+
+
+/* ---------------- NOZZLES ---------------- */
+
+app.use(
+  "/api/nozzles",
+  nozzleRoutes
+);
+
+app.use(
+  "/api/nozzle",
+  nozzleRoutes
+);
+
+
+/* ---------------- EXPENSES ---------------- */
+
+app.use(
+  "/api/expenses",
+  expenseRoutes
+);
+
+
+/* ---------------- LEDGER ---------------- */
+
+app.use(
+  "/api/ledger",
+  ledgerRoutes
+);
+
+
+/* ---------------- REPORTS ---------------- */
+
+app.use(
+  "/api/reports",
+  reportRoutes
+);
+
+
+/* ---------------- SETTINGS ---------------- */
+
+app.use(
+  "/api/settings",
+  settingsRoutes
+);
+
+
+/* ---------------- DASHBOARD ---------------- */
+
+app.use(
+  "/api/dashboard",
+  dashboardRoutes
+);
+
+
+/* ---------------- DAILY CLOSING ---------------- */
 
 app.use(
   "/api/daily-closing",
   dailyClosingRoutes
 );
 
-app.use("/api/audit", auditRoutes);
+
+/* ---------------- AUDIT ---------------- */
+
+app.use(
+  "/api/audit",
+  auditRoutes
+);
+
 
 /* =====================================================
-   404
+   PASSWORD RESET
 ===================================================== */
 
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    message: `Route not found: ${req.method} ${req.originalUrl}`,
-  });
-});
+app.use(
+  "/api/password-reset",
+  passwordResetRoutes
+);
+
 
 /* =====================================================
-   ERROR HANDLER
+   404 HANDLER
 ===================================================== */
 
-app.use((error, req, res, next) => {
-  console.error(
-    "SERVER ERROR:",
-    error
-  );
+app.use(
+  (req, res) => {
 
-  if (
-    error.message?.startsWith(
-      "CORS origin not allowed"
-    )
-  ) {
-    return res.status(403).json({
+    res.status(404).json({
       success: false,
-      message: error.message,
+      message:
+        `Route not found: ${req.method} ${req.originalUrl}`,
     });
-  }
 
-  res.status(500).json({
-    success: false,
-    message:
-      error.message ||
-      "Internal server error",
-  });
-});
+  }
+);
+
+
+/* =====================================================
+   GLOBAL ERROR HANDLER
+===================================================== */
+
+app.use(
+  (error, req, res, next) => {
+
+    console.error(
+      "SERVER ERROR:",
+      error
+    );
+
+    /* -----------------------------------------------
+       CORS ERROR
+    ------------------------------------------------ */
+
+    if (
+      error.message?.startsWith(
+        "CORS origin not allowed"
+      )
+    ) {
+
+      return res.status(403).json({
+        success: false,
+        message: error.message,
+      });
+
+    }
+
+
+    /* -----------------------------------------------
+       GENERAL SERVER ERROR
+    ------------------------------------------------ */
+
+    return res.status(500).json({
+      success: false,
+      message:
+        error.message ||
+        "Internal server error",
+    });
+
+  }
+);
+
 
 /* =====================================================
    START SERVER
@@ -186,19 +337,37 @@ app.use((error, req, res, next) => {
 const PORT =
   process.env.PORT || 8080;
 
+
 connectDB()
   .then(() => {
-    app.listen(PORT, () => {
-      console.log(
-        `Server running on http://localhost:${PORT}`
-      );
-    });
+
+    app.listen(
+      PORT,
+      () => {
+
+        console.log(
+          "===================================="
+        );
+
+        console.log(
+          `Server running on http://localhost:${PORT}`
+        );
+
+        console.log(
+          "===================================="
+        );
+
+      }
+    );
+
   })
   .catch((error) => {
+
     console.error(
       "Database connection failed:",
       error
     );
 
     process.exit(1);
+
   });
