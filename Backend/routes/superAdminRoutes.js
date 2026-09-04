@@ -1,7 +1,6 @@
 import express from "express";
 
 import authMiddleware from "../middleware/authMiddleware.js";
-
 import superAdminMiddleware from "../middleware/superAdminMiddleware.js";
 
 import {
@@ -12,22 +11,18 @@ import {
   updateClientStatus,
   deleteClient,
   getSuperAdminSummary,
+  getSuperAdminUsers,
 } from "../controllers/superAdminController.js";
 
-const router =
-  express.Router();
+const router = express.Router();
 
 /* =====================================================
    SECURITY
 ===================================================== */
 
-router.use(
-  authMiddleware
-);
+router.use(authMiddleware);
 
-router.use(
-  superAdminMiddleware
-);
+router.use(superAdminMiddleware);
 
 /* =====================================================
    SUMMARY
@@ -36,6 +31,15 @@ router.use(
 router.get(
   "/summary",
   getSuperAdminSummary
+);
+
+/* =====================================================
+   USERS
+===================================================== */
+
+router.get(
+  "/users",
+  getSuperAdminUsers
 );
 
 /* =====================================================
