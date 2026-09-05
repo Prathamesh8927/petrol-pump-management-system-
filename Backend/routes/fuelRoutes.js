@@ -10,7 +10,7 @@ import {
   getFuelPurchases,
   setFuelPrice,
   getFuelPrice,
-} from "../controllers/fuelController.js";
+} from "../controllers/FuelController.js";
 
 const router = express.Router();
 
