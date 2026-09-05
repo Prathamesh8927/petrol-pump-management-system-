@@ -20,10 +20,16 @@ const registrationRequestSchema =
         trim: true,
       },
 
+      /*
+       * IMPORTANT:
+       * This field contains a bcrypt HASH.
+       * Plaintext passwords must NEVER be stored.
+       */
       password: {
         type: String,
         required: true,
         minlength: 6,
+        select: false,
       },
 
       phone: {
@@ -167,7 +173,7 @@ const registrationRequestSchema =
   );
 
 /* =====================================================
-   INDEX
+   INDEXES
 ===================================================== */
 
 registrationRequestSchema.index({

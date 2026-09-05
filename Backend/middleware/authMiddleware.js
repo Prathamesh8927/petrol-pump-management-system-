@@ -1,6 +1,20 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
+/* =====================================================
+   AUTHENTICATION MIDDLEWARE
+
+   Security rules:
+   1. JWT must be valid.
+   2. User is always loaded from MongoDB.
+   3. Current database role is trusted.
+   4. Current database pumpId is trusted.
+   5. Old JWT pumpId values are NEVER trusted.
+   6. Inactive users are blocked.
+   7. Client users must have a valid pumpId.
+   8. Superadmin does not require pumpId.
+===================================================== */
+
 const authMiddleware = async (
   req,
   res,
@@ -35,25 +49,60 @@ const authMiddleware = async (
     if (!token) {
       return res.status(401).json({
         success: false,
-        message: "Authentication token missing",
+        message:
+          "Authentication token missing",
         code: "NO_TOKEN",
       });
     }
 
     /* =================================================
-       VERIFY TOKEN
+       JWT SECRET
     ================================================= */
 
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET
-    );
+    const secret =
+      process.env.JWT_SECRET;
+
+    if (
+      !secret ||
+      secret.trim().length < 32
+    ) {
+      console.error(
+        "AUTH MIDDLEWARE: JWT_SECRET is missing or too weak"
+      );
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Authentication configuration error",
+        code: "AUTH_CONFIG_ERROR",
+      });
+    }
+
+    /* =================================================
+       VERIFY TOKEN
+
+       HS256 is explicitly required.
+    ================================================= */
+
+    const decoded =
+      jwt.verify(
+        token,
+        secret,
+        {
+          algorithms: ["HS256"],
+        }
+      );
 
     /* =================================================
        GET USER ID
 
        New tokens use userId.
-       id is kept as fallback for older tokens.
+
+       id is retained only for compatibility with
+       older tokens.
+
+       IMPORTANT:
+       pumpId is intentionally NOT read from JWT.
     ================================================= */
 
     const userId =
@@ -63,23 +112,32 @@ const authMiddleware = async (
     if (!userId) {
       return res.status(401).json({
         success: false,
-        message: "Invalid authentication token",
+        message:
+          "Invalid authentication token",
         code: "INVALID_TOKEN",
       });
     }
 
     /* =================================================
-       FIND USER
+       LOAD CURRENT USER FROM DATABASE
+
+       This guarantees that current role,
+       pumpId and active status come from MongoDB.
+
+       Password is not required here.
     ================================================= */
 
     const user =
       await User.findById(userId)
-        .select("-password");
+        .select(
+          "_id name email role pumpId active"
+        );
 
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: "User account not found",
+        message:
+          "User account not found",
         code: "USER_NOT_FOUND",
       });
     }
@@ -88,7 +146,7 @@ const authMiddleware = async (
        ACCOUNT STATUS
     ================================================= */
 
-    if (user.active === false) {
+    if (user.active !== true) {
       return res.status(403).json({
         success: false,
         message:
@@ -98,25 +156,78 @@ const authMiddleware = async (
     }
 
     /* =================================================
-       ATTACH USER
+       NORMALIZE ROLE
     ================================================= */
 
-    req.user = user;
+    const role =
+      String(
+        user.role || ""
+      )
+        .trim()
+        .toLowerCase();
 
     /* =================================================
-       OPTIONAL TOKEN FALLBACK
+       ROLE VALIDATION
+    ================================================= */
 
-       Keeps compatibility with old tokens
-       containing pumpId.
+    const allowedRoles = [
+      "superadmin",
+      "owner",
+      "manager",
+      "staff",
+    ];
+
+    if (
+      !allowedRoles.includes(role)
+    ) {
+      console.error(
+        `AUTH SECURITY: Invalid role "${user.role}" for user ${user._id}`
+      );
+
+      return res.status(403).json({
+        success: false,
+        message:
+          "Invalid account role",
+        code: "INVALID_ROLE",
+      });
+    }
+
+    /* =================================================
+       CLIENT PUMP VALIDATION
+
+       Only Superadmin can exist without pumpId.
+
+       Owner / Manager / Staff MUST have pumpId.
+
+       IMPORTANT:
+       We do NOT use decoded.pumpId as a fallback.
     ================================================= */
 
     if (
-      !req.user.pumpId &&
-      decoded.pumpId
+      role !== "superadmin" &&
+      !user.pumpId
     ) {
-      req.user.pumpId =
-        decoded.pumpId;
+      console.error(
+        `AUTH SECURITY: Client user ${user._id} has no pumpId`
+      );
+
+      return res.status(403).json({
+        success: false,
+        message:
+          "Your account is not correctly configured. Please contact Super Admin.",
+        code:
+          "ACCOUNT_CONFIGURATION_ERROR",
+      });
     }
+
+    /* =================================================
+       ATTACH DATABASE USER
+
+       req.user.pumpId now comes exclusively from
+       MongoDB.
+    ================================================= */
+
+    req.user = user;
 
     /* =================================================
        CONTINUE
@@ -167,6 +278,26 @@ const authMiddleware = async (
     }
 
     /* =================================================
+       INVALID USER ID / MONGOOSE ERROR
+    ================================================= */
+
+    if (
+      error.name ===
+      "CastError"
+    ) {
+      console.error(
+        "AUTH MIDDLEWARE: Invalid user ID"
+      );
+
+      return res.status(401).json({
+        success: false,
+        message:
+          "Invalid authentication token",
+        code: "INVALID_TOKEN",
+      });
+    }
+
+    /* =================================================
        OTHER ERROR
     ================================================= */
 
@@ -179,6 +310,7 @@ const authMiddleware = async (
       success: false,
       message:
         "Authentication error",
+      code: "AUTH_ERROR",
     });
   }
 };

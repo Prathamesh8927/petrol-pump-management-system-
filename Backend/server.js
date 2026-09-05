@@ -20,41 +20,104 @@ import settingsRoutes from "./routes/settingsRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import dailyClosingRoutes from "./routes/dailyClosingRoutes.js";
 import auditRoutes from "./routes/auditRoutes.js";
+import passwordResetRoutes from "./routes/passwordResetRoutes.js";
 
 /* =====================================================
-   PASSWORD RECOVERY
+   ENVIRONMENT
 ===================================================== */
-
-import passwordResetRoutes
-  from "./routes/passwordResetRoutes.js";
-
 
 dotenv.config();
 
-const app = express();
+/* =====================================================
+   SECURITY CONFIGURATION
+===================================================== */
 
+const JWT_SECRET =
+  process.env.JWT_SECRET;
+
+if (
+  !JWT_SECRET ||
+  JWT_SECRET.trim().length < 32
+) {
+  console.error(
+    "===================================================="
+  );
+
+  console.error(
+    "FATAL ERROR: JWT_SECRET is missing or too weak."
+  );
+
+  console.error(
+    "JWT_SECRET must contain at least 32 characters."
+  );
+
+  console.error(
+    "===================================================="
+  );
+
+  process.exit(1);
+}
+
+/* =====================================================
+   APP
+===================================================== */
+
+const app =
+  express();
 
 /* =====================================================
    CORS
 ===================================================== */
 
-const allowedOrigins = [
+const defaultOrigins = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
 ];
 
+const environmentOrigins =
+  process.env.CLIENT_URL
+    ? process.env.CLIENT_URL
+        .split(",")
+        .map((origin) =>
+          origin.trim()
+        )
+        .filter(Boolean)
+    : [];
+
+const allowedOrigins = [
+  ...new Set([
+    ...defaultOrigins,
+    ...environmentOrigins,
+  ]),
+];
+
 app.use(
   cors({
-    origin: (origin, callback) => {
+    origin: (
+      origin,
+      callback
+    ) => {
+      /*
+       * Allow requests without Origin
+       * such as Postman/server-to-server.
+       */
 
-      // Allow requests without an Origin header
-      // such as Postman or server-to-server requests.
       if (!origin) {
-        return callback(null, true);
+        return callback(
+          null,
+          true
+        );
       }
 
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
+      if (
+        allowedOrigins.includes(
+          origin
+        )
+      ) {
+        return callback(
+          null,
+          true
+        );
       }
 
       console.log(
@@ -89,21 +152,22 @@ app.use(
   })
 );
 
-
 /* =====================================================
    BODY PARSERS
 ===================================================== */
 
 app.use(
-  express.json()
+  express.json({
+    limit: "1mb",
+  })
 );
 
 app.use(
   express.urlencoded({
     extended: true,
+    limit: "1mb",
   })
 );
-
 
 /* =====================================================
    REQUEST LOGGER
@@ -111,7 +175,6 @@ app.use(
 
 app.use(
   (req, res, next) => {
-
     console.log(
       `${req.method} ${req.originalUrl}`
     );
@@ -120,7 +183,6 @@ app.use(
   }
 );
 
-
 /* =====================================================
    BASIC ROUTES
 ===================================================== */
@@ -128,68 +190,64 @@ app.use(
 app.get(
   "/",
   (req, res) => {
-
     res.status(200).json({
       success: true,
       message:
         "Petrol Pump Management API is running",
     });
-
   }
 );
-
 
 app.get(
   "/api/health",
   (req, res) => {
-
     res.status(200).json({
       success: true,
       message:
         "Backend is healthy",
     });
-
   }
 );
 
-
 /* =====================================================
-   API ROUTES
+   AUTH
 ===================================================== */
-
-/* ---------------- AUTH ---------------- */
 
 app.use(
   "/api/auth",
   authRoutes
 );
 
-
-/* ---------------- FUEL ---------------- */
+/* =====================================================
+   FUEL
+===================================================== */
 
 app.use(
   "/api/fuel",
   fuelRoutes
 );
 
-
-/* ---------------- SALES ---------------- */
+/* =====================================================
+   SALES
+===================================================== */
 
 app.use(
   "/api/sales",
   salesRoutes
 );
 
-
-/* ---------------- SUPER ADMIN ---------------- */
+/* =====================================================
+   SUPER ADMIN
+===================================================== */
 
 app.use(
   "/api/superadmin",
   superAdminRoutes
 );
 
-
-/* ---------------- NOZZLES ---------------- */
+/* =====================================================
+   NOZZLES
+===================================================== */
 
 app.use(
   "/api/nozzles",
@@ -201,62 +259,68 @@ app.use(
   nozzleRoutes
 );
 
-
-/* ---------------- EXPENSES ---------------- */
+/* =====================================================
+   EXPENSES
+===================================================== */
 
 app.use(
   "/api/expenses",
   expenseRoutes
 );
 
-
-/* ---------------- LEDGER ---------------- */
+/* =====================================================
+   LEDGER
+===================================================== */
 
 app.use(
   "/api/ledger",
   ledgerRoutes
 );
 
-
-/* ---------------- REPORTS ---------------- */
+/* =====================================================
+   REPORTS
+===================================================== */
 
 app.use(
   "/api/reports",
   reportRoutes
 );
 
-
-/* ---------------- SETTINGS ---------------- */
+/* =====================================================
+   SETTINGS
+===================================================== */
 
 app.use(
   "/api/settings",
   settingsRoutes
 );
 
-
-/* ---------------- DASHBOARD ---------------- */
+/* =====================================================
+   DASHBOARD
+===================================================== */
 
 app.use(
   "/api/dashboard",
   dashboardRoutes
 );
 
-
-/* ---------------- DAILY CLOSING ---------------- */
+/* =====================================================
+   DAILY CLOSING
+===================================================== */
 
 app.use(
   "/api/daily-closing",
   dailyClosingRoutes
 );
 
-
-/* ---------------- AUDIT ---------------- */
+/* =====================================================
+   AUDIT
+===================================================== */
 
 app.use(
   "/api/audit",
   auditRoutes
 );
-
 
 /* =====================================================
    PASSWORD RESET
@@ -267,31 +331,31 @@ app.use(
   passwordResetRoutes
 );
 
-
 /* =====================================================
-   404 HANDLER
+   404
 ===================================================== */
 
 app.use(
   (req, res) => {
-
     res.status(404).json({
       success: false,
       message:
         `Route not found: ${req.method} ${req.originalUrl}`,
     });
-
   }
 );
-
 
 /* =====================================================
    GLOBAL ERROR HANDLER
 ===================================================== */
 
 app.use(
-  (error, req, res, next) => {
-
+  (
+    error,
+    req,
+    res,
+    next
+  ) => {
     console.error(
       "SERVER ERROR:",
       error
@@ -306,29 +370,39 @@ app.use(
         "CORS origin not allowed"
       )
     ) {
-
       return res.status(403).json({
         success: false,
-        message: error.message,
+        message:
+          "Request origin is not allowed.",
       });
-
     }
 
+    /* -----------------------------------------------
+       JSON BODY ERROR
+    ------------------------------------------------ */
+
+    if (
+      error.type ===
+      "entity.parse.failed"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid JSON request.",
+      });
+    }
 
     /* -----------------------------------------------
-       GENERAL SERVER ERROR
+       GENERAL ERROR
     ------------------------------------------------ */
 
     return res.status(500).json({
       success: false,
       message:
-        error.message ||
         "Internal server error",
     });
-
   }
 );
-
 
 /* =====================================================
    START SERVER
@@ -337,14 +411,11 @@ app.use(
 const PORT =
   process.env.PORT || 8080;
 
-
 connectDB()
   .then(() => {
-
     app.listen(
       PORT,
       () => {
-
         console.log(
           "===================================="
         );
@@ -354,20 +425,20 @@ connectDB()
         );
 
         console.log(
-          "===================================="
+          "JWT security: ENABLED"
         );
 
+        console.log(
+          "===================================="
+        );
       }
     );
-
   })
   .catch((error) => {
-
     console.error(
       "Database connection failed:",
       error
     );
 
     process.exit(1);
-
   });

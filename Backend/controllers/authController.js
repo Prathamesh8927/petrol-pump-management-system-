@@ -1,6 +1,24 @@
 import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
+
 import User from "../models/User.js";
 import RegistrationRequest from "../models/RegistrationRequest.js";
+
+/* ======================================================
+   JWT CONFIGURATION
+====================================================== */
+
+const getJwtSecret = () => {
+  const secret = process.env.JWT_SECRET;
+
+  if (!secret || secret.trim().length < 32) {
+    throw new Error(
+      "JWT_SECRET is missing or too weak. JWT_SECRET must contain at least 32 characters."
+    );
+  }
+
+  return secret;
+};
 
 /* ======================================================
    GENERATE JWT
@@ -11,9 +29,9 @@ const generateToken = (userId) => {
     {
       userId: userId.toString(),
     },
-    process.env.JWT_SECRET,
+    getJwtSecret(),
     {
-      expiresIn: "7d",
+      expiresIn: process.env.JWT_EXPIRES_IN || "7d",
     }
   );
 };
@@ -26,7 +44,16 @@ export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password) {
+    /* -----------------------------------------------
+       VALIDATION
+    ------------------------------------------------ */
+
+    if (
+      typeof email !== "string" ||
+      typeof password !== "string" ||
+      !email.trim() ||
+      !password
+    ) {
       return res.status(400).json({
         success: false,
         message: "Email and password are required",
@@ -35,12 +62,23 @@ export const login = async (req, res) => {
 
     const normalizedEmail = email.trim().toLowerCase();
 
+    /* -----------------------------------------------
+       FIND USER
+
+       IMPORTANT:
+       User.password has select:false in User.js.
+       Therefore +password is required here so that
+       matchPassword() can compare the entered password.
+    ------------------------------------------------ */
+
     const user = await User.findOne({
       email: normalizedEmail,
-    }).populate(
-      "pumpId",
-      "pumpName ownerName phone email active"
-    );
+    })
+      .select("+password")
+      .populate(
+        "pumpId",
+        "pumpName ownerName phone email active"
+      );
 
     /* -----------------------------------------------
        USER NOT FOUND
@@ -91,7 +129,7 @@ export const login = async (req, res) => {
        ACCOUNT STATUS
     ------------------------------------------------ */
 
-    if (user.active === false) {
+    if (user.active !== true) {
       return res.status(403).json({
         success: false,
         code: "ACCOUNT_DISABLED",
@@ -101,7 +139,32 @@ export const login = async (req, res) => {
     }
 
     /* -----------------------------------------------
+       SUPERADMIN / CLIENT VALIDATION
+
+       Superadmin does not require pumpId.
+       All client users must have pumpId.
+    ------------------------------------------------ */
+
+    if (
+      user.role !== "superadmin" &&
+      !user.pumpId
+    ) {
+      console.error(
+        `AUTH SECURITY: User ${user._id} has role ${user.role} but no pumpId`
+      );
+
+      return res.status(403).json({
+        success: false,
+        code: "ACCOUNT_CONFIGURATION_ERROR",
+        message:
+          "Your account is not correctly configured. Please contact Super Admin.",
+      });
+    }
+
+    /* -----------------------------------------------
        PASSWORD
+
+       Password is explicitly selected above.
     ------------------------------------------------ */
 
     const passwordMatched =
@@ -111,6 +174,24 @@ export const login = async (req, res) => {
       return res.status(401).json({
         success: false,
         message: "Invalid email or password",
+      });
+    }
+
+    /* -----------------------------------------------
+       PUMP STATUS
+
+       Superadmin does NOT have a pump.
+    ------------------------------------------------ */
+
+    if (
+      user.role !== "superadmin" &&
+      user.pumpId?.active === false
+    ) {
+      return res.status(403).json({
+        success: false,
+        code: "PUMP_DISABLED",
+        message:
+          "This petrol pump account is currently disabled. Please contact Super Admin.",
       });
     }
 
@@ -134,7 +215,7 @@ export const login = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        pumpId: user.pumpId,
+        pumpId: user.pumpId || null,
         active: user.active,
       },
     });
@@ -151,6 +232,9 @@ export const login = async (req, res) => {
 /* ======================================================
    REGISTER
    PUBLIC REGISTRATION REQUEST
+
+   IMPORTANT:
+   Password is NEVER stored as plaintext.
 ====================================================== */
 
 export const register = async (req, res) => {
@@ -175,15 +259,15 @@ export const register = async (req, res) => {
     } = req.body;
 
     /* -----------------------------------------------
-       VALIDATION
+       BASIC VALIDATION
     ------------------------------------------------ */
 
     if (
-      !name ||
-      !email ||
-      !password ||
-      !phone ||
-      !pumpName
+      typeof name !== "string" ||
+      typeof email !== "string" ||
+      typeof password !== "string" ||
+      typeof phone !== "string" ||
+      typeof pumpName !== "string"
     ) {
       return res.status(400).json({
         success: false,
@@ -192,14 +276,57 @@ export const register = async (req, res) => {
       });
     }
 
+    const cleanName = name.trim();
     const normalizedEmail =
       email.trim().toLowerCase();
+    const cleanPhone = phone.trim();
+    const cleanPumpName = pumpName.trim();
+
+    if (
+      !cleanName ||
+      !normalizedEmail ||
+      !password ||
+      !cleanPhone ||
+      !cleanPumpName
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Name, email, password, phone and pump name are required.",
+      });
+    }
+
+    /* -----------------------------------------------
+       PASSWORD VALIDATION
+    ------------------------------------------------ */
 
     if (password.length < 6) {
       return res.status(400).json({
         success: false,
         message:
           "Password must contain at least 6 characters.",
+      });
+    }
+
+    if (password.length > 128) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Password cannot contain more than 128 characters.",
+      });
+    }
+
+    /* -----------------------------------------------
+       EMAIL BASIC VALIDATION
+    ------------------------------------------------ */
+
+    const emailRegex =
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailRegex.test(normalizedEmail)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid email address.",
       });
     }
 
@@ -241,48 +368,78 @@ export const register = async (req, res) => {
     }
 
     /* -----------------------------------------------
+       HASH PASSWORD
+
+       NEVER store plaintext password.
+    ------------------------------------------------ */
+
+    const passwordHash =
+      await bcrypt.hash(password, 12);
+
+    /* -----------------------------------------------
        CREATE REGISTRATION REQUEST
-       
-       IMPORTANT:
-       RegistrationRequest schema uses ownerName,
-       NOT name.
+
+       Password field contains ONLY bcrypt hash.
+
+       This keeps compatibility with the existing
+       Superadmin approval flow which can pass
+       request.password into User.create().
+
+       User.js is also protected against double hashing.
     ------------------------------------------------ */
 
     const request =
       await RegistrationRequest.create({
-        ownerName: name.trim(),
+        ownerName: cleanName,
 
         email: normalizedEmail,
 
-        password,
+        password: passwordHash,
 
-        phone: phone.trim(),
+        phone: cleanPhone,
 
-        pumpName: pumpName.trim(),
+        pumpName: cleanPumpName,
 
         companyName:
-          companyName?.trim() || "",
+          typeof companyName === "string"
+            ? companyName.trim()
+            : "",
 
         dealerCode:
-          dealerCode?.trim() || "",
+          typeof dealerCode === "string"
+            ? dealerCode.trim()
+            : "",
 
         gstin:
-          gstin?.trim() || "",
+          typeof gstin === "string"
+            ? gstin.trim()
+            : "",
 
         address:
-          address?.trim() || "",
+          typeof address === "string"
+            ? address.trim()
+            : "",
 
         city:
-          city?.trim() || "",
+          typeof city === "string"
+            ? city.trim()
+            : "",
 
         state:
-          state?.trim() || "",
+          typeof state === "string"
+            ? state.trim()
+            : "",
 
         pincode:
-          pincode?.trim() || "",
+          typeof pincode === "string"
+            ? pincode.trim()
+            : "",
 
         plan:
-          plan?.trim() || "standard",
+          typeof plan === "string" &&
+          plan.trim()
+            ? plan.trim()
+            : "standard",
 
         status: "pending",
       });
@@ -376,6 +533,15 @@ export const getMe = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: "User not found",
+      });
+    }
+
+    if (user.active !== true) {
+      return res.status(403).json({
+        success: false,
+        code: "ACCOUNT_INACTIVE",
+        message:
+          "Your account is inactive.",
       });
     }
 

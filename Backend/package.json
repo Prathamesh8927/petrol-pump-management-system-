@@ -10,7 +10,9 @@
     "start": "nodemon server.js",
     "dev": "nodemon server.js",
     "create-superadmin": "node scripts/createSuperAdmin.js",
-    "add-existing-client": "node scripts/addExistingPumpAsClient.js"
+    "add-existing-client": "node scripts/addExistingPumpAsClient.js",
+     "backup": "node scripts/backupDatabase.js",
+  "restore": "node scripts/restoreDatabase.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

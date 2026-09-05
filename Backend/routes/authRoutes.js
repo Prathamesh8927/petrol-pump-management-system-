@@ -8,15 +8,39 @@ import {
 
 import authMiddleware from "../middleware/authMiddleware.js";
 
-const router = express.Router();
+import loginRateLimiter from "../middleware/loginRateLimiter.js";
 
-// Login
-router.post("/login", login);
+const router =
+  express.Router();
 
-// Public registration request
-router.post("/register", register);
+/* =====================================================
+   LOGIN
+===================================================== */
 
-// Logged-in user
-router.get("/me", authMiddleware, getMe);
+router.post(
+  "/login",
+  loginRateLimiter,
+  login
+);
+
+/* =====================================================
+   PUBLIC REGISTRATION
+===================================================== */
+
+router.post(
+  "/register",
+  loginRateLimiter,
+  register
+);
+
+/* =====================================================
+   CURRENT USER
+===================================================== */
+
+router.get(
+  "/me",
+  authMiddleware,
+  getMe
+);
 
 export default router;

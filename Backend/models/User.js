@@ -22,6 +22,7 @@ const userSchema =
         type: String,
         required: true,
         minlength: 6,
+        select: false,
       },
 
       role: {
@@ -36,8 +37,8 @@ const userSchema =
       },
 
       pumpId: {
-        type: mongoose.Schema.Types
-          .ObjectId,
+        type:
+          mongoose.Schema.Types.ObjectId,
         ref: "Pump",
         required: function () {
           return (
@@ -57,45 +58,99 @@ const userSchema =
     }
   );
 
-/* HASH PASSWORD */
+/* =====================================================
+   DETECT BCRYPT HASH
+===================================================== */
+
+const isBcryptHash = (value) => {
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  return /^\$2[aby]\$\d{2}\$/.test(
+    value
+  );
+};
+
+/* =====================================================
+   HASH PASSWORD
+===================================================== */
 
 userSchema.pre(
   "save",
-  async function () {
-    if (
-      !this.isModified(
-        "password"
-      )
-    ) {
-      return;
+  async function (next) {
+    try {
+      if (
+        !this.isModified(
+          "password"
+        )
+      ) {
+        return next();
+      }
+
+      /*
+       * IMPORTANT:
+       * RegistrationRequest already stores
+       * a bcrypt hash.
+       *
+       * This prevents double hashing when
+       * Superadmin approves a request.
+       */
+
+      if (
+        isBcryptHash(
+          this.password
+        )
+      ) {
+        return next();
+      }
+
+      const salt =
+        await bcrypt.genSalt(12);
+
+      this.password =
+        await bcrypt.hash(
+          this.password,
+          salt
+        );
+
+      next();
+    } catch (error) {
+      next(error);
     }
-
-    const salt =
-      await bcrypt.genSalt(10);
-
-    this.password =
-      await bcrypt.hash(
-        this.password,
-        salt
-      );
   }
 );
 
-/* CHECK PASSWORD */
+/* =====================================================
+   CHECK PASSWORD
+===================================================== */
 
 userSchema.methods.matchPassword =
   async function (
     enteredPassword
   ) {
+    if (
+      !this.password ||
+      !enteredPassword
+    ) {
+      return false;
+    }
+
     return bcrypt.compare(
       enteredPassword,
       this.password
     );
   };
 
-const User = mongoose.model(
-  "User",
-  userSchema
-);
+/* =====================================================
+   MODEL
+===================================================== */
+
+const User =
+  mongoose.models.User ||
+  mongoose.model(
+    "User",
+    userSchema
+  );
 
 export default User;
