@@ -11,6 +11,7 @@ const registrationRequestSchema =
         type: String,
         required: true,
         trim: true,
+        maxlength: 100,
       },
 
       email: {
@@ -18,17 +19,34 @@ const registrationRequestSchema =
         required: true,
         lowercase: true,
         trim: true,
+        maxlength: 254,
+
+        validate: {
+          validator: (value) =>
+            /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+              value
+            ),
+
+          message:
+            "Please provide a valid email address",
+        },
       },
 
       /*
        * IMPORTANT:
        * This field contains a bcrypt HASH.
        * Plaintext passwords must NEVER be stored.
+       *
+       * The registration controller is responsible
+       * for hashing the plaintext password before
+       * creating this document.
        */
+
       password: {
         type: String,
         required: true,
         minlength: 6,
+        maxlength: 200,
         select: false,
       },
 
@@ -36,6 +54,7 @@ const registrationRequestSchema =
         type: String,
         default: "",
         trim: true,
+        maxlength: 20,
       },
 
       /* ===============================================
@@ -46,48 +65,57 @@ const registrationRequestSchema =
         type: String,
         required: true,
         trim: true,
+        maxlength: 150,
       },
 
       companyName: {
         type: String,
         default: "",
         trim: true,
+        maxlength: 150,
       },
 
       dealerCode: {
         type: String,
         default: "",
         trim: true,
+        maxlength: 100,
       },
 
       gstin: {
         type: String,
         default: "",
         trim: true,
+        uppercase: true,
+        maxlength: 20,
       },
 
       address: {
         type: String,
         default: "",
         trim: true,
+        maxlength: 500,
       },
 
       city: {
         type: String,
         default: "",
         trim: true,
+        maxlength: 100,
       },
 
       state: {
         type: String,
         default: "",
         trim: true,
+        maxlength: 100,
       },
 
       pincode: {
         type: String,
         default: "",
         trim: true,
+        maxlength: 10,
       },
 
       /* ===============================================
@@ -98,12 +126,18 @@ const registrationRequestSchema =
         type: String,
         default: "standard",
         trim: true,
+        enum: [
+          "standard",
+          "premium",
+          "enterprise",
+        ],
       },
 
       notes: {
         type: String,
         default: "",
         trim: true,
+        maxlength: 1000,
       },
 
       /* ===============================================
@@ -143,6 +177,7 @@ const registrationRequestSchema =
         type: String,
         default: "",
         trim: true,
+        maxlength: 1000,
       },
 
       /* ===============================================
@@ -176,10 +211,27 @@ const registrationRequestSchema =
    INDEXES
 ===================================================== */
 
+/*
+ * Helps find requests by email and status.
+ */
+
 registrationRequestSchema.index({
   email: 1,
   status: 1,
 });
+
+/*
+ * Helps super-admin request listing.
+ */
+
+registrationRequestSchema.index({
+  status: 1,
+  createdAt: -1,
+});
+
+/*
+ * Helps newest-first queries.
+ */
 
 registrationRequestSchema.index({
   createdAt: -1,

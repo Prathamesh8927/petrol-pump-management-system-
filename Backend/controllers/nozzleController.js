@@ -37,9 +37,7 @@ const getLocalDate = () => {
 };
 
 const normalizeFuelType = (value) => {
-  const fuel = String(
-    value || ""
-  )
+  const fuel = String(value || "")
     .trim()
     .toLowerCase();
 
@@ -57,6 +55,17 @@ const normalizeFuelType = (value) => {
   return fuel;
 };
 
+const isValidDateString = (value) =>
+  /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+const isValidPaymentMethod = (value) =>
+  [
+    "cash",
+    "upi",
+    "card",
+    "credit",
+  ].includes(value);
+
 /* =====================================================
    GET NOZZLES
 ===================================================== */
@@ -66,11 +75,10 @@ export const getNozzles = async (
   res
 ) => {
   try {
-    const pumpId =
-      getPumpId(req);
+    const pumpId = getPumpId(req);
 
     if (!pumpId) {
-      return res.status(400).json({
+      return res.status(403).json({
         success: false,
         message:
           "Pump information not found",
@@ -85,19 +93,17 @@ export const getNozzles = async (
       });
 
     const normalizedNozzles =
-      nozzles.map(
-        (nozzle) => {
-          const item =
-            nozzle.toObject();
+      nozzles.map((nozzle) => {
+        const item =
+          nozzle.toObject();
 
-          item.fuelType =
-            normalizeFuelType(
-              item.fuelType
-            );
+        item.fuelType =
+          normalizeFuelType(
+            item.fuelType
+          );
 
-          return item;
-        }
-      );
+        return item;
+      });
 
     return res.status(200).json({
       success: true,
@@ -116,8 +122,6 @@ export const getNozzles = async (
       success: false,
       message:
         "Unable to load nozzles",
-      error:
-        error.message,
     });
   }
 };
@@ -131,11 +135,10 @@ export const addNozzle = async (
   res
 ) => {
   try {
-    const pumpId =
-      getPumpId(req);
+    const pumpId = getPumpId(req);
 
     if (!pumpId) {
-      return res.status(400).json({
+      return res.status(403).json({
         success: false,
         message:
           "Pump information not found",
@@ -149,7 +152,8 @@ export const addNozzle = async (
       fuelType,
       currentReading,
       openingReading,
-    } = req.body;
+      status,
+    } = req.body || {};
 
     const cleanNumber =
       String(
@@ -202,43 +206,58 @@ export const addNozzle = async (
       });
     }
 
-    const duplicate =
-      await Nozzle.findOne({
-        pumpId,
-        nozzleNumber:
-          cleanNumber,
-      });
+    const cleanName =
+      String(
+        name ||
+          machineName ||
+          ""
+      ).trim();
 
-    if (duplicate) {
-      return res.status(409).json({
+    let normalizedStatus =
+      status === undefined
+        ? "active"
+        : String(status)
+            .trim()
+            .toLowerCase();
+
+    if (
+      ![
+        "active",
+        "inactive",
+      ].includes(
+        normalizedStatus
+      )
+    ) {
+      return res.status(400).json({
         success: false,
         message:
-          "Nozzle number already exists",
+          "Invalid nozzle status",
       });
     }
+
+    /*
+      Unique index also protects against
+      concurrent duplicate creation.
+    */
 
     const nozzle =
       await Nozzle.create({
         pumpId,
+
         nozzleNumber:
           cleanNumber,
+
         name:
-          String(
-            name || ""
-          ).trim(),
-        machineName:
-          String(
-            machineName ||
-              name ||
-              ""
-          ).trim(),
+          cleanName,
+
         fuelType:
           fuel,
+
         currentReading:
           initialReading,
-        active: true,
-        createdBy:
-          getUserId(req),
+
+        status:
+          normalizedStatus,
       });
 
     return res.status(201).json({
@@ -253,12 +272,20 @@ export const addNozzle = async (
       error
     );
 
+    if (
+      error?.code === 11000
+    ) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Nozzle number already exists",
+      });
+    }
+
     return res.status(500).json({
       success: false,
       message:
         "Unable to add nozzle",
-      error:
-        error.message,
     });
   }
 };
@@ -272,12 +299,16 @@ export const updateNozzle = async (
   res
 ) => {
   try {
-    const pumpId =
-      getPumpId(req);
+    const pumpId = getPumpId(req);
+    const { id } = req.params;
 
-    const {
-      id,
-    } = req.params;
+    if (!pumpId) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Pump information not found",
+      });
+    }
 
     if (
       !mongoose.Types.ObjectId.isValid(
@@ -310,38 +341,89 @@ export const updateNozzle = async (
       name,
       machineName,
       fuelType,
+
+      /*
+        Support old frontend field name
+        while storing the correct model field.
+      */
       active,
-    } = req.body;
+
+      /*
+        Correct field according to Nozzle model.
+      */
+      status,
+    } = req.body || {};
+
+    /* =====================================
+       NOZZLE NUMBER
+    ===================================== */
 
     if (
       nozzleNumber !==
       undefined
     ) {
-      nozzle.nozzleNumber =
+      const cleanNumber =
         String(
           nozzleNumber
         ).trim();
+
+      if (!cleanNumber) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Nozzle number is required",
+        });
+      }
+
+      if (
+        cleanNumber !==
+        nozzle.nozzleNumber
+      ) {
+        const duplicate =
+          await Nozzle.findOne({
+            pumpId,
+            nozzleNumber:
+              cleanNumber,
+            _id: {
+              $ne: nozzle._id,
+            },
+          });
+
+        if (duplicate) {
+          return res.status(409).json({
+            success: false,
+            message:
+              "Nozzle number already exists",
+          });
+        }
+      }
+
+      nozzle.nozzleNumber =
+        cleanNumber;
     }
 
+    /* =====================================
+       NAME
+    ===================================== */
+
     if (
-      name !==
-      undefined
+      name !== undefined ||
+      machineName !== undefined
     ) {
+      const value =
+        name !== undefined
+          ? name
+          : machineName;
+
       nozzle.name =
         String(
-          name || ""
+          value || ""
         ).trim();
     }
 
-    if (
-      machineName !==
-      undefined
-    ) {
-      nozzle.machineName =
-        String(
-          machineName || ""
-        ).trim();
-    }
+    /* =====================================
+       FUEL TYPE
+    ===================================== */
 
     if (
       fuelType !==
@@ -367,16 +449,87 @@ export const updateNozzle = async (
         });
       }
 
-      nozzle.fuelType =
-        normalizedFuel;
+      /*
+        Changing a nozzle's fuel type after
+        historical readings exist can make
+        the history confusing.
+
+        Therefore, reject the change when
+        historical readings exist.
+      */
+
+      if (
+        normalizedFuel !==
+        nozzle.fuelType
+      ) {
+        const historicalReading =
+          await NozzleReading.exists({
+            pumpId,
+            nozzleId:
+              nozzle._id,
+          });
+
+        if (historicalReading) {
+          return res.status(409).json({
+            success: false,
+            message:
+              "Fuel type cannot be changed because this nozzle has historical readings.",
+          });
+        }
+
+        nozzle.fuelType =
+          normalizedFuel;
+      }
+    }
+
+    /* =====================================
+       STATUS
+    ===================================== */
+
+    let normalizedStatus =
+      status !== undefined
+        ? String(status)
+            .trim()
+            .toLowerCase()
+        : null;
+
+    /*
+      Backward compatibility:
+      old frontend may send active=true/false.
+    */
+
+    if (
+      normalizedStatus === null &&
+      active !== undefined
+    ) {
+      normalizedStatus =
+        active === true ||
+        active === "true"
+          ? "active"
+          : "inactive";
     }
 
     if (
-      active !==
-      undefined
+      normalizedStatus !==
+      null
     ) {
-      nozzle.active =
-        Boolean(active);
+      if (
+        ![
+          "active",
+          "inactive",
+        ].includes(
+          normalizedStatus
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid nozzle status",
+        });
+      }
+
+      nozzle.status =
+        normalizedStatus;
     }
 
     await nozzle.save();
@@ -393,12 +546,20 @@ export const updateNozzle = async (
       error
     );
 
+    if (
+      error?.code === 11000
+    ) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Nozzle number already exists",
+      });
+    }
+
     return res.status(500).json({
       success: false,
       message:
         "Unable to update nozzle",
-      error:
-        error.message,
     });
   }
 };
@@ -412,20 +573,74 @@ export const deleteNozzle = async (
   res
 ) => {
   try {
-    const pumpId =
-      getPumpId(req);
+    const pumpId = getPumpId(req);
+    const { id } = req.params;
 
-    const {
-      id,
-    } = req.params;
+    if (!pumpId) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Pump information not found",
+      });
+    }
+
+    if (
+      !mongoose.Types.ObjectId.isValid(
+        id
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid nozzle ID",
+      });
+    }
 
     const nozzle =
-      await Nozzle.findOneAndDelete({
+      await Nozzle.findOne({
         _id: id,
         pumpId,
       });
 
     if (!nozzle) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Nozzle not found",
+      });
+    }
+
+    /*
+      Never physically delete a nozzle that
+      already has historical readings.
+
+      Otherwise NozzleReading.nozzleId and
+      Sale.nozzleId would point to a deleted
+      document.
+    */
+
+    const hasReadings =
+      await NozzleReading.exists({
+        pumpId,
+        nozzleId:
+          nozzle._id,
+      });
+
+    if (hasReadings) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "This nozzle has historical readings and cannot be deleted. Set it to inactive instead.",
+      });
+    }
+
+    const deleted =
+      await Nozzle.findOneAndDelete({
+        _id: id,
+        pumpId,
+      });
+
+    if (!deleted) {
       return res.status(404).json({
         success: false,
         message:
@@ -439,381 +654,706 @@ export const deleteNozzle = async (
         "Nozzle deleted successfully",
     });
   } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message:
-        "Unable to delete nozzle",
-      error:
-        error.message,
-    });
-  }
-};
-
-/* =====================================================
-   ADD READING
-===================================================== */
-
-export const addNozzleReading = async (
-  req,
-  res
-) => {
-  try {
-    const pumpId =
-      getPumpId(req);
-
-    const {
-      nozzleId,
-      closingReading,
-      reading,
-      readingDate,
-      date,
-      paymentMethod = "cash",
-      note = "",
-    } = req.body;
-
-    console.log(
-      "ADD READING BODY:",
-      req.body
-    );
-
-    if (!pumpId) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Pump information not found",
-      });
-    }
-
-    if (
-      !nozzleId ||
-      !mongoose.Types.ObjectId.isValid(
-        nozzleId
-      )
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Invalid nozzle",
-      });
-    }
-
-    const nozzle =
-      await Nozzle.findOne({
-        _id:
-          nozzleId,
-        pumpId,
-      });
-
-    if (!nozzle) {
-      return res.status(404).json({
-        success: false,
-        message:
-          "Nozzle not found",
-      });
-    }
-
-    const fuelType =
-      normalizeFuelType(
-        nozzle.fuelType
-      );
-
-    console.log(
-      "FUEL TYPE:",
-      fuelType
-    );
-
-    const opening =
-      Number(
-        nozzle.currentReading ||
-          0
-      );
-
-    const finalReading =
-      Number(
-        closingReading ??
-          reading
-      );
-
-    if (
-      !Number.isFinite(
-        finalReading
-      )
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Enter valid closing reading",
-      });
-    }
-
-    if (
-      finalReading <=
-      opening
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          `Closing reading must be greater than ${opening}`,
-      });
-    }
-
-    const litresSold =
-      Number(
-        (
-          finalReading -
-          opening
-        ).toFixed(2)
-      );
-
-    const finalDate =
-      readingDate ||
-      date ||
-      getLocalDate();
-
-    const payment =
-      String(
-        paymentMethod ||
-          "cash"
-      )
-        .trim()
-        .toLowerCase();
-
-    /* PRICE */
-
-    const priceRecord =
-      await FuelPrice.findOne({
-        pumpId,
-        fuelType,
-      });
-
-    console.log(
-      "PRICE RECORD:",
-      priceRecord
-    );
-
-    if (!priceRecord) {
-      return res.status(400).json({
-        success: false,
-        message:
-          `${fuelType} price not configured`,
-      });
-    }
-
-    const pricePerLitre =
-      Number(
-        priceRecord.price
-      );
-
-    const totalAmount =
-      Number(
-        (
-          litresSold *
-          pricePerLitre
-        ).toFixed(2)
-      );
-
-    /* STOCK */
-
-    const stock =
-      await FuelStock.findOne({
-        pumpId,
-        fuelType,
-      });
-
-    if (!stock) {
-      return res.status(400).json({
-        success: false,
-        message:
-          `${fuelType} stock not found`,
-      });
-    }
-
-    const stockBefore =
-      Number(
-        stock.currentStock ||
-          0
-      );
-
-    if (
-      stockBefore <
-      litresSold
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          `Insufficient ${fuelType} stock`,
-      });
-    }
-
-    /* READING */
-
-    const newReading =
-      await NozzleReading.create({
-        pumpId,
-
-        nozzleId:
-          nozzle._id,
-
-        fuelType,
-
-        openingReading:
-          opening,
-
-        closingReading:
-          finalReading,
-
-        litresSold,
-
-        pricePerLitre,
-
-        totalAmount,
-
-        readingDate:
-          finalDate,
-
-        paymentMethod:
-          payment,
-
-        note:
-          String(
-            note || ""
-          ).trim(),
-
-        createdBy:
-          getUserId(req),
-      });
-
-    /* SALE */
-
-    await Sale.findOneAndUpdate(
-      {
-        readingId:
-          newReading._id,
-      },
-      {
-        $set: {
-          pumpId,
-
-          nozzleId:
-            nozzle._id,
-
-          readingId:
-            newReading._id,
-
-          fuelType,
-
-          quantity:
-            litresSold,
-
-          pricePerLitre,
-
-          totalAmount,
-
-          paymentMethod:
-            payment,
-
-          saleDate:
-            finalDate,
-
-          source:
-            "nozzle",
-
-          note:
-            String(
-              note || ""
-            ).trim(),
-        },
-      },
-      {
-        upsert: true,
-        returnDocument:
-          "after",
-        runValidators:
-          true,
-      }
-    );
-
-    /* STOCK UPDATE */
-
-    stock.currentStock =
-      Number(
-        (
-          stockBefore -
-          litresSold
-        ).toFixed(2)
-      );
-
-    stock.totalSold =
-      Number(
-        (
-          Number(
-            stock.totalSold ||
-              0
-          ) +
-          litresSold
-        ).toFixed(2)
-      );
-
-    await stock.save();
-
-    /* NOZZLE UPDATE */
-
-    nozzle.currentReading =
-      finalReading;
-
-    nozzle.fuelType =
-      fuelType;
-
-    await nozzle.save();
-
-    console.log(
-      "READING CREATED:",
-      newReading._id
-    );
-
-    console.log(
-      "FUEL SOLD:",
-      fuelType,
-      litresSold
-    );
-
-    return res.status(201).json({
-      success: true,
-
-      message:
-        "Reading and sale recorded successfully",
-
-      reading:
-        newReading,
-
-      litresSold,
-
-      fuelType,
-
-      pricePerLitre,
-
-      totalAmount,
-
-      stock: {
-        currentStock:
-          stock.currentStock,
-      },
-    });
-  } catch (error) {
     console.error(
-      "ADD READING ERROR:",
+      "DELETE NOZZLE ERROR:",
       error
     );
 
     return res.status(500).json({
       success: false,
       message:
-        "Unable to add reading",
-      error:
-        error.message,
+        "Unable to delete nozzle",
     });
   }
 };
+
+/* =====================================================
+   ADD NOZZLE READING
+===================================================== */
+
+export const addNozzleReading =
+  async (req, res) => {
+    let session = null;
+
+    try {
+      const pumpId =
+        getPumpId(req);
+
+      if (!pumpId) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Pump information not found",
+        });
+      }
+
+      const {
+        nozzleId,
+        closingReading,
+        reading,
+        readingDate,
+        date,
+        paymentMethod = "cash",
+        note = "",
+      } = req.body || {};
+
+      /* =====================================
+         NOZZLE ID
+      ===================================== */
+
+      if (
+        !nozzleId ||
+        !mongoose.Types.ObjectId.isValid(
+          nozzleId
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid nozzle",
+        });
+      }
+
+      /* =====================================
+         PAYMENT METHOD
+      ===================================== */
+
+      const payment =
+        String(
+          paymentMethod || "cash"
+        )
+          .trim()
+          .toLowerCase();
+
+      if (
+        !isValidPaymentMethod(
+          payment
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid payment method",
+        });
+      }
+
+      /* =====================================
+         DATE
+      ===================================== */
+
+      const finalDate =
+        String(
+          readingDate ||
+            date ||
+            getLocalDate()
+        ).trim();
+
+      if (
+        !isValidDateString(
+          finalDate
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid reading date. Use YYYY-MM-DD format.",
+        });
+      }
+
+      /* =====================================
+         CLOSING READING
+      ===================================== */
+
+      const finalReading =
+        Number(
+          closingReading ??
+            reading
+        );
+
+      if (
+        !Number.isFinite(
+          finalReading
+        ) ||
+        finalReading < 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Enter valid closing reading",
+        });
+      }
+
+      session =
+        await mongoose.startSession();
+
+      let transactionResult = null;
+
+      await session.withTransaction(
+        async () => {
+          /* =====================================
+             GET ACTIVE NOZZLE
+
+             IMPORTANT:
+             Actual model uses `status`,
+             not `active`.
+          ===================================== */
+
+          const nozzle =
+            await Nozzle.findOne({
+              _id: nozzleId,
+              pumpId,
+              status: "active",
+            }).session(session);
+
+          if (!nozzle) {
+            const error =
+              new Error(
+                "NOZZLE_NOT_FOUND_OR_INACTIVE"
+              );
+
+            error.code =
+              "NOZZLE_NOT_FOUND_OR_INACTIVE";
+
+            throw error;
+          }
+
+          const fuelType =
+            normalizeFuelType(
+              nozzle.fuelType
+            );
+
+          if (
+            ![
+              "petrol",
+              "diesel",
+            ].includes(
+              fuelType
+            )
+          ) {
+            const error =
+              new Error(
+                "INVALID_FUEL_TYPE"
+              );
+
+            error.code =
+              "INVALID_FUEL_TYPE";
+
+            throw error;
+          }
+
+          /* =====================================
+             OPENING READING
+          ===================================== */
+
+          const opening =
+            Number(
+              nozzle.currentReading ||
+                0
+            );
+
+          if (
+            finalReading <=
+            opening
+          ) {
+            const error =
+              new Error(
+                "INVALID_CLOSING_READING"
+              );
+
+            error.code =
+              "INVALID_CLOSING_READING";
+
+            error.opening =
+              opening;
+
+            throw error;
+          }
+
+          const litresSold =
+            Number(
+              (
+                finalReading -
+                opening
+              ).toFixed(2)
+            );
+
+          /* =====================================
+             CURRENT FUEL PRICE
+
+             FuelPrice model has exactly one
+             document per pump + fuelType.
+
+             DO NOT use effectiveFrom because
+             that field does not exist.
+          ===================================== */
+
+          const priceRecord =
+            await FuelPrice.findOne({
+              pumpId,
+              fuelType,
+            }).session(session);
+
+          if (!priceRecord) {
+            const error =
+              new Error(
+                "FUEL_PRICE_NOT_CONFIGURED"
+              );
+
+            error.code =
+              "FUEL_PRICE_NOT_CONFIGURED";
+
+            throw error;
+          }
+
+          const pricePerLitre =
+            Number(
+              priceRecord.price
+            );
+
+          if (
+            !Number.isFinite(
+              pricePerLitre
+            ) ||
+            pricePerLitre <= 0
+          ) {
+            const error =
+              new Error(
+                "INVALID_FUEL_PRICE"
+              );
+
+            error.code =
+              "INVALID_FUEL_PRICE";
+
+            throw error;
+          }
+
+          const totalAmount =
+            Number(
+              (
+                litresSold *
+                pricePerLitre
+              ).toFixed(2)
+            );
+
+          /* =====================================
+             CHECK FUEL STOCK
+          ===================================== */
+
+          const stock =
+            await FuelStock.findOne({
+              pumpId,
+              fuelType,
+            }).session(session);
+
+          if (!stock) {
+            const error =
+              new Error(
+                "FUEL_STOCK_NOT_FOUND"
+              );
+
+            error.code =
+              "FUEL_STOCK_NOT_FOUND";
+
+            throw error;
+          }
+
+          const stockBefore =
+            Number(
+              stock.currentStock ||
+                0
+            );
+
+          if (
+            stockBefore <
+            litresSold
+          ) {
+            const error =
+              new Error(
+                "INSUFFICIENT_FUEL_STOCK"
+              );
+
+            error.code =
+              "INSUFFICIENT_FUEL_STOCK";
+
+            error.available =
+              stockBefore;
+
+            error.required =
+              litresSold;
+
+            throw error;
+          }
+
+          /* =====================================
+             CREATE NOZZLE READING
+          ===================================== */
+
+          const createdReadings =
+            await NozzleReading.create(
+              [
+                {
+                  pumpId,
+
+                  nozzleId:
+                    nozzle._id,
+
+                  fuelType,
+
+                  openingReading:
+                    opening,
+
+                  closingReading:
+                    finalReading,
+
+                  litresSold,
+
+                  pricePerLitre,
+
+                  totalAmount,
+
+                  readingDate:
+                    finalDate,
+
+                  paymentMethod:
+                    payment,
+
+                  note:
+                    String(
+                      note || ""
+                    ).trim(),
+
+                  createdBy:
+                    getUserId(req),
+                },
+              ],
+              {
+                session,
+              }
+            );
+
+          const newReading =
+            createdReadings[0];
+
+          /* =====================================
+             CREATE CORRESPONDING SALE
+          ===================================== */
+
+          await Sale.create(
+            [
+              {
+                pumpId,
+
+                nozzleId:
+                  nozzle._id,
+
+                readingId:
+                  newReading._id,
+
+                fuelType,
+
+                quantity:
+                  litresSold,
+
+                pricePerLitre,
+
+                totalAmount,
+
+                paymentMethod:
+                  payment,
+
+                saleDate:
+                  finalDate,
+
+                source:
+                  "nozzle",
+
+                note:
+                  String(
+                    note || ""
+                  ).trim(),
+
+                createdBy:
+                  getUserId(req),
+              },
+            ],
+            {
+              session,
+            }
+          );
+
+          /* =====================================
+             ATOMIC STOCK UPDATE
+
+             Prevents negative stock if another
+             transaction changes the stock.
+          ===================================== */
+
+          const updatedStock =
+            await FuelStock.findOneAndUpdate(
+              {
+                _id:
+                  stock._id,
+
+                pumpId,
+
+                fuelType,
+
+                currentStock: {
+                  $gte:
+                    litresSold,
+                },
+              },
+              {
+                $inc: {
+                  currentStock:
+                    -litresSold,
+
+                  totalSold:
+                    litresSold,
+                },
+              },
+              {
+                new: true,
+                runValidators:
+                  true,
+                session,
+              }
+            );
+
+          if (!updatedStock) {
+            const error =
+              new Error(
+                "STOCK_UPDATE_CONFLICT"
+              );
+
+            error.code =
+              "STOCK_UPDATE_CONFLICT";
+
+            throw error;
+          }
+
+          /* =====================================
+             ATOMIC NOZZLE READING UPDATE
+
+             Only update if the reading has not
+             changed since we read it.
+          ===================================== */
+
+          const updatedNozzle =
+            await Nozzle.findOneAndUpdate(
+              {
+                _id:
+                  nozzle._id,
+
+                pumpId,
+
+                status:
+                  "active",
+
+                currentReading:
+                  opening,
+              },
+              {
+                $set: {
+                  currentReading:
+                    finalReading,
+                },
+              },
+              {
+                new: true,
+                runValidators:
+                  true,
+                session,
+              }
+            );
+
+          if (!updatedNozzle) {
+            const error =
+              new Error(
+                "NOZZLE_READING_CONFLICT"
+              );
+
+            error.code =
+              "NOZZLE_READING_CONFLICT";
+
+            throw error;
+          }
+
+          transactionResult = {
+            newReading,
+
+            updatedStock,
+
+            litresSold,
+
+            fuelType,
+
+            pricePerLitre,
+
+            totalAmount,
+          };
+        }
+      );
+
+      return res.status(201).json({
+        success: true,
+
+        message:
+          "Reading and sale recorded successfully",
+
+        reading:
+          transactionResult
+            .newReading,
+
+        litresSold:
+          transactionResult
+            .litresSold,
+
+        fuelType:
+          transactionResult
+            .fuelType,
+
+        pricePerLitre:
+          transactionResult
+            .pricePerLitre,
+
+        totalAmount:
+          transactionResult
+            .totalAmount,
+
+        stock: {
+          currentStock:
+            transactionResult
+              .updatedStock
+              .currentStock,
+        },
+      });
+    } catch (error) {
+      console.error(
+        "ADD READING ERROR:",
+        error
+      );
+
+      if (
+        error?.code ===
+        "NOZZLE_NOT_FOUND_OR_INACTIVE"
+      ) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Nozzle not found or inactive",
+        });
+      }
+
+      if (
+        error?.code ===
+        "INVALID_FUEL_TYPE"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid nozzle fuel type",
+        });
+      }
+
+      if (
+        error?.code ===
+        "INVALID_CLOSING_READING"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            `Closing reading must be greater than ${error.opening}`,
+        });
+      }
+
+      if (
+        error?.code ===
+        "INVALID_FUEL_PRICE"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Configured fuel price is invalid",
+        });
+      }
+
+      if (
+        error?.code ===
+        "FUEL_PRICE_NOT_CONFIGURED"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Fuel price is not configured",
+        });
+      }
+
+      if (
+        error?.code ===
+        "FUEL_STOCK_NOT_FOUND"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Fuel stock not found",
+        });
+      }
+
+      if (
+        error?.code ===
+        "INSUFFICIENT_FUEL_STOCK"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Insufficient fuel stock",
+        });
+      }
+
+      if (
+        error?.code ===
+        "STOCK_UPDATE_CONFLICT"
+      ) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "Fuel stock changed while recording the reading. Please try again.",
+        });
+      }
+
+      if (
+        error?.code ===
+        "NOZZLE_READING_CONFLICT"
+      ) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "This nozzle was updated by another request. Please refresh and enter the reading again.",
+        });
+      }
+
+      if (
+        error?.code === 11000
+      ) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "This reading has already been recorded.",
+        });
+      }
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Unable to add reading",
+      });
+    } finally {
+      if (session) {
+        await session.endSession();
+      }
+    }
+  };
 
 /* =====================================================
    READING HISTORY
@@ -824,6 +1364,14 @@ export const getNozzleReadings =
     try {
       const pumpId =
         getPumpId(req);
+
+      if (!pumpId) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Pump information not found",
+        });
+      }
 
       const readings =
         await NozzleReading.find({
@@ -843,6 +1391,11 @@ export const getNozzleReadings =
         readings,
       });
     } catch (error) {
+      console.error(
+        "GET NOZZLE READINGS ERROR:",
+        error
+      );
+
       return res.status(500).json({
         success: false,
         message:

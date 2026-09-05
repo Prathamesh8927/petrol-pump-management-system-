@@ -15,17 +15,42 @@ const getPumpId = (req) =>
   null;
 
 const todayString = () =>
-  new Date().toLocaleDateString(
-    "en-CA"
-  );
+  new Date().toLocaleDateString("en-CA");
 
 const toNumber = (value) =>
   Number(value || 0);
 
 const roundMoney = (value) =>
-  Number(
-    toNumber(value).toFixed(2)
-  );
+  Number(toNumber(value).toFixed(2));
+
+const normalizeObjectId = (value) => {
+  if (!value) return null;
+
+  if (value instanceof mongoose.Types.ObjectId) {
+    return value;
+  }
+
+  if (
+    mongoose.Types.ObjectId.isValid(
+      String(value)
+    )
+  ) {
+    return new mongoose.Types.ObjectId(
+      String(value)
+    );
+  }
+
+  return null;
+};
+
+/* =====================================================
+   LEDGER COLLECTION CACHE
+
+   Avoid listCollections() on every dashboard request.
+===================================================== */
+
+let cachedLedgerCollectionName = null;
+let ledgerCollectionChecked = false;
 
 /* =====================================================
    FIND LEDGER ENTRY COLLECTION
@@ -38,6 +63,21 @@ const getLedgerEntryCollection =
 
     if (!db) {
       return null;
+    }
+
+    /*
+      Return cached collection
+      when already discovered.
+    */
+
+    if (
+      ledgerCollectionChecked
+    ) {
+      return cachedLedgerCollectionName
+        ? db.collection(
+            cachedLedgerCollectionName
+          )
+        : null;
     }
 
     const collections =
@@ -70,6 +110,12 @@ const getLedgerEntryCollection =
       );
 
     if (exactName) {
+      cachedLedgerCollectionName =
+        exactName;
+
+      ledgerCollectionChecked =
+        true;
+
       return db.collection(
         exactName
       );
@@ -97,9 +143,18 @@ const getLedgerEntryCollection =
         }
       );
 
+    ledgerCollectionChecked =
+      true;
+
     if (!fallbackName) {
+      cachedLedgerCollectionName =
+        null;
+
       return null;
     }
+
+    cachedLedgerCollectionName =
+      fallbackName;
 
     return db.collection(
       fallbackName
@@ -115,6 +170,9 @@ const getLedgerEntryCollection =
    OR
 
    totalAmount - paidAmount
+
+   IMPORTANT:
+   pumpId AND customerId are both required.
 ===================================================== */
 
 const getTodayLedgerCredit =
@@ -131,6 +189,19 @@ const getTodayLedgerCredit =
         return 0;
       }
 
+      const normalizedPumpId =
+        normalizeObjectId(
+          pumpId
+        );
+
+      if (!normalizedPumpId) {
+        console.error(
+          "DASHBOARD LEDGER CREDIT: Invalid pumpId"
+        );
+
+        return 0;
+      }
+
       const collection =
         await getLedgerEntryCollection();
 
@@ -143,23 +214,19 @@ const getTodayLedgerCredit =
       }
 
       const customerIds =
-        customers.map(
-          (customer) =>
-            customer._id
-        );
-
-      let normalizedPumpId =
-        pumpId;
+        customers
+          .map(
+            (customer) =>
+              normalizeObjectId(
+                customer._id
+              )
+          )
+          .filter(Boolean);
 
       if (
-        mongoose.Types.ObjectId.isValid(
-          String(pumpId)
-        )
+        customerIds.length === 0
       ) {
-        normalizedPumpId =
-          new mongoose.Types.ObjectId(
-            String(pumpId)
-          );
+        return 0;
       }
 
       const startDate =
@@ -172,51 +239,59 @@ const getTodayLedgerCredit =
           `${date}T23:59:59.999Z`
         );
 
+      /*
+        IMPORTANT SECURITY FIX:
+
+        The previous query used:
+
+        customerId IN customers
+        OR
+        pumpId = current pump
+
+        That could include records
+        belonging to another customer.
+
+        We now require:
+
+        pumpId = current pump
+        AND
+        customerId belongs to current pump
+        AND
+        entry is today's purchase.
+      */
+
       const entries =
         await collection
           .find({
+            pumpId:
+              normalizedPumpId,
+
+            customerId: {
+              $in: customerIds,
+            },
+
             entryType:
               "purchase",
 
-            $and: [
+            $or: [
               {
-                $or: [
-                  {
-                    customerId: {
-                      $in:
-                        customerIds,
-                    },
-                  },
-
-                  {
-                    pumpId:
-                      normalizedPumpId,
-                  },
-                ],
+                entryDate:
+                  date,
               },
 
               {
-                $or: [
-                  {
-                    entryDate:
-                      date,
-                  },
+                date:
+                  date,
+              },
 
-                  {
-                    date:
-                      date,
-                  },
+              {
+                createdAt: {
+                  $gte:
+                    startDate,
 
-                  {
-                    createdAt: {
-                      $gte:
-                        startDate,
-
-                      $lte:
-                        endDate,
-                    },
-                  },
-                ],
+                  $lte:
+                    endDate,
+                },
               },
             ],
           })
@@ -230,7 +305,7 @@ const getTodayLedgerCredit =
           ) => {
             /*
               Use saved pending
-              if available.
+              amount when available.
             */
 
             if (
@@ -252,7 +327,8 @@ const getTodayLedgerCredit =
 
             /*
               Otherwise calculate:
-              total - paid
+
+              totalAmount - paidAmount
             */
 
             const totalAmount =
@@ -308,14 +384,15 @@ export const getDashboardSummary =
   async (req, res) => {
     try {
       const pumpId =
-        getPumpId(req);
+        normalizeObjectId(
+          getPumpId(req)
+        );
 
       if (!pumpId) {
         return res
           .status(400)
           .json({
             success: false,
-
             message:
               "Pump information not found",
           });
@@ -326,6 +403,25 @@ export const getDashboardSummary =
         todayString();
 
       /* =================================================
+         BASIC DATE VALIDATION
+      ================================================= */
+
+      const isValidDate =
+        /^\d{4}-\d{2}-\d{2}$/.test(
+          String(date)
+        );
+
+      if (!isValidDate) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message:
+              "Invalid date format. Use YYYY-MM-DD.",
+          });
+      }
+
+      /* =================================================
          SALES
       ================================================= */
 
@@ -334,7 +430,7 @@ export const getDashboardSummary =
           pumpId,
           saleDate:
             date,
-        });
+        }).lean();
 
       let todaySales =
         0;
@@ -433,7 +529,7 @@ export const getDashboardSummary =
       const stocks =
         await FuelStock.find({
           pumpId,
-        });
+        }).lean();
 
       const petrolStockDocument =
         stocks.find(
@@ -488,7 +584,7 @@ export const getDashboardSummary =
             pumpId,
             status:
               "active",
-          });
+          }).lean();
 
         pendingCredit =
           customers.reduce(
@@ -543,7 +639,7 @@ export const getDashboardSummary =
         const expenses =
           await Expense.find({
             pumpId,
-          });
+          }).lean();
 
         totalExpenses =
           expenses
@@ -820,9 +916,6 @@ export const getDashboardSummary =
 
           message:
             "Unable to load dashboard summary",
-
-          error:
-            error.message,
         });
     }
   };

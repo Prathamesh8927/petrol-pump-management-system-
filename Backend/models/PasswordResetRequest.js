@@ -1,66 +1,118 @@
 import mongoose from "mongoose";
 
-const passwordResetRequestSchema = new mongoose.Schema(
-  {
-    userId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-      index: true,
-    },
+const passwordResetRequestSchema =
+  new mongoose.Schema(
+    {
+      /* =====================================================
+         USER
+      ===================================================== */
 
-    email: {
-      type: String,
-      required: true,
-      lowercase: true,
-      trim: true,
-      index: true,
-    },
+      userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        required: true,
+        index: true,
+      },
 
-    status: {
-      type: String,
-      enum: ["pending", "approved", "rejected", "completed"],
-      default: "pending",
-      index: true,
-    },
+      email: {
+        type: String,
+        required: true,
+        lowercase: true,
+        trim: true,
+        maxlength: 254,
+        index: true,
+      },
 
-    approvedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
-    },
+      /* =====================================================
+         REQUEST STATUS
+      ===================================================== */
 
-    approvedAt: {
-      type: Date,
-      default: null,
-    },
+      status: {
+        type: String,
+        enum: [
+          "pending",
+          "approved",
+          "rejected",
+          "completed",
+        ],
+        default: "pending",
+        index: true,
+      },
 
-    rejectedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
-    },
+      /* =====================================================
+         APPROVAL
+      ===================================================== */
 
-    rejectedAt: {
-      type: Date,
-      default: null,
-    },
+      approvedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
 
-    rejectionReason: {
-      type: String,
-      default: "",
-      trim: true,
-    },
+      approvedAt: {
+        type: Date,
+        default: null,
+      },
 
-    completedAt: {
-      type: Date,
-      default: null,
+      /* =====================================================
+         REJECTION
+      ===================================================== */
+
+      rejectedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+
+      rejectedAt: {
+        type: Date,
+        default: null,
+      },
+
+      rejectionReason: {
+        type: String,
+        default: "",
+        trim: true,
+        maxlength: 1000,
+      },
+
+      /* =====================================================
+         SECURE RESET TOKEN
+         
+         Store ONLY the SHA-256 hash of the token.
+         Never store the raw reset token.
+      ===================================================== */
+
+      resetTokenHash: {
+        type: String,
+        default: null,
+        select: false,
+        index: true,
+      },
+
+      resetTokenExpiresAt: {
+        type: Date,
+        default: null,
+        index: true,
+      },
+
+      /* =====================================================
+         COMPLETION
+      ===================================================== */
+
+      completedAt: {
+        type: Date,
+        default: null,
+      },
     },
-  },
-  {
-    timestamps: true,
-  }
-);
+    {
+      timestamps: true,
+    }
+  );
+
+/* =========================================================
+   INDEXES
+========================================================= */
 
 passwordResetRequestSchema.index({
   email: 1,
@@ -68,11 +120,44 @@ passwordResetRequestSchema.index({
 });
 
 passwordResetRequestSchema.index({
+  userId: 1,
+  status: 1,
   createdAt: -1,
 });
 
+passwordResetRequestSchema.index({
+  status: 1,
+  createdAt: -1,
+});
+
+passwordResetRequestSchema.index({
+  createdAt: -1,
+});
+
+/*
+  Token lookup is normally performed using the hash.
+
+  Sparse unique index allows multiple old requests with
+  null token hashes while guaranteeing that two active
+  requests cannot accidentally receive the same hash.
+*/
+passwordResetRequestSchema.index(
+  { resetTokenHash: 1 },
+  {
+    unique: true,
+    sparse: true,
+  }
+);
+
+/* =========================================================
+   MODEL
+========================================================= */
+
 const PasswordResetRequest =
   mongoose.models.PasswordResetRequest ||
-  mongoose.model("PasswordResetRequest", passwordResetRequestSchema);
+  mongoose.model(
+    "PasswordResetRequest",
+    passwordResetRequestSchema
+  );
 
 export default PasswordResetRequest;

@@ -1,3 +1,5 @@
+import mongoose from "mongoose";
+
 import Client from "../models/Client.js";
 import Pump from "../models/Pump.js";
 import User from "../models/User.js";
@@ -12,22 +14,68 @@ const normalizeEmail = (email) =>
     .trim()
     .toLowerCase();
 
+const normalizeString = (value) =>
+  String(value || "").trim();
+
+const isValidObjectId = (value) =>
+  mongoose.Types.ObjectId.isValid(
+    String(value || "")
+  );
+
+const getSafeErrorMessage = (
+  error
+) => {
+  if (
+    error?.code === 11000
+  ) {
+    return "A record with the same unique information already exists";
+  }
+
+  if (
+    error?.name ===
+    "ValidationError"
+  ) {
+    return "Please provide valid information";
+  }
+
+  if (
+    error?.name ===
+    "CastError"
+  ) {
+    return "Invalid record identifier";
+  }
+
+  return "An unexpected server error occurred";
+};
+
 /* =====================================================
    UNIQUE PUMP CODE
 ===================================================== */
 
-const generatePumpCode = async () => {
+const generatePumpCode = async (
+  session = null
+) => {
   let number =
-    (await Client.countDocuments()) + 1;
+    (await Client.countDocuments(
+      {},
+      { session }
+    )) + 1;
 
   while (true) {
     const code =
       `PUMP${String(number).padStart(4, "0")}`;
 
-    const exists =
-      await Client.exists({
+    const query =
+      Client.exists({
         pumpCode: code,
       });
+
+    if (session) {
+      query.session(session);
+    }
+
+    const exists =
+      await query;
 
     if (!exists) {
       return code;
@@ -88,6 +136,18 @@ export const getClientById = async (
   res
 ) => {
   try {
+    if (
+      !isValidObjectId(
+        req.params.id
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid client ID",
+      });
+    }
+
     const client =
       await Client.findById(
         req.params.id
@@ -132,8 +192,8 @@ export const addClient = async (
   req,
   res
 ) => {
-  let createdPump = null;
-  let createdUser = null;
+  const session =
+    await mongoose.startSession();
 
   try {
     const {
@@ -155,7 +215,15 @@ export const addClient = async (
       notes,
     } = req.body;
 
-    if (!pumpName?.trim()) {
+    /* ===============================================
+       VALIDATION
+    =============================================== */
+
+    if (
+      !normalizeString(
+        pumpName
+      )
+    ) {
       return res.status(400).json({
         success: false,
         message:
@@ -163,7 +231,11 @@ export const addClient = async (
       });
     }
 
-    if (!ownerName?.trim()) {
+    if (
+      !normalizeString(
+        ownerName
+      )
+    ) {
       return res.status(400).json({
         success: false,
         message:
@@ -191,7 +263,8 @@ export const addClient = async (
     }
 
     if (
-      String(password).length < 6
+      String(password).length <
+      6
     ) {
       return res.status(400).json({
         success: false,
@@ -202,7 +275,8 @@ export const addClient = async (
 
     const existingUser =
       await User.findOne({
-        email: normalizedEmail,
+        email:
+          normalizedEmail,
       });
 
     if (existingUser) {
@@ -215,7 +289,8 @@ export const addClient = async (
 
     const existingClient =
       await Client.findOne({
-        email: normalizedEmail,
+        email:
+          normalizedEmail,
       });
 
     if (existingClient) {
@@ -226,108 +301,175 @@ export const addClient = async (
       });
     }
 
-    createdPump =
-      await Pump.create({
-        pumpName:
-          pumpName.trim(),
+    let createdClient = null;
+    let pumpCode = null;
 
-        ownerName:
-          ownerName.trim(),
+    /* ===============================================
+       TRANSACTION
+    =============================================== */
 
-        phone:
-          phone?.trim() || "",
+    await session.withTransaction(
+      async () => {
+        const [
+          createdPump,
+        ] = await Pump.create(
+          [
+            {
+              pumpName:
+                normalizeString(
+                  pumpName
+                ),
 
-        email:
-          normalizedEmail,
+              ownerName:
+                normalizeString(
+                  ownerName
+                ),
 
-        companyName:
-          companyName?.trim() || "",
+              phone:
+                normalizeString(
+                  phone
+                ),
 
-        dealerCode:
-          dealerCode?.trim() || "",
+              email:
+                normalizedEmail,
 
-        gstin:
-          gstin?.trim() || "",
+              companyName:
+                normalizeString(
+                  companyName
+                ),
 
-        address:
-          address?.trim() || "",
+              dealerCode:
+                normalizeString(
+                  dealerCode
+                ),
 
-        city:
-          city?.trim() || "",
+              gstin:
+                normalizeString(
+                  gstin
+                ),
 
-        state:
-          state?.trim() || "",
+              address:
+                normalizeString(
+                  address
+                ),
 
-        pincode:
-          pincode?.trim() || "",
+              city:
+                normalizeString(
+                  city
+                ),
 
-        active: true,
-      });
+              state:
+                normalizeString(
+                  state
+                ),
 
-    createdUser =
-      await User.create({
-        name:
-          ownerName.trim(),
+              pincode:
+                normalizeString(
+                  pincode
+                ),
 
-        email:
-          normalizedEmail,
+              active: true,
+            },
+          ],
+          { session }
+        );
 
-        password,
+        const [
+          createdUser,
+        ] = await User.create(
+          [
+            {
+              name:
+                normalizeString(
+                  ownerName
+                ),
 
-        role: "owner",
+              email:
+                normalizedEmail,
 
-        pumpId:
-          createdPump._id,
+              password,
 
-        active: true,
-      });
+              role: "owner",
 
-    const pumpCode =
-      await generatePumpCode();
+              pumpId:
+                createdPump._id,
 
-    const client =
-      await Client.create({
-        pumpId:
-          createdPump._id,
+              active: true,
+            },
+          ],
+          { session }
+        );
 
-        ownerUserId:
-          createdUser._id,
+        pumpCode =
+          await generatePumpCode(
+            session
+          );
 
-        pumpName:
-          pumpName.trim(),
+        [
+          createdClient,
+        ] = await Client.create(
+          [
+            {
+              pumpId:
+                createdPump._id,
 
-        ownerName:
-          ownerName.trim(),
+              ownerUserId:
+                createdUser._id,
 
-        email:
-          normalizedEmail,
+              pumpName:
+                normalizeString(
+                  pumpName
+                ),
 
-        phone:
-          phone?.trim() || "",
+              ownerName:
+                normalizeString(
+                  ownerName
+                ),
 
-        address:
-          address?.trim() || "",
+              email:
+                normalizedEmail,
 
-        pumpCode,
+              phone:
+                normalizeString(
+                  phone
+                ),
 
-        plan:
-          plan || "standard",
+              address:
+                normalizeString(
+                  address
+                ),
 
-        status: "active",
+              pumpCode,
 
-        subscriptionStart:
-          subscriptionStart ||
-          new Date(),
+              plan:
+                plan ||
+                "standard",
 
-        subscriptionEnd:
-          subscriptionEnd || null,
+              status:
+                "active",
 
-        notes:
-          notes?.trim() || "",
+              subscriptionStart:
+                subscriptionStart ||
+                new Date(),
 
-        createdBy:
-          req.user?._id || null,
-      });
+              subscriptionEnd:
+                subscriptionEnd ||
+                null,
+
+              notes:
+                normalizeString(
+                  notes
+                ),
+
+              createdBy:
+                req.user?._id ||
+                null,
+            },
+          ],
+          { session }
+        );
+      }
+    );
 
     return res.status(201).json({
       success: true,
@@ -335,7 +477,8 @@ export const addClient = async (
       message:
         "Client, pump and owner account created successfully",
 
-      client,
+      client:
+        createdClient,
 
       credentials: {
         email:
@@ -352,34 +495,20 @@ export const addClient = async (
       error
     );
 
-    try {
-      if (createdUser?._id) {
-        await User.findByIdAndDelete(
-          createdUser._id
-        );
-      }
-
-      if (createdPump?._id) {
-        await Pump.findByIdAndDelete(
-          createdPump._id
-        );
-      }
-    } catch (rollbackError) {
-      console.error(
-        "CLIENT CREATION ROLLBACK ERROR:",
-        rollbackError
-      );
-    }
-
-    return res.status(500).json({
+    return res.status(
+      error?.code === 11000
+        ? 409
+        : 500
+    ).json({
       success: false,
 
       message:
-        "Unable to create client",
-
-      error:
-        error.message,
+        error?.code === 11000
+          ? "A record with the same unique information already exists"
+          : "Unable to create client",
     });
+  } finally {
+    await session.endSession();
   }
 };
 
@@ -389,17 +518,19 @@ export const addClient = async (
 
 export const updateClient =
   async (req, res) => {
-    try {
-      const client =
-        await Client.findById(
-          req.params.id
-        );
+    const session =
+      await mongoose.startSession();
 
-      if (!client) {
-        return res.status(404).json({
+    try {
+      if (
+        !isValidObjectId(
+          req.params.id
+        )
+      ) {
+        return res.status(400).json({
           success: false,
           message:
-            "Client not found",
+            "Invalid client ID",
         });
       }
 
@@ -422,193 +553,373 @@ export const updateClient =
         notes,
       } = req.body;
 
-      const pump =
-        await Pump.findById(
-          client.pumpId
-        );
+      let updatedClient = null;
 
-      const owner =
-        await User.findById(
-          client.ownerUserId
-        );
+      await session.withTransaction(
+        async () => {
+          const client =
+            await Client.findById(
+              req.params.id
+            ).session(session);
 
-      if (email !== undefined) {
-        const normalizedEmail =
-          normalizeEmail(email);
+          if (!client) {
+            const error =
+              new Error(
+                "CLIENT_NOT_FOUND"
+              );
 
-        const duplicateUser =
-          await User.findOne({
-            email:
-              normalizedEmail,
+            error.statusCode =
+              404;
 
-            _id: {
-              $ne:
-                client.ownerUserId,
-            },
+            throw error;
+          }
+
+          const pump =
+            await Pump.findById(
+              client.pumpId
+            ).session(session);
+
+          const owner =
+            await User.findById(
+              client.ownerUserId
+            ).session(session);
+
+          /* =========================================
+             EMAIL
+          ========================================= */
+
+          if (
+            email !== undefined
+          ) {
+            const normalizedEmail =
+              normalizeEmail(
+                email
+              );
+
+            if (
+              !normalizedEmail
+            ) {
+              const error =
+                new Error(
+                  "INVALID_EMAIL"
+                );
+
+              error.statusCode =
+                400;
+
+              throw error;
+            }
+
+            const duplicateUser =
+              await User.findOne({
+                email:
+                  normalizedEmail,
+
+                _id: {
+                  $ne:
+                    client.ownerUserId,
+                },
+              }).session(session);
+
+            if (duplicateUser) {
+              const error =
+                new Error(
+                  "DUPLICATE_EMAIL"
+                );
+
+              error.statusCode =
+                409;
+
+              throw error;
+            }
+
+            client.email =
+              normalizedEmail;
+
+            if (pump) {
+              pump.email =
+                normalizedEmail;
+            }
+
+            if (owner) {
+              owner.email =
+                normalizedEmail;
+            }
+          }
+
+          /* =========================================
+             BASIC CLIENT / PUMP / OWNER INFORMATION
+          ========================================= */
+
+          if (
+            pumpName !==
+            undefined
+          ) {
+            const value =
+              normalizeString(
+                pumpName
+              );
+
+            if (!value) {
+              const error =
+                new Error(
+                  "INVALID_PUMP_NAME"
+                );
+
+              error.statusCode =
+                400;
+
+              throw error;
+            }
+
+            client.pumpName =
+              value;
+
+            if (pump) {
+              pump.pumpName =
+                value;
+            }
+          }
+
+          if (
+            ownerName !==
+            undefined
+          ) {
+            const value =
+              normalizeString(
+                ownerName
+              );
+
+            if (!value) {
+              const error =
+                new Error(
+                  "INVALID_OWNER_NAME"
+                );
+
+              error.statusCode =
+                400;
+
+              throw error;
+            }
+
+            client.ownerName =
+              value;
+
+            if (pump) {
+              pump.ownerName =
+                value;
+            }
+
+            if (owner) {
+              owner.name =
+                value;
+            }
+          }
+
+          if (
+            phone !==
+            undefined
+          ) {
+            client.phone =
+              normalizeString(
+                phone
+              );
+
+            if (pump) {
+              pump.phone =
+                normalizeString(
+                  phone
+                );
+            }
+          }
+
+          if (
+            address !==
+            undefined
+          ) {
+            client.address =
+              normalizeString(
+                address
+              );
+
+            if (pump) {
+              pump.address =
+                normalizeString(
+                  address
+                );
+            }
+          }
+
+          if (
+            plan !==
+            undefined
+          ) {
+            client.plan =
+              plan;
+          }
+
+          if (
+            subscriptionStart !==
+            undefined
+          ) {
+            client.subscriptionStart =
+              subscriptionStart ||
+              null;
+          }
+
+          if (
+            subscriptionEnd !==
+            undefined
+          ) {
+            client.subscriptionEnd =
+              subscriptionEnd ||
+              null;
+          }
+
+          if (
+            notes !==
+            undefined
+          ) {
+            client.notes =
+              normalizeString(
+                notes
+              );
+          }
+
+          /* =========================================
+             PUMP INFORMATION
+          ========================================= */
+
+          if (pump) {
+            if (
+              companyName !==
+              undefined
+            ) {
+              pump.companyName =
+                normalizeString(
+                  companyName
+                );
+            }
+
+            if (
+              dealerCode !==
+              undefined
+            ) {
+              pump.dealerCode =
+                normalizeString(
+                  dealerCode
+                );
+            }
+
+            if (
+              gstin !==
+              undefined
+            ) {
+              pump.gstin =
+                normalizeString(
+                  gstin
+                );
+            }
+
+            if (
+              city !==
+              undefined
+            ) {
+              pump.city =
+                normalizeString(
+                  city
+                );
+            }
+
+            if (
+              state !==
+              undefined
+            ) {
+              pump.state =
+                normalizeString(
+                  state
+                );
+            }
+
+            if (
+              pincode !==
+              undefined
+            ) {
+              pump.pincode =
+                normalizeString(
+                  pincode
+                );
+            }
+          }
+
+          /* =========================================
+             STATUS
+          ========================================= */
+
+          if (
+            status !==
+            undefined
+          ) {
+            if (
+              ![
+                "active",
+                "inactive",
+                "expired",
+              ].includes(status)
+            ) {
+              const error =
+                new Error(
+                  "INVALID_STATUS"
+                );
+
+              error.statusCode =
+                400;
+
+              throw error;
+            }
+
+            client.status =
+              status;
+
+            const active =
+              status ===
+              "active";
+
+            if (pump) {
+              pump.active =
+                active;
+            }
+
+            if (owner) {
+              owner.active =
+                active;
+            }
+          }
+
+          /* =========================================
+             SAVE ALL DOCUMENTS INSIDE TRANSACTION
+          ========================================= */
+
+          await client.save({
+            session,
           });
 
-        if (duplicateUser) {
-          return res.status(409).json({
-            success: false,
-            message:
-              "Another user already uses this email",
-          });
+          if (pump) {
+            await pump.save({
+              session,
+            });
+          }
+
+          if (owner) {
+            await owner.save({
+              session,
+            });
+          }
+
+          updatedClient =
+            client;
         }
-
-        client.email =
-          normalizedEmail;
-
-        if (pump) {
-          pump.email =
-            normalizedEmail;
-        }
-
-        if (owner) {
-          owner.email =
-            normalizedEmail;
-        }
-      }
-
-      if (pumpName !== undefined) {
-        client.pumpName =
-          pumpName;
-
-        if (pump) {
-          pump.pumpName =
-            pumpName;
-        }
-      }
-
-      if (ownerName !== undefined) {
-        client.ownerName =
-          ownerName;
-
-        if (pump) {
-          pump.ownerName =
-            ownerName;
-        }
-
-        if (owner) {
-          owner.name =
-            ownerName;
-        }
-      }
-
-      if (phone !== undefined) {
-        client.phone =
-          phone;
-
-        if (pump) {
-          pump.phone =
-            phone;
-        }
-      }
-
-      if (address !== undefined) {
-        client.address =
-          address;
-
-        if (pump) {
-          pump.address =
-            address;
-        }
-      }
-
-      if (plan !== undefined) {
-        client.plan =
-          plan;
-      }
-
-      if (
-        subscriptionStart !==
-        undefined
-      ) {
-        client.subscriptionStart =
-          subscriptionStart ||
-          null;
-      }
-
-      if (
-        subscriptionEnd !==
-        undefined
-      ) {
-        client.subscriptionEnd =
-          subscriptionEnd ||
-          null;
-      }
-
-      if (notes !== undefined) {
-        client.notes =
-          notes;
-      }
-
-      if (pump) {
-        if (
-          companyName !==
-          undefined
-        ) {
-          pump.companyName =
-            companyName;
-        }
-
-        if (
-          dealerCode !==
-          undefined
-        ) {
-          pump.dealerCode =
-            dealerCode;
-        }
-
-        if (gstin !== undefined) {
-          pump.gstin =
-            gstin;
-        }
-
-        if (city !== undefined) {
-          pump.city =
-            city;
-        }
-
-        if (state !== undefined) {
-          pump.state =
-            state;
-        }
-
-        if (pincode !== undefined) {
-          pump.pincode =
-            pincode;
-        }
-      }
-
-      if (status !== undefined) {
-        client.status =
-          status;
-
-        const active =
-          status === "active";
-
-        if (pump) {
-          pump.active =
-            active;
-        }
-
-        if (owner) {
-          owner.active =
-            active;
-        }
-      }
-
-      await Promise.all([
-        client.save(),
-
-        pump
-          ? pump.save()
-          : Promise.resolve(),
-
-        owner
-          ? owner.save()
-          : Promise.resolve(),
-      ]);
+      );
 
       return res.json({
         success: true,
@@ -616,7 +927,8 @@ export const updateClient =
         message:
           "Client updated successfully",
 
-        client,
+        client:
+          updatedClient,
       });
     } catch (error) {
       console.error(
@@ -624,15 +936,41 @@ export const updateClient =
         error
       );
 
-      return res.status(500).json({
+      if (
+        error?.statusCode
+      ) {
+        const messages = {
+          400: "Invalid client information",
+          404: "Client not found",
+          409: "Another user already uses this email",
+        };
+
+        return res.status(
+          error.statusCode
+        ).json({
+          success: false,
+          message:
+            messages[
+              error.statusCode
+            ] ||
+            "Unable to update client",
+        });
+      }
+
+      return res.status(
+        error?.code === 11000
+          ? 409
+          : 500
+      ).json({
         success: false,
 
         message:
-          "Unable to update client",
-
-        error:
-          error.message,
+          error?.code === 11000
+            ? "A record with the same unique information already exists"
+            : "Unable to update client",
       });
+    } finally {
+      await session.endSession();
     }
   };
 
@@ -642,9 +980,13 @@ export const updateClient =
 
 export const updateClientStatus =
   async (req, res) => {
+    const session =
+      await mongoose.startSession();
+
     try {
-      const { status } =
-        req.body;
+      const {
+        status,
+      } = req.body;
 
       if (
         ![
@@ -660,51 +1002,87 @@ export const updateClientStatus =
         });
       }
 
-      const client =
-        await Client.findById(
+      if (
+        !isValidObjectId(
           req.params.id
-        );
-
-      if (!client) {
-        return res.status(404).json({
+        )
+      ) {
+        return res.status(400).json({
           success: false,
           message:
-            "Client not found",
+            "Invalid client ID",
         });
       }
 
-      client.status =
-        status;
+      let updatedClient = null;
 
-      const active =
-        status === "active";
+      await session.withTransaction(
+        async () => {
+          const client =
+            await Client.findById(
+              req.params.id
+            ).session(session);
 
-      await Promise.all([
-        client.save(),
+          if (!client) {
+            const error =
+              new Error(
+                "CLIENT_NOT_FOUND"
+              );
 
-        Pump.findByIdAndUpdate(
-          client.pumpId,
-          {
-            active,
+            error.statusCode =
+              404;
+
+            throw error;
           }
-        ),
 
-        User.findByIdAndUpdate(
-          client.ownerUserId,
-          {
-            active,
-          }
-        ),
-      ]);
+          client.status =
+            status;
+
+          const active =
+            status ===
+            "active";
+
+          await client.save({
+            session,
+          });
+
+          await Pump.findByIdAndUpdate(
+            client.pumpId,
+            {
+              active,
+            },
+            {
+              session,
+              runValidators: true,
+            }
+          );
+
+          await User.findByIdAndUpdate(
+            client.ownerUserId,
+            {
+              active,
+            },
+            {
+              session,
+              runValidators: true,
+            }
+          );
+
+          updatedClient =
+            client;
+        }
+      );
 
       return res.json({
         success: true,
 
-        message: active
-          ? "Client activated"
-          : "Client deactivated",
+        message:
+          status === "active"
+            ? "Client activated"
+            : "Client deactivated",
 
-        client,
+        client:
+          updatedClient,
       });
     } catch (error) {
       console.error(
@@ -712,12 +1090,24 @@ export const updateClientStatus =
         error
       );
 
+      if (
+        error?.statusCode ===
+        404
+      ) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Client not found",
+        });
+      }
+
       return res.status(500).json({
         success: false,
-
         message:
           "Unable to update client status",
       });
+    } finally {
+      await session.endSession();
     }
   };
 
@@ -727,33 +1117,68 @@ export const updateClientStatus =
 
 export const deleteClient =
   async (req, res) => {
-    try {
-      const client =
-        await Client.findById(
-          req.params.id
-        );
+    const session =
+      await mongoose.startSession();
 
-      if (!client) {
-        return res.status(404).json({
+    try {
+      if (
+        !isValidObjectId(
+          req.params.id
+        )
+      ) {
+        return res.status(400).json({
           success: false,
           message:
-            "Client not found",
+            "Invalid client ID",
         });
       }
 
-      await Promise.all([
-        User.findByIdAndDelete(
-          client.ownerUserId
-        ),
+      await session.withTransaction(
+        async () => {
+          const client =
+            await Client.findById(
+              req.params.id
+            ).session(session);
 
-        Pump.findByIdAndDelete(
-          client.pumpId
-        ),
+          if (!client) {
+            const error =
+              new Error(
+                "CLIENT_NOT_FOUND"
+              );
 
-        Client.findByIdAndDelete(
-          client._id
-        ),
-      ]);
+            error.statusCode =
+              404;
+
+            throw error;
+          }
+
+          /*
+            Delete owner account,
+            pump and client atomically.
+          */
+
+          await User.findByIdAndDelete(
+            client.ownerUserId,
+            {
+              session,
+            }
+          );
+
+          await Pump.findByIdAndDelete(
+            client.pumpId,
+            {
+              session,
+            }
+          );
+
+          await Client.findByIdAndDelete(
+            client._id,
+            {
+              session,
+            }
+          );
+        }
+      );
 
       return res.json({
         success: true,
@@ -767,12 +1192,24 @@ export const deleteClient =
         error
       );
 
+      if (
+        error?.statusCode ===
+        404
+      ) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Client not found",
+        });
+      }
+
       return res.status(500).json({
         success: false,
-
         message:
           "Unable to delete client",
       });
+    } finally {
+      await session.endSession();
     }
   };
 
@@ -966,9 +1403,6 @@ export const getRegistrationRequests =
 
         message:
           "Unable to load registration requests",
-
-        error:
-          error.message,
       });
     }
   };
@@ -980,6 +1414,18 @@ export const getRegistrationRequests =
 export const getRegistrationRequestById =
   async (req, res) => {
     try {
+      if (
+        !isValidObjectId(
+          req.params.id
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid registration request ID",
+        });
+      }
+
       const request =
         await RegistrationRequest.findById(
           req.params.id
@@ -1013,9 +1459,6 @@ export const getRegistrationRequestById =
 
         message:
           "Unable to load registration request",
-
-        error:
-          error.message,
       });
     }
   };
@@ -1061,239 +1504,329 @@ export const getPendingRegistrationCount =
 
 export const approveRegistrationRequest =
   async (req, res) => {
-    let createdPump = null;
-    let createdUser = null;
-    let createdClient = null;
+    const session =
+      await mongoose.startSession();
 
     try {
-      const request =
-        await RegistrationRequest.findById(
-          req.params.id
-        );
-
-      if (!request) {
-        return res.status(404).json({
-          success: false,
-
-          message:
-            "Registration request not found",
-        });
-      }
-
       if (
-        request.status !==
-        "pending"
+        !isValidObjectId(
+          req.params.id
+        )
       ) {
         return res.status(400).json({
           success: false,
-
           message:
-            `Request has already been ${request.status}`,
+            "Invalid registration request ID",
         });
       }
 
-      const normalizedEmail =
-        normalizeEmail(
-          request.email
-        );
+      let createdClient = null;
+      let createdRequest = null;
+      let pumpCode = null;
 
-      /* ===============================================
-         DUPLICATE USER
-      =============================================== */
+      await session.withTransaction(
+        async () => {
+          const request =
+            await RegistrationRequest.findById(
+              req.params.id
+            ).session(session);
 
-      const existingUser =
-        await User.findOne({
-          email:
-            normalizedEmail,
-        });
+          if (!request) {
+            const error =
+              new Error(
+                "REQUEST_NOT_FOUND"
+              );
 
-      if (existingUser) {
-        return res.status(409).json({
-          success: false,
+            error.statusCode =
+              404;
 
-          message:
-            "A user with this email already exists",
-        });
-      }
+            throw error;
+          }
 
-      /* ===============================================
-         DUPLICATE CLIENT
-      =============================================== */
+          if (
+            request.status !==
+            "pending"
+          ) {
+            const error =
+              new Error(
+                "REQUEST_NOT_PENDING"
+              );
 
-      const existingClient =
-        await Client.findOne({
-          email:
-            normalizedEmail,
-        });
+            error.statusCode =
+              400;
 
-      if (existingClient) {
-        return res.status(409).json({
-          success: false,
+            error.requestStatus =
+              request.status;
 
-          message:
-            "A client with this email already exists",
-        });
-      }
+            throw error;
+          }
 
-      /* ===============================================
-         CREATE PUMP
-      =============================================== */
+          const normalizedEmail =
+            normalizeEmail(
+              request.email
+            );
 
-      createdPump =
-        await Pump.create({
-          pumpName:
-            request.pumpName?.trim() ||
-            "",
+          if (!normalizedEmail) {
+            const error =
+              new Error(
+                "INVALID_EMAIL"
+              );
 
-          ownerName:
-            request.ownerName?.trim() ||
-            "",
+            error.statusCode =
+              400;
 
-          phone:
-            request.phone?.trim() ||
-            "",
+            throw error;
+          }
 
-          email:
-            normalizedEmail,
+          /* =========================================
+             DUPLICATE USER
+          ========================================= */
 
-          companyName:
-            request.companyName?.trim() ||
-            "",
+          const existingUser =
+            await User.findOne({
+              email:
+                normalizedEmail,
+            }).session(session);
 
-          dealerCode:
-            request.dealerCode?.trim() ||
-            "",
+          if (existingUser) {
+            const error =
+              new Error(
+                "DUPLICATE_USER"
+              );
 
-          gstin:
-            request.gstin?.trim() ||
-            "",
+            error.statusCode =
+              409;
 
-          address:
-            request.address?.trim() ||
-            "",
+            throw error;
+          }
 
-          city:
-            request.city?.trim() ||
-            "",
+          /* =========================================
+             DUPLICATE CLIENT
+          ========================================= */
 
-          state:
-            request.state?.trim() ||
-            "",
+          const existingClient =
+            await Client.findOne({
+              email:
+                normalizedEmail,
+            }).session(session);
 
-          pincode:
-            request.pincode?.trim() ||
-            "",
+          if (existingClient) {
+            const error =
+              new Error(
+                "DUPLICATE_CLIENT"
+              );
 
-          active: true,
-        });
+            error.statusCode =
+              409;
 
-      /* ===============================================
-         CREATE OWNER
-      =============================================== */
+            throw error;
+          }
 
-      createdUser =
-        await User.create({
-          name:
-            request.ownerName.trim(),
+          /* =========================================
+             CREATE PUMP
+          ========================================= */
 
-          email:
-            normalizedEmail,
+          const [
+            createdPump,
+          ] = await Pump.create(
+            [
+              {
+                pumpName:
+                  normalizeString(
+                    request.pumpName
+                  ),
 
-          password:
-            request.password,
+                ownerName:
+                  normalizeString(
+                    request.ownerName
+                  ),
 
-          role: "owner",
+                phone:
+                  normalizeString(
+                    request.phone
+                  ),
 
-          pumpId:
-            createdPump._id,
+                email:
+                  normalizedEmail,
 
-          active: true,
-        });
+                companyName:
+                  normalizeString(
+                    request.companyName
+                  ),
 
-      /* ===============================================
-         GENERATE PUMP CODE
-      =============================================== */
+                dealerCode:
+                  normalizeString(
+                    request.dealerCode
+                  ),
 
-      const pumpCode =
-        await generatePumpCode();
+                gstin:
+                  normalizeString(
+                    request.gstin
+                  ),
 
-      /* ===============================================
-         CREATE CLIENT
-      =============================================== */
+                address:
+                  normalizeString(
+                    request.address
+                  ),
 
-      createdClient =
-        await Client.create({
-          pumpId:
-            createdPump._id,
+                city:
+                  normalizeString(
+                    request.city
+                  ),
 
-          ownerUserId:
-            createdUser._id,
+                state:
+                  normalizeString(
+                    request.state
+                  ),
 
-          pumpName:
-            request.pumpName.trim(),
+                pincode:
+                  normalizeString(
+                    request.pincode
+                  ),
 
-          ownerName:
-            request.ownerName.trim(),
+                active: true,
+              },
+            ],
+            { session }
+          );
 
-          email:
-            normalizedEmail,
+          /* =========================================
+             CREATE OWNER
+          ========================================= */
 
-          phone:
-            request.phone?.trim() ||
-            "",
+          const [
+            createdUser,
+          ] = await User.create(
+            [
+              {
+                name:
+                  normalizeString(
+                    request.ownerName
+                  ),
 
-          address:
-            request.address?.trim() ||
-            "",
+                email:
+                  normalizedEmail,
 
-          pumpCode,
+                password:
+                  request.password,
 
-          plan:
-            request.plan ||
-            "standard",
+                role: "owner",
 
-          status:
-            "active",
+                pumpId:
+                  createdPump._id,
 
-          subscriptionStart:
-            new Date(),
+                active: true,
+              },
+            ],
+            { session }
+          );
 
-          subscriptionEnd:
-            null,
+          /* =========================================
+             GENERATE PUMP CODE
+          ========================================= */
 
-          notes:
-            request.notes?.trim() ||
-            "",
+          pumpCode =
+            await generatePumpCode(
+              session
+            );
 
-          createdBy:
+          /* =========================================
+             CREATE CLIENT
+          ========================================= */
+
+          [
+            createdClient,
+          ] = await Client.create(
+            [
+              {
+                pumpId:
+                  createdPump._id,
+
+                ownerUserId:
+                  createdUser._id,
+
+                pumpName:
+                  normalizeString(
+                    request.pumpName
+                  ),
+
+                ownerName:
+                  normalizeString(
+                    request.ownerName
+                  ),
+
+                email:
+                  normalizedEmail,
+
+                phone:
+                  normalizeString(
+                    request.phone
+                  ),
+
+                address:
+                  normalizeString(
+                    request.address
+                  ),
+
+                pumpCode,
+
+                plan:
+                  request.plan ||
+                  "standard",
+
+                status:
+                  "active",
+
+                subscriptionStart:
+                  new Date(),
+
+                subscriptionEnd:
+                  null,
+
+                notes:
+                  normalizeString(
+                    request.notes
+                  ),
+
+                createdBy:
+                  req.user?._id ||
+                  null,
+              },
+            ],
+            { session }
+          );
+
+          /* =========================================
+             MARK REQUEST APPROVED
+          ========================================= */
+
+          request.status =
+            "approved";
+
+          request.approvedBy =
             req.user?._id ||
-            null,
-        });
+            null;
 
-      /* ===============================================
-         MARK REQUEST APPROVED
-      =============================================== */
+          request.approvedAt =
+            new Date();
 
-      request.status =
-        "approved";
+          request.createdPumpId =
+            createdPump._id;
 
-      request.approvedBy =
-        req.user?._id ||
-        null;
+          request.createdUserId =
+            createdUser._id;
 
-      request.approvedAt =
-        new Date();
+          request.createdClientId =
+            createdClient._id;
 
-      request.createdPumpId =
-        createdPump._id;
+          await request.save({
+            session,
+          });
 
-      request.createdUserId =
-        createdUser._id;
-
-      request.createdClientId =
-        createdClient._id;
-
-      await request.save();
+          createdRequest =
+            request;
+        }
+      );
 
       return res.status(200).json({
         success: true,
@@ -1301,14 +1834,17 @@ export const approveRegistrationRequest =
         message:
           "Registration request approved successfully",
 
-        request,
+        request:
+          createdRequest,
 
         client:
           createdClient,
 
         credentials: {
           email:
-            normalizedEmail,
+            normalizeEmail(
+              createdClient.email
+            ),
 
           role:
             "owner",
@@ -1322,44 +1858,57 @@ export const approveRegistrationRequest =
         error
       );
 
-      /* ===============================================
-         ROLLBACK
-      =============================================== */
-
-      try {
-        if (createdClient?._id) {
-          await Client.findByIdAndDelete(
-            createdClient._id
-          );
+      if (
+        error?.statusCode
+      ) {
+        if (
+          error.statusCode ===
+          404
+        ) {
+          return res.status(404).json({
+            success: false,
+            message:
+              "Registration request not found",
+          });
         }
 
-        if (createdUser?._id) {
-          await User.findByIdAndDelete(
-            createdUser._id
-          );
+        if (
+          error.statusCode ===
+          400
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              `Request has already been ${error.requestStatus}`,
+          });
         }
 
-        if (createdPump?._id) {
-          await Pump.findByIdAndDelete(
-            createdPump._id
-          );
+        if (
+          error.statusCode ===
+          409
+        ) {
+          return res.status(409).json({
+            success: false,
+            message:
+              "A user or client with this email already exists",
+          });
         }
-      } catch (rollbackError) {
-        console.error(
-          "APPROVAL ROLLBACK ERROR:",
-          rollbackError
-        );
       }
 
-      return res.status(500).json({
+      return res.status(
+        error?.code === 11000
+          ? 409
+          : 500
+      ).json({
         success: false,
 
         message:
-          "Unable to approve registration request",
-
-        error:
-          error.message,
+          error?.code === 11000
+            ? "A record with the same unique information already exists"
+            : "Unable to approve registration request",
       });
+    } finally {
+      await session.endSession();
     }
   };
 
@@ -1370,6 +1919,18 @@ export const approveRegistrationRequest =
 export const rejectRegistrationRequest =
   async (req, res) => {
     try {
+      if (
+        !isValidObjectId(
+          req.params.id
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid registration request ID",
+        });
+      }
+
       const {
         rejectionReason,
       } = req.body;
@@ -1403,10 +1964,21 @@ export const rejectRegistrationRequest =
       request.status =
         "rejected";
 
-      request.rejectionReason =
-        String(
-          rejectionReason || ""
-        ).trim();
+      /*
+        Keep this value only if
+        RegistrationRequest schema
+        defines rejectionReason.
+      */
+
+      if (
+        rejectionReason !==
+        undefined
+      ) {
+        request.rejectionReason =
+          normalizeString(
+            rejectionReason
+          );
+      }
 
       request.approvedBy =
         req.user?._id ||
@@ -1436,9 +2008,6 @@ export const rejectRegistrationRequest =
 
         message:
           "Unable to reject registration request",
-
-        error:
-          error.message,
       });
     }
   };

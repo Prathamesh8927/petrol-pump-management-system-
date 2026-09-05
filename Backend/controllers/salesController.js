@@ -11,34 +11,25 @@ const getPumpId = (req) =>
   null;
 
 const getLocalDate = () => {
-  const now =
-    new Date();
+  const now = new Date();
 
-  const year =
-    now.getFullYear();
+  const year = now.getFullYear();
 
-  const month =
-    String(
-      now.getMonth() + 1
-    ).padStart(2, "0");
+  const month = String(
+    now.getMonth() + 1
+  ).padStart(2, "0");
 
-  const day =
-    String(
-      now.getDate()
-    ).padStart(2, "0");
+  const day = String(
+    now.getDate()
+  ).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
 };
 
-const normalizeFuelType = (
-  value
-) => {
-  const fuel =
-    String(
-      value || ""
-    )
-      .trim()
-      .toLowerCase();
+const normalizeFuelType = (value) => {
+  const fuel = String(value || "")
+    .trim()
+    .toLowerCase();
 
   if (
     fuel === "diesel" ||
@@ -47,283 +38,243 @@ const normalizeFuelType = (
     return "diesel";
   }
 
-  if (
-    fuel === "petrol"
-  ) {
+  if (fuel === "petrol") {
     return "petrol";
   }
 
   return fuel;
 };
 
-const readingToSale = (
-  reading
-) => ({
-  _id:
-    reading._id,
+const readingToSale = (reading) => ({
+  _id: reading._id,
 
-  nozzleId:
-    reading.nozzleId,
+  nozzleId: reading.nozzleId,
 
-  readingId:
-    reading._id,
+  readingId: reading._id,
 
-  fuelType:
-    normalizeFuelType(
-      reading.fuelType
-    ),
+  fuelType: normalizeFuelType(
+    reading.fuelType
+  ),
 
-  quantity:
-    Number(
-      reading.litresSold ||
-        0
-    ),
+  quantity: Number(
+    reading.litresSold || 0
+  ),
 
-  pricePerLitre:
-    Number(
-      reading.pricePerLitre ||
-        0
-    ),
+  pricePerLitre: Number(
+    reading.pricePerLitre || 0
+  ),
 
-  totalAmount:
-    Number(
-      reading.totalAmount ||
-        0
-    ),
+  totalAmount: Number(
+    reading.totalAmount || 0
+  ),
 
-  paymentMethod:
-    String(
-      reading.paymentMethod ||
-        "cash"
-    ).toLowerCase(),
+  paymentMethod: String(
+    reading.paymentMethod || "cash"
+  ).toLowerCase(),
 
-  saleDate:
-    reading.readingDate,
+  saleDate: reading.readingDate,
 
-  source:
-    "nozzle",
+  source: "nozzle",
 
-  note:
-    reading.note || "",
+  note: reading.note || "",
 
-  createdAt:
-    reading.createdAt,
+  createdAt: reading.createdAt,
 });
 
 /* =====================================================
    DAILY SALES
 ===================================================== */
 
-export const getDailySales =
-  async (req, res) => {
-    try {
-      const pumpId =
-        getPumpId(req);
+export const getDailySales = async (
+  req,
+  res
+) => {
+  try {
+    const pumpId = getPumpId(req);
 
-      const date =
-        req.query.date ||
-        getLocalDate();
-
-      const readings =
-        await NozzleReading.find({
-          pumpId,
-          readingDate:
-            date,
-        })
-          .populate(
-            "nozzleId",
-            "nozzleNumber fuelType"
-          )
-          .sort({
-            createdAt: -1,
-          });
-
-      const manualSales =
-        await Sale.find({
-          pumpId,
-          saleDate:
-            date,
-          source:
-            "manual",
-        })
-          .populate(
-            "nozzleId",
-            "nozzleNumber fuelType"
-          )
-          .sort({
-            createdAt: -1,
-          });
-
-      const nozzleSales =
-        readings.map(
-          readingToSale
-        );
-
-      const formattedManual =
-        manualSales.map(
-          (sale) => ({
-            ...sale.toObject(),
-
-            fuelType:
-              normalizeFuelType(
-                sale.fuelType
-              ),
-          })
-        );
-
-      const sales = [
-        ...nozzleSales,
-        ...formattedManual,
-      ];
-
-      const summary = {
-        totalSale: 0,
-
-        totalLitres: 0,
-
-        petrolSale: 0,
-        dieselSale: 0,
-
-        petrolLitres: 0,
-        dieselLitres: 0,
-
-        cash: 0,
-        upi: 0,
-        card: 0,
-        credit: 0,
-      };
-
-      sales.forEach(
-        (sale) => {
-          const fuelType =
-            normalizeFuelType(
-              sale.fuelType
-            );
-
-          const amount =
-            Number(
-              sale.totalAmount ||
-                0
-            );
-
-          const litres =
-            Number(
-              sale.quantity ||
-                sale.litresSold ||
-                0
-            );
-
-          summary.totalSale +=
-            amount;
-
-          summary.totalLitres +=
-            litres;
-
-          if (
-            fuelType ===
-            "petrol"
-          ) {
-            summary.petrolSale +=
-              amount;
-
-            summary.petrolLitres +=
-              litres;
-          }
-
-          if (
-            fuelType ===
-            "diesel"
-          ) {
-            summary.dieselSale +=
-              amount;
-
-            summary.dieselLitres +=
-              litres;
-          }
-
-          const payment =
-            String(
-              sale.paymentMethod ||
-                "cash"
-            ).toLowerCase();
-
-          if (
-            summary[
-              payment
-            ] !== undefined
-          ) {
-            summary[
-              payment
-            ] += amount;
-          }
-        }
-      );
-
-      Object.keys(
-        summary
-      ).forEach(
-        (key) => {
-          summary[key] =
-            Number(
-              summary[
-                key
-              ].toFixed(2)
-            );
-        }
-      );
-
-      console.log(
-        "DAILY SALES DATE:",
-        date
-      );
-
-      console.log(
-        "NOZZLE SALES:",
-        nozzleSales.length
-      );
-
-      console.log(
-        "PETROL SOLD:",
-        summary.petrolLitres
-      );
-
-      console.log(
-        "DIESEL SOLD:",
-        summary.dieselLitres
-      );
-
-      console.log(
-        "DAILY TOTAL:",
-        summary.totalSale
-      );
-
-      return res.status(200).json({
-        success: true,
-
-        date,
-
-        count:
-          sales.length,
-
-        sales,
-
-        summary,
-      });
-    } catch (error) {
-      console.error(
-        "DAILY SALES ERROR:",
-        error
-      );
-
-      return res.status(500).json({
+    if (!pumpId) {
+      return res.status(400).json({
         success: false,
         message:
-          "Unable to load daily sales",
-        error:
-          error.message,
+          "Pump information not found",
       });
     }
-  };
+
+    const date =
+      req.query.date ||
+      getLocalDate();
+
+    const readings =
+      await NozzleReading.find({
+        pumpId,
+        readingDate: date,
+      })
+        .populate(
+          "nozzleId",
+          "nozzleNumber fuelType"
+        )
+        .sort({
+          createdAt: -1,
+        });
+
+    const manualSales =
+      await Sale.find({
+        pumpId,
+        saleDate: date,
+        source: "manual",
+      })
+        .populate(
+          "nozzleId",
+          "nozzleNumber fuelType"
+        )
+        .sort({
+          createdAt: -1,
+        });
+
+    const nozzleSales =
+      readings.map(readingToSale);
+
+    const formattedManual =
+      manualSales.map((sale) => ({
+        ...sale.toObject(),
+
+        fuelType:
+          normalizeFuelType(
+            sale.fuelType
+          ),
+      }));
+
+    const sales = [
+      ...nozzleSales,
+      ...formattedManual,
+    ];
+
+    const summary = {
+      totalSale: 0,
+
+      totalLitres: 0,
+
+      petrolSale: 0,
+      dieselSale: 0,
+
+      petrolLitres: 0,
+      dieselLitres: 0,
+
+      cash: 0,
+      upi: 0,
+      card: 0,
+      credit: 0,
+    };
+
+    sales.forEach((sale) => {
+      const fuelType =
+        normalizeFuelType(
+          sale.fuelType
+        );
+
+      const amount = Number(
+        sale.totalAmount || 0
+      );
+
+      const litres = Number(
+        sale.quantity ||
+          sale.litresSold ||
+          0
+      );
+
+      summary.totalSale +=
+        amount;
+
+      summary.totalLitres +=
+        litres;
+
+      if (fuelType === "petrol") {
+        summary.petrolSale +=
+          amount;
+
+        summary.petrolLitres +=
+          litres;
+      }
+
+      if (fuelType === "diesel") {
+        summary.dieselSale +=
+          amount;
+
+        summary.dieselLitres +=
+          litres;
+      }
+
+      const payment = String(
+        sale.paymentMethod ||
+          "cash"
+      ).toLowerCase();
+
+      if (
+        summary[payment] !==
+        undefined
+      ) {
+        summary[payment] +=
+          amount;
+      }
+    });
+
+    Object.keys(summary).forEach(
+      (key) => {
+        summary[key] = Number(
+          summary[key].toFixed(2)
+        );
+      }
+    );
+
+    console.log(
+      "DAILY SALES DATE:",
+      date
+    );
+
+    console.log(
+      "NOZZLE SALES:",
+      nozzleSales.length
+    );
+
+    console.log(
+      "PETROL SOLD:",
+      summary.petrolLitres
+    );
+
+    console.log(
+      "DIESEL SOLD:",
+      summary.dieselLitres
+    );
+
+    console.log(
+      "DAILY TOTAL:",
+      summary.totalSale
+    );
+
+    return res.status(200).json({
+      success: true,
+
+      date,
+
+      count: sales.length,
+
+      sales,
+
+      summary,
+    });
+  } catch (error) {
+    console.error(
+      "DAILY SALES ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Unable to load daily sales",
+    });
+  }
+};
 
 /* =====================================================
    HISTORY
@@ -334,6 +285,14 @@ export const getSalesHistory =
     try {
       const pumpId =
         getPumpId(req);
+
+      if (!pumpId) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Pump information not found",
+        });
+      }
 
       const {
         date,
@@ -350,9 +309,7 @@ export const getSalesHistory =
           date;
       }
 
-      if (
-        paymentMethod
-      ) {
+      if (paymentMethod) {
         readingFilter.paymentMethod =
           String(
             paymentMethod
@@ -387,15 +344,13 @@ export const getSalesHistory =
             (sale) =>
               normalizeFuelType(
                 sale.fuelType
-              ) ===
-              requestedFuel
+              ) === requestedFuel
           );
       }
 
       const manualFilter = {
         pumpId,
-        source:
-          "manual",
+        source: "manual",
       };
 
       if (date) {
@@ -403,9 +358,7 @@ export const getSalesHistory =
           date;
       }
 
-      if (
-        paymentMethod
-      ) {
+      if (paymentMethod) {
         manualFilter.paymentMethod =
           String(
             paymentMethod
@@ -457,17 +410,19 @@ export const getSalesHistory =
 
       return res.status(200).json({
         success: true,
-        count:
-          sales.length,
+        count: sales.length,
         sales,
       });
     } catch (error) {
+      console.error(
+        "SALES HISTORY ERROR:",
+        error
+      );
+
       return res.status(500).json({
         success: false,
         message:
           "Unable to load sales history",
-        error:
-          error.message,
       });
     }
   };
@@ -482,6 +437,14 @@ export const getPaymentSummary =
       const pumpId =
         getPumpId(req);
 
+      if (!pumpId) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Pump information not found",
+        });
+      }
+
       const date =
         req.query.date ||
         getLocalDate();
@@ -489,17 +452,14 @@ export const getPaymentSummary =
       const readings =
         await NozzleReading.find({
           pumpId,
-          readingDate:
-            date,
+          readingDate: date,
         });
 
       const manualSales =
         await Sale.find({
           pumpId,
-          saleDate:
-            date,
-          source:
-            "manual",
+          saleDate: date,
+          source: "manual",
         });
 
       const summary = {
@@ -515,6 +475,7 @@ export const getPaymentSummary =
           (reading) => ({
             paymentMethod:
               reading.paymentMethod,
+
             totalAmount:
               reading.totalAmount,
           })
@@ -525,30 +486,33 @@ export const getPaymentSummary =
 
       transactions.forEach(
         (item) => {
-          const amount =
-            Number(
-              item.totalAmount ||
-                0
-            );
+          const amount = Number(
+            item.totalAmount || 0
+          );
 
-          const payment =
-            String(
-              item.paymentMethod ||
-                "cash"
-            ).toLowerCase();
+          const payment = String(
+            item.paymentMethod ||
+              "cash"
+          ).toLowerCase();
 
           summary.total +=
             amount;
 
           if (
-            summary[
-              payment
-            ] !== undefined
+            summary[payment] !==
+            undefined
           ) {
-            summary[
-              payment
-            ] += amount;
+            summary[payment] +=
+              amount;
           }
+        }
+      );
+
+      Object.keys(summary).forEach(
+        (key) => {
+          summary[key] = Number(
+            summary[key].toFixed(2)
+          );
         }
       );
 
@@ -558,6 +522,11 @@ export const getPaymentSummary =
         summary,
       });
     } catch (error) {
+      console.error(
+        "PAYMENT SUMMARY ERROR:",
+        error
+      );
+
       return res.status(500).json({
         success: false,
         message:

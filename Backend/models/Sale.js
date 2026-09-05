@@ -88,9 +88,27 @@ const saleSchema = new mongoose.Schema(
   }
 );
 
+/* =====================================================
+   INDEXES
+===================================================== */
+
+/*
+  Optimizes pump-specific sales
+  history and dashboard queries.
+*/
 saleSchema.index({
   pumpId: 1,
   saleDate: -1,
+});
+
+/*
+  Optimizes manual-sale queries:
+  pumpId + saleDate + source
+*/
+saleSchema.index({
+  pumpId: 1,
+  saleDate: 1,
+  source: 1,
 });
 
 /*
