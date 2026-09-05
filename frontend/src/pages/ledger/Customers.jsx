@@ -16,6 +16,7 @@ import {
   Pencil,
   Trash2,
   RefreshCw,
+  FileText,
 } from "lucide-react";
 
 import ProfessionalSearch from "../../components/ProfessionalSearch";
@@ -23,7 +24,14 @@ import ProfessionalSearch from "../../components/ProfessionalSearch";
 import {
   getLedgerCustomers,
   deleteLedgerCustomer,
+  getCustomerLedgerHistory,
 } from "../../services/ledgerService";
+
+import api from "../../services/api";
+
+import {
+  exportLedgerPDF,
+} from "../../utils/ledgerExport";
 
 const Customers = () => {
   const navigate =
@@ -174,6 +182,230 @@ const Customers = () => {
           error.response?.data
             ?.message ||
             "Unable to remove customer"
+        );
+      }
+    };
+
+  /* =====================================================
+     PDF
+  ===================================================== */
+
+  const handleDownloadPDF =
+    async (
+      customer
+    ) => {
+      try {
+        toast.loading(
+          "Preparing customer ledger PDF...",
+          {
+            id: "ledger-pdf",
+          }
+        );
+
+        /* ================================================
+           GET CUSTOMER LEDGER HISTORY
+        ================================================ */
+
+        const data =
+          await getCustomerLedgerHistory(
+            customer._id
+          );
+
+        const pdfCustomer =
+          data?.customer ||
+          customer;
+
+        const pdfEntries =
+          data?.entries ||
+          [];
+
+        const pdfSummary =
+          data?.summary ||
+          {
+            totalPurchased:
+              Number(
+                customer.totalPurchased ||
+                  0
+              ),
+
+            totalPaid:
+              Number(
+                customer.totalPaid ||
+                  0
+              ),
+
+            totalPending:
+              Number(
+                customer.totalPending ||
+                  0
+              ),
+
+            purchaseCount:
+              Number(
+                customer.purchaseCount ||
+                  0
+              ),
+          };
+
+        /* ================================================
+           GET ACTUAL PUMP SETTINGS
+
+           The actual pump information comes from:
+           GET /api/settings/pump
+        ================================================ */
+
+        const pumpResponse =
+          await api.get(
+            "/settings/pump"
+          );
+
+        /* ================================================
+           SUPPORT DIFFERENT RESPONSE STRUCTURES
+        ================================================ */
+
+        const pumpData =
+          pumpResponse?.data?.pump ||
+          pumpResponse?.data?.settings ||
+          pumpResponse?.data?.data ||
+          pumpResponse?.data ||
+          {};
+
+        /* ================================================
+           ACTUAL PUMP INFORMATION
+
+           IMPORTANT:
+           Pump ID / Dealer Code / MongoDB ID
+           are intentionally NOT included.
+        ================================================ */
+
+        const pump = {
+          pumpName:
+            pumpData?.pumpName ||
+            pumpData?.name ||
+            pumpData?.pump?.pumpName ||
+            "Petrol Pump",
+
+          ownerName:
+            pumpData?.ownerName ||
+            pumpData?.owner ||
+            pumpData?.pump?.ownerName ||
+            "Pump Owner",
+
+          companyName:
+            pumpData?.companyName ||
+            "",
+
+          gstin:
+            pumpData?.gstin ||
+            "",
+
+          address:
+            pumpData?.address ||
+            "",
+
+          city:
+            pumpData?.city ||
+            "",
+
+          state:
+            pumpData?.state ||
+            "",
+
+          pincode:
+            pumpData?.pincode ||
+            "",
+
+          phone:
+            pumpData?.phone ||
+            "",
+
+          email:
+            pumpData?.email ||
+            "",
+        };
+
+        /* ================================================
+           SAFETY CHECK
+        ================================================ */
+
+        if (
+          !pump.pumpName ||
+          pump.pumpName ===
+            "Petrol Pump"
+        ) {
+          console.warn(
+            "Actual pump name was not found in settings response.",
+            pumpData
+          );
+        }
+
+        if (
+          !pump.ownerName ||
+          pump.ownerName ===
+            "Pump Owner"
+        ) {
+          console.warn(
+            "Actual owner name was not found in settings response.",
+            pumpData
+          );
+        }
+
+        /* ================================================
+           EXPORT PDF
+        ================================================ */
+
+        exportLedgerPDF({
+          customer: {
+            ...pdfCustomer,
+
+            entries:
+              pdfEntries,
+
+            summary:
+              pdfSummary,
+
+            totalAmount:
+              Number(
+                pdfSummary?.totalPurchased ||
+                  0
+              ),
+
+            paidAmount:
+              Number(
+                pdfSummary?.totalPaid ||
+                  0
+              ),
+
+            currentBalance:
+              Number(
+                pdfSummary?.totalPending ||
+                  0
+              ),
+          },
+
+          pump,
+        });
+
+        toast.success(
+          "Customer ledger PDF downloaded",
+          {
+            id: "ledger-pdf",
+          }
+        );
+
+      } catch (error) {
+        console.error(
+          "Customer ledger PDF error:",
+          error
+        );
+
+        toast.error(
+          error.response?.data
+            ?.message ||
+            "Unable to generate PDF",
+          {
+            id: "ledger-pdf",
+          }
         );
       }
     };
@@ -592,6 +824,21 @@ const Customers = () => {
                             }
                           >
                             <Pencil
+                              size={16}
+                            />
+                          </button>
+
+                          <button
+                            type="button"
+                            className="action-view"
+                            title="Download PDF"
+                            onClick={() =>
+                              handleDownloadPDF(
+                                customer
+                              )
+                            }
+                          >
+                            <FileText
                               size={16}
                             />
                           </button>

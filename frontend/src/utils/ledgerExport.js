@@ -7,42 +7,80 @@ import * as XLSX from "xlsx";
 ===================================================== */
 
 const money = (value) =>
-  Number(value || 0).toLocaleString(
-    "en-IN",
-    {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }
-  );
+  Number(value || 0).toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 
 const formatDate = (value) => {
-  if (!value) {
-    return "-";
-  }
+  if (!value) return "-";
 
-  const date =
-    new Date(`${value}T00:00:00`);
+  let date;
 
   if (
-    Number.isNaN(
-      date.getTime()
-    )
+    typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(value)
   ) {
-    return value;
+    date = new Date(`${value}T00:00:00`);
+  } else {
+    date = new Date(value);
   }
 
-  return date.toLocaleDateString(
-    "en-IN"
-  );
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return date.toLocaleDateString("en-IN");
 };
 
 const cleanFileName = (value) =>
   String(value || "ledger")
-    .replace(
-      /[^a-z0-9_-]/gi,
-      "_"
-    )
-    .replace(/_+/g, "_");
+    .replace(/[^a-z0-9_-]/gi, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+const getPaymentStatus = (pending, paid) => {
+  const pendingAmount = Number(pending || 0);
+  const paidAmount = Number(paid || 0);
+
+  if (pendingAmount <= 0) {
+    return "Paid";
+  }
+
+  if (paidAmount > 0) {
+    return "Partially Paid";
+  }
+
+  return "Pending";
+};
+
+const getFuelName = (fuelType) => {
+  const value = String(fuelType || "").toLowerCase();
+
+  if (value === "petrol") {
+    return "Petrol";
+  }
+
+  if (value === "diesel") {
+    return "Diesel";
+  }
+
+  return "-";
+};
+
+const getPumpId = (pump = {}) =>
+  pump.pumpId ||
+  pump._id ||
+  pump.id ||
+  pump.dealerCode ||
+  "-";
+
+const getEntries = (customer = {}) =>
+  Array.isArray(customer.entries)
+    ? customer.entries
+    : Array.isArray(customer.history)
+    ? customer.history
+    : [];
 
 /* =====================================================
    PDF
@@ -50,48 +88,154 @@ const cleanFileName = (value) =>
 
 export const exportLedgerPDF = ({
   customer,
-  pump,
+  pump = {},
 }) => {
   if (!customer) {
     return;
   }
 
-  const doc =
-    new jsPDF({
-      orientation: "portrait",
-      unit: "mm",
-      format: "a4",
-    });
+  const doc = new jsPDF({
+    orientation: "portrait",
+    unit: "mm",
+    format: "a4",
+  });
 
   const pageWidth =
     doc.internal.pageSize.getWidth();
 
-  let y = 15;
+  const pageHeight =
+    doc.internal.pageSize.getHeight();
 
-  /* HEADER */
+  const margin = 14;
 
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
+  const pumpName = String(
+    pump.pumpName || "My Petrol Pump"
+  ).toUpperCase();
 
-  doc.setFontSize(18);
+  const ownerName =
+    pump.ownerName || "Pump Owner";
 
-  doc.text(
-    String(
-      pump.pumpName ||
-        "My Petrol Pump"
-    ).toUpperCase(),
-    pageWidth / 2,
-    y,
-    {
-      align: "center",
-    }
-  );
+  const companyName =
+    pump.companyName || "";
 
-  y += 7;
+  const pumpId =
+    getPumpId(pump);
 
-  if (pump.companyName) {
+  const location = [
+    pump.address,
+    pump.city,
+    pump.state,
+    pump.pincode,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  const entries =
+    getEntries(customer);
+
+  /* ===================================================
+     CALCULATIONS
+  =================================================== */
+
+  let totalPurchased =
+    Number(customer.totalAmount || 0);
+
+  let totalPaid =
+    Number(customer.paidAmount || 0);
+
+  let totalPending =
+    Number(customer.currentBalance || 0);
+
+  if (entries.length > 0) {
+    totalPurchased = 0;
+    totalPaid = 0;
+    totalPending = 0;
+
+    entries.forEach((entry) => {
+      const type = String(
+        entry.entryType ||
+          entry.type ||
+          ""
+      ).toLowerCase();
+
+      if (type === "purchase") {
+        totalPurchased += Number(
+          entry.totalAmount || 0
+        );
+
+        totalPaid += Number(
+          entry.paidAmount || 0
+        );
+
+        totalPending += Number(
+          entry.pendingAmount || 0
+        );
+      }
+    });
+
+    let totalPayments = 0;
+
+    entries.forEach((entry) => {
+      const type = String(
+        entry.entryType ||
+          entry.type ||
+          ""
+      ).toLowerCase();
+
+      if (type === "payment") {
+        totalPayments += Number(
+          entry.paymentAmount ||
+            entry.amount ||
+            0
+        );
+      }
+    });
+
+    totalPaid += totalPayments;
+
+    totalPending = Math.max(
+      totalPurchased - totalPaid,
+      0
+    );
+  }
+
+  const paymentStatus =
+    getPaymentStatus(
+      totalPending,
+      totalPaid
+    );
+
+  /* ===================================================
+     PAGE HEADER
+  =================================================== */
+
+  const drawPageHeader = (
+    showTitle = true
+  ) => {
+    let headerY = 13;
+
+    /* PUMP NAME */
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(17);
+
+    doc.text(
+      pumpName,
+      pageWidth / 2,
+      headerY,
+      {
+        align: "center",
+      }
+    );
+
+    headerY += 6;
+
+    /* OWNER NAME */
+
     doc.setFont(
       "helvetica",
       "normal"
@@ -100,99 +244,141 @@ export const exportLedgerPDF = ({
     doc.setFontSize(10);
 
     doc.text(
-      pump.companyName,
+      `Owner: ${ownerName}`,
       pageWidth / 2,
-      y,
+      headerY,
       {
         align: "center",
       }
     );
 
-    y += 5;
-  }
+    headerY += 5;
 
-  const location =
-    [
-      pump.address,
-      pump.city,
-      pump.state,
-      pump.pincode,
-    ]
-      .filter(Boolean)
-      .join(", ");
+    /* COMPANY NAME */
 
-  if (location) {
-    doc.setFontSize(9);
+    if (companyName) {
+      doc.setFontSize(9);
+
+      doc.text(
+        companyName,
+        pageWidth / 2,
+        headerY,
+        {
+          align: "center",
+        }
+      );
+
+      headerY += 4.5;
+    }
+
+    /* LOCATION */
+
+    if (location) {
+      doc.setFontSize(8);
+
+      doc.text(
+        location,
+        pageWidth / 2,
+        headerY,
+        {
+          align: "center",
+        }
+      );
+
+      headerY += 4.5;
+    }
+
+    /* PUMP ID */
+
+    doc.setFontSize(8);
 
     doc.text(
-      location,
+      `Pump ID: ${pumpId}`,
       pageWidth / 2,
-      y,
+      headerY,
       {
         align: "center",
       }
     );
 
-    y += 5;
-  }
+    headerY += 5;
 
-  if (pump.dealerCode) {
-    doc.text(
-      `Dealer Code: ${pump.dealerCode}`,
-      pageWidth / 2,
-      y,
-      {
-        align: "center",
-      }
+    doc.setDrawColor(
+      190,
+      190,
+      190
     );
 
-    y += 6;
-  }
+    doc.line(
+      margin,
+      headerY,
+      pageWidth - margin,
+      headerY
+    );
 
-  doc.line(
-    14,
-    y,
-    pageWidth - 14,
-    y
-  );
+    if (showTitle) {
+      headerY += 9;
+
+      doc.setFont(
+        "helvetica",
+        "bold"
+      );
+
+      doc.setFontSize(13);
+
+      doc.text(
+        "CUSTOMER LEDGER",
+        pageWidth / 2,
+        headerY,
+        {
+          align: "center",
+        }
+      );
+    }
+
+    return headerY;
+  };
+
+  let y =
+    drawPageHeader(true);
 
   y += 9;
 
-  /* TITLE */
+  /* ===================================================
+     CUSTOMER INFORMATION
+  =================================================== */
 
   doc.setFont(
     "helvetica",
     "bold"
   );
 
-  doc.setFontSize(14);
-
-  doc.text(
-    "CUSTOMER LEDGER",
-    pageWidth / 2,
-    y,
-    {
-      align: "center",
-    }
-  );
-
-  y += 9;
-
-  /* CUSTOMER INFO */
-
   doc.setFontSize(10);
 
   doc.text(
-    `Customer: ${customer.name || "-"}`,
-    14,
+    `Customer: ${
+      customer.name || "-"
+    }`,
+    margin,
     y
   );
 
+  const firstEntryDate =
+    entries.length > 0
+      ? entries[0]?.entryDate ||
+        entries[0]?.date
+      : customer.purchaseDate;
+
+  doc.setFont(
+    "helvetica",
+    "normal"
+  );
+
   doc.text(
-    `Date: ${formatDate(
-      customer.purchaseDate
+    `Ledger Date: ${formatDate(
+      firstEntryDate
     )}`,
-    pageWidth - 14,
+    pageWidth - margin,
     y,
     {
       align: "right",
@@ -204,100 +390,436 @@ export const exportLedgerPDF = ({
   if (customer.phone) {
     doc.text(
       `Mobile: ${customer.phone}`,
-      14,
+      margin,
       y
     );
-
-    y += 5;
   }
 
-  if (
-    customer.vehicleNumber
-  ) {
+  if (customer.vehicleNumber) {
     doc.text(
-      `Vehicle No.: ${customer.vehicleNumber}`,
-      14,
-      y
+      `Vehicle No.: ${
+        customer.vehicleNumber
+      }`,
+      pageWidth - margin,
+      y,
+      {
+        align: "right",
+      }
     );
-
-    y += 5;
   }
 
-  /* DETAILS TABLE */
+  y += 8;
+
+  /* ===================================================
+     SUMMARY
+  =================================================== */
 
   autoTable(doc, {
-    startY: y + 4,
+    startY: y,
 
     head: [
       [
-        "Fuel Type",
-        "Purchase Date",
-        "Total Amount",
-        "Paid Amount",
-        "Pending Amount",
-        "Payment",
+        "Total Purchases",
+        "Total Paid",
+        "Total Pending",
+        "Transactions",
+        "Status",
       ],
     ],
 
     body: [
       [
-        customer.fuelType ===
-        "petrol"
-          ? "Petrol"
-          : "Diesel",
-
-        formatDate(
-          customer.purchaseDate
-        ),
-
         `Rs. ${money(
-          customer.totalAmount
+          totalPurchased
         )}`,
 
         `Rs. ${money(
-          customer.paidAmount
+          totalPaid
         )}`,
 
         `Rs. ${money(
-          customer.currentBalance
+          totalPending
         )}`,
 
-        Number(
-          customer.currentBalance ||
-            0
-        ) <= 0
-          ? "Paid"
-          : Number(
-              customer.paidAmount ||
-                0
-            ) > 0
-          ? "Partially Paid"
-          : "Pending",
+        String(entries.length),
+
+        paymentStatus,
       ],
     ],
 
+    theme: "grid",
+
     styles: {
+      fontSize: 8.5,
+      cellPadding: 3.5,
+      halign: "center",
+      valign: "middle",
+    },
+
+    headStyles: {
       fontSize: 8,
-      cellPadding: 3,
+      fontStyle: "bold",
+      halign: "center",
+    },
+
+    bodyStyles: {
+      fontStyle: "bold",
+      halign: "center",
+    },
+
+    margin: {
+      left: margin,
+      right: margin,
     },
   });
 
-  let footerY =
-    doc.lastAutoTable
-      ?.finalY + 25;
+  y =
+    (doc.lastAutoTable?.finalY ||
+      y) + 10;
 
-  if (
-    customer.note
-  ) {
+  /* ===================================================
+     TRANSACTION HISTORY
+  =================================================== */
+
+  doc.setFont(
+    "helvetica",
+    "bold"
+  );
+
+  doc.setFontSize(11);
+
+  doc.text(
+    "TRANSACTION HISTORY",
+    margin,
+    y
+  );
+
+  y += 4;
+
+  if (entries.length > 0) {
+    const historyRows =
+      entries.map(
+        (entry, index) => {
+          const type =
+            String(
+              entry.entryType ||
+                entry.type ||
+                ""
+            ).toLowerCase();
+
+          const isPurchase =
+            type === "purchase";
+
+          const isPayment =
+            type === "payment";
+
+          const total =
+            isPurchase
+              ? Number(
+                  entry.totalAmount ||
+                    0
+                )
+              : 0;
+
+          const paid =
+            isPurchase
+              ? Number(
+                  entry.paidAmount ||
+                    0
+                )
+              : 0;
+
+          const pending =
+            isPurchase
+              ? Number(
+                  entry.pendingAmount ||
+                    0
+                )
+              : 0;
+
+          const payment =
+            isPayment
+              ? Number(
+                  entry.paymentAmount ||
+                    entry.amount ||
+                    0
+                )
+              : 0;
+
+          const date =
+            entry.entryDate ||
+            entry.date;
+
+          return [
+            String(index + 1),
+
+            formatDate(date),
+
+            isPurchase
+              ? "Purchase"
+              : isPayment
+              ? "Payment"
+              : "-",
+
+            isPurchase
+              ? getFuelName(
+                  entry.fuelType
+                )
+              : "-",
+
+            isPurchase
+              ? `Rs. ${money(total)}`
+              : "-",
+
+            isPurchase
+              ? `Rs. ${money(paid)}`
+              : isPayment
+              ? `Rs. ${money(payment)}`
+              : "-",
+
+            isPurchase
+              ? `Rs. ${money(pending)}`
+              : "-",
+
+            entry.note || "-",
+          ];
+        }
+      );
+
+    autoTable(doc, {
+      startY: y,
+
+      head: [
+        [
+          "#",
+          "Date",
+          "Type",
+          "Fuel",
+          "Total",
+          "Paid",
+          "Pending",
+          "Note",
+        ],
+      ],
+
+      body: historyRows,
+
+      theme: "grid",
+
+      styles: {
+        fontSize: 7.2,
+        cellPadding: 2.5,
+        overflow: "linebreak",
+        valign: "middle",
+      },
+
+      headStyles: {
+        fontSize: 7.2,
+        fontStyle: "bold",
+        halign: "center",
+      },
+
+      columnStyles: {
+        0: {
+          cellWidth: 8,
+          halign: "center",
+        },
+
+        1: {
+          cellWidth: 21,
+        },
+
+        2: {
+          cellWidth: 20,
+        },
+
+        3: {
+          cellWidth: 18,
+        },
+
+        4: {
+          cellWidth: 25,
+          halign: "right",
+        },
+
+        5: {
+          cellWidth: 25,
+          halign: "right",
+        },
+
+        6: {
+          cellWidth: 25,
+          halign: "right",
+        },
+
+        7: {
+          cellWidth: "auto",
+        },
+      },
+
+      margin: {
+        left: margin,
+        right: margin,
+        bottom: 25,
+      },
+
+      pageBreak: "auto",
+
+      showHead: "everyPage",
+
+      didDrawPage: () => {
+        if (
+          doc.internal.getNumberOfPages() >
+          1
+        ) {
+          doc.setFont(
+            "helvetica",
+            "bold"
+          );
+
+          doc.setFontSize(9);
+
+          doc.text(
+            `${pumpName} - Customer Ledger`,
+            margin,
+            9
+          );
+        }
+      },
+    });
+
+    y =
+      (doc.lastAutoTable?.finalY ||
+        y) + 9;
+  } else {
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.setFontSize(9);
+
+    doc.text(
+      "No transaction history available.",
+      margin,
+      y + 5
+    );
+
+    y += 15;
+  }
+
+  /* ===================================================
+     FINAL SUMMARY
+  =================================================== */
+
+  if (y > pageHeight - 75) {
+    doc.addPage();
+
+    y =
+      drawPageHeader(false);
+
+    y += 12;
+  }
+
+  doc.setFont(
+    "helvetica",
+    "bold"
+  );
+
+  doc.setFontSize(11);
+
+  doc.text(
+    "LEDGER SUMMARY",
+    margin,
+    y
+  );
+
+  y += 5;
+
+  autoTable(doc, {
+    startY: y,
+
+    body: [
+      [
+        "Total Purchased",
+        `Rs. ${money(
+          totalPurchased
+        )}`,
+      ],
+
+      [
+        "Total Paid",
+        `Rs. ${money(
+          totalPaid
+        )}`,
+      ],
+
+      [
+        "Total Pending",
+        `Rs. ${money(
+          totalPending
+        )}`,
+      ],
+
+      [
+        "Payment Status",
+        paymentStatus,
+      ],
+    ],
+
+    theme: "grid",
+
+    styles: {
+      fontSize: 9,
+      cellPadding: 3,
+    },
+
+    columnStyles: {
+      0: {
+        fontStyle: "bold",
+        cellWidth: 55,
+      },
+
+      1: {
+        halign: "right",
+      },
+    },
+
+    margin: {
+      left: margin,
+      right: margin,
+    },
+  });
+
+  y =
+    (doc.lastAutoTable?.finalY ||
+      y) + 9;
+
+  /* ===================================================
+     REMARKS
+  =================================================== */
+
+  if (customer.note) {
+    if (y > pageHeight - 65) {
+      doc.addPage();
+
+      y =
+        drawPageHeader(false);
+
+      y += 10;
+    }
+
     doc.setFont(
       "helvetica",
       "bold"
     );
 
+    doc.setFontSize(9);
+
     doc.text(
       "Remarks:",
-      14,
-      footerY
+      margin,
+      y
     );
 
     doc.setFont(
@@ -305,52 +827,86 @@ export const exportLedgerPDF = ({
       "normal"
     );
 
+    const remarkLines =
+      doc.splitTextToSize(
+        String(customer.note),
+        pageWidth -
+          margin * 2 -
+          25
+      );
+
     doc.text(
-      customer.note,
-      35,
-      footerY
+      remarkLines,
+      margin + 25,
+      y
     );
 
-    footerY += 15;
+    y +=
+      Math.max(
+        remarkLines.length * 4.5,
+        5
+      ) + 8;
   }
 
-  if (footerY > 245) {
+  /* ===================================================
+     SIGNATURE
+  =================================================== */
+
+  if (y > pageHeight - 55) {
     doc.addPage();
-    footerY = 215;
+
+    y =
+      drawPageHeader(false);
+
+    y += 12;
   }
 
-  /* SIGNATORY */
+  const signatureX =
+    pageWidth - margin;
 
   doc.setFont(
     "helvetica",
     "bold"
   );
 
+  doc.setFontSize(9);
+
   doc.text(
-    `For ${String(
-      pump.pumpName ||
-        "My Petrol Pump"
-    ).toUpperCase()}`,
-    pageWidth - 14,
-    footerY,
+    `For ${pumpName}`,
+    signatureX,
+    y,
     {
       align: "right",
     }
   );
 
-  footerY += 18;
+  y += 18;
+
+  doc.setDrawColor(
+    80,
+    80,
+    80
+  );
+
+  doc.line(
+    signatureX - 48,
+    y,
+    signatureX,
+    y
+  );
+
+  y += 6;
 
   doc.text(
-    pump.ownerName ||
-      "Pump Owner",
-    pageWidth - 14,
-    footerY,
+    ownerName,
+    signatureX,
+    y,
     {
       align: "right",
     }
   );
 
-  footerY += 5;
+  y += 5;
 
   doc.setFont(
     "helvetica",
@@ -359,16 +915,74 @@ export const exportLedgerPDF = ({
 
   doc.text(
     "(Authorized Signatory)",
-    pageWidth - 14,
-    footerY,
+    signatureX,
+    y,
     {
       align: "right",
     }
   );
 
+  /* ===================================================
+     FOOTER ON ALL PAGES
+  =================================================== */
+
+  const totalPages =
+    doc.internal.getNumberOfPages();
+
+  for (
+    let page = 1;
+    page <= totalPages;
+    page++
+  ) {
+    doc.setPage(page);
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.setFontSize(7);
+
+    doc.setTextColor(
+      100,
+      100,
+      100
+    );
+
+    doc.text(
+      `Pump: ${pumpName}`,
+      margin,
+      pageHeight - 8
+    );
+
+    doc.text(
+      `Owner: ${ownerName}`,
+      pageWidth / 2,
+      pageHeight - 8,
+      {
+        align: "center",
+      }
+    );
+
+    doc.text(
+      `Page ${page} of ${totalPages}`,
+      pageWidth - margin,
+      pageHeight - 8,
+      {
+        align: "right",
+      }
+    );
+  }
+
+  /* ===================================================
+     SAVE
+  =================================================== */
+
   doc.save(
     `${cleanFileName(
-      `${pump.pumpName}_${customer.name}_Ledger`
+      `${pump.pumpName || "Pump"}_${
+        customer.name || "Customer"
+      }_Ledger`
     )}.pdf`
   );
 };
@@ -379,11 +993,14 @@ export const exportLedgerPDF = ({
 
 export const exportLedgerExcel = ({
   customer,
-  pump,
+  pump = {},
 }) => {
   if (!customer) {
     return;
   }
+
+  const entries =
+    getEntries(customer);
 
   const rows = [
     [
@@ -393,22 +1010,24 @@ export const exportLedgerExcel = ({
       ).toUpperCase(),
     ],
 
+    [
+      "Owner",
+      pump.ownerName ||
+        "Pump Owner",
+    ],
+
     pump.companyName
       ? [pump.companyName]
       : [],
 
     [
-      "Customer Ledger",
+      "Pump ID",
+      getPumpId(pump),
     ],
 
     [
-      "Date",
-      formatDate(
-        customer.purchaseDate
-      ),
+      "Customer Ledger",
     ],
-
-    [],
 
     [
       "Customer Name",
@@ -426,77 +1045,128 @@ export const exportLedgerExcel = ({
         "",
     ],
 
-    [
-      "Fuel Type",
-      customer.fuelType ===
-      "petrol"
-        ? "Petrol"
-        : "Diesel",
-    ],
+    [],
 
     [
-      "Total Amount",
+      "Total Purchased",
       Number(
-        customer.totalAmount ||
-          0
+        customer.totalAmount || 0
       ),
     ],
 
     [
-      "Paid Amount",
+      "Total Paid",
       Number(
-        customer.paidAmount ||
-          0
+        customer.paidAmount || 0
       ),
     ],
 
     [
-      "Pending Amount",
+      "Total Pending",
       Number(
-        customer.currentBalance ||
-          0
+        customer.currentBalance || 0
       ),
-    ],
-
-    [
-      "Payment",
-      Number(
-        customer.currentBalance ||
-          0
-      ) <= 0
-        ? "Paid"
-        : Number(
-            customer.paidAmount ||
-              0
-          ) > 0
-        ? "Partially Paid"
-        : "Pending",
-    ],
-
-    [
-      "Remarks",
-      customer.note || "",
     ],
 
     [],
 
+    [
+      "#",
+      "Date",
+      "Type",
+      "Fuel",
+      "Total Amount",
+      "Paid Amount",
+      "Pending Amount",
+      "Payment Amount",
+      "Note",
+    ],
+  ];
+
+  entries.forEach(
+    (entry, index) => {
+      const type =
+        String(
+          entry.entryType ||
+            entry.type ||
+            ""
+        ).toLowerCase();
+
+      const isPurchase =
+        type === "purchase";
+
+      const isPayment =
+        type === "payment";
+
+      rows.push([
+        index + 1,
+
+        formatDate(
+          entry.entryDate ||
+            entry.date
+        ),
+
+        isPurchase
+          ? "Purchase"
+          : isPayment
+          ? "Payment"
+          : "-",
+
+        isPurchase
+          ? getFuelName(
+              entry.fuelType
+            )
+          : "-",
+
+        isPurchase
+          ? Number(
+              entry.totalAmount || 0
+            )
+          : 0,
+
+        isPurchase
+          ? Number(
+              entry.paidAmount || 0
+            )
+          : 0,
+
+        isPurchase
+          ? Number(
+              entry.pendingAmount ||
+                0
+            )
+          : 0,
+
+        isPayment
+          ? Number(
+              entry.paymentAmount ||
+                entry.amount ||
+                0
+            )
+          : 0,
+
+        entry.note || "",
+      ]);
+    }
+  );
+
+  rows.push(
+    [],
     [
       `For ${String(
         pump.pumpName ||
           "My Petrol Pump"
       ).toUpperCase()}`,
     ],
-
     [
-      "Owner",
+      "Authority",
       pump.ownerName ||
         "Pump Owner",
     ],
-
     [
       "Authorized Signatory",
-    ],
-  ];
+    ]
+  );
 
   const workbook =
     XLSX.utils.book_new();
@@ -507,13 +1177,15 @@ export const exportLedgerExcel = ({
     );
 
   sheet["!cols"] = [
-    {
-      wch: 24,
-    },
-
-    {
-      wch: 28,
-    },
+    { wch: 8 },
+    { wch: 15 },
+    { wch: 15 },
+    { wch: 12 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 35 },
   ];
 
   XLSX.utils.book_append_sheet(
@@ -525,7 +1197,9 @@ export const exportLedgerExcel = ({
   XLSX.writeFile(
     workbook,
     `${cleanFileName(
-      `${pump.pumpName}_${customer.name}_Ledger`
+      `${pump.pumpName || "Pump"}_${
+        customer.name || "Customer"
+      }_Ledger`
     )}.xlsx`
   );
 };
@@ -536,11 +1210,14 @@ export const exportLedgerExcel = ({
 
 export const exportLedgerCSV = ({
   customer,
-  pump,
+  pump = {},
 }) => {
   if (!customer) {
     return;
   }
+
+  const entries =
+    getEntries(customer);
 
   const rows = [
     [
@@ -551,17 +1228,15 @@ export const exportLedgerCSV = ({
     ],
 
     [
-      "Customer Ledger",
+      "Owner",
+      pump.ownerName ||
+        "Pump Owner",
     ],
 
     [
-      "Date",
-      formatDate(
-        customer.purchaseDate
-      ),
+      "Pump ID",
+      getPumpId(pump),
     ],
-
-    [],
 
     [
       "Customer",
@@ -569,42 +1244,106 @@ export const exportLedgerCSV = ({
     ],
 
     [
-      "Fuel Type",
-      customer.fuelType ||
+      "Mobile",
+      customer.phone || "",
+    ],
+
+    [
+      "Vehicle Number",
+      customer.vehicleNumber ||
         "",
-    ],
-
-    [
-      "Total Amount",
-      customer.totalAmount ||
-        0,
-    ],
-
-    [
-      "Paid Amount",
-      customer.paidAmount ||
-        0,
-    ],
-
-    [
-      "Pending Amount",
-      customer.currentBalance ||
-        0,
-    ],
-
-    [
-      "Remarks",
-      customer.note || "",
     ],
 
     [],
 
     [
-      "Owner",
-      pump.ownerName ||
-        "Pump Owner",
+      "#",
+      "Date",
+      "Type",
+      "Fuel",
+      "Total Amount",
+      "Paid Amount",
+      "Pending Amount",
+      "Payment Amount",
+      "Note",
     ],
   ];
+
+  entries.forEach(
+    (entry, index) => {
+      const type =
+        String(
+          entry.entryType ||
+            entry.type ||
+            ""
+        ).toLowerCase();
+
+      const isPurchase =
+        type === "purchase";
+
+      const isPayment =
+        type === "payment";
+
+      rows.push([
+        index + 1,
+
+        formatDate(
+          entry.entryDate ||
+            entry.date
+        ),
+
+        isPurchase
+          ? "Purchase"
+          : isPayment
+          ? "Payment"
+          : "-",
+
+        isPurchase
+          ? getFuelName(
+              entry.fuelType
+            )
+          : "-",
+
+        isPurchase
+          ? Number(
+              entry.totalAmount || 0
+            )
+          : 0,
+
+        isPurchase
+          ? Number(
+              entry.paidAmount || 0
+            )
+          : 0,
+
+        isPurchase
+          ? Number(
+              entry.pendingAmount ||
+                0
+            )
+          : 0,
+
+        isPayment
+          ? Number(
+              entry.paymentAmount ||
+                entry.amount ||
+                0
+            )
+          : 0,
+
+        entry.note || "",
+      ]);
+    }
+  );
+
+  rows.push(
+    [],
+    [
+      "Authority",
+      pump.ownerName ||
+        "Pump Owner",
+    ]
+  );
 
   const sheet =
     XLSX.utils.aoa_to_sheet(
@@ -626,35 +1365,27 @@ export const exportLedgerCSV = ({
     );
 
   const url =
-    URL.createObjectURL(
-      blob
-    );
+    URL.createObjectURL(blob);
 
   const link =
-    document.createElement(
-      "a"
-    );
+    document.createElement("a");
 
   link.href = url;
 
   link.download =
     `${cleanFileName(
-      `${pump.pumpName}_${customer.name}_Ledger`
+      `${pump.pumpName || "Pump"}_${
+        customer.name || "Customer"
+      }_Ledger`
     )}.csv`;
 
-  document.body.appendChild(
-    link
-  );
+  document.body.appendChild(link);
 
   link.click();
 
-  document.body.removeChild(
-    link
-  );
+  document.body.removeChild(link);
 
-  URL.revokeObjectURL(
-    url
-  );
+  URL.revokeObjectURL(url);
 };
 
 /* =====================================================
@@ -663,34 +1394,54 @@ export const exportLedgerCSV = ({
 
 export const printLedger = ({
   customer,
-  pump,
+  pump = {},
 }) => {
   if (!customer) {
     return;
   }
 
-  const payment =
-    Number(
-      customer.currentBalance ||
-        0
-    ) <= 0
-      ? "Paid"
-      : Number(
-          customer.paidAmount ||
-            0
-        ) > 0
-      ? "Partially Paid"
-      : "Pending";
+  const entries =
+    getEntries(customer);
 
-  const location =
-    [
-      pump.address,
-      pump.city,
-      pump.state,
-      pump.pincode,
-    ]
-      .filter(Boolean)
-      .join(", ");
+  const totalPurchased =
+    Number(
+      customer.totalAmount || 0
+    );
+
+  const totalPaid =
+    Number(
+      customer.paidAmount || 0
+    );
+
+  const totalPending =
+    Number(
+      customer.currentBalance || 0
+    );
+
+  const payment =
+    getPaymentStatus(
+      totalPending,
+      totalPaid
+    );
+
+  const location = [
+    pump.address,
+    pump.city,
+    pump.state,
+    pump.pincode,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  const pumpName =
+    String(
+      pump.pumpName ||
+        "My Petrol Pump"
+    ).toUpperCase();
+
+  const ownerName =
+    pump.ownerName ||
+    "Pump Owner";
 
   const printWindow =
     window.open(
@@ -702,6 +1453,96 @@ export const printLedger = ({
     return;
   }
 
+  const historyRows =
+    entries
+      .map((entry, index) => {
+        const type =
+          String(
+            entry.entryType ||
+              entry.type ||
+              ""
+          ).toLowerCase();
+
+        const isPurchase =
+          type === "purchase";
+
+        const isPayment =
+          type === "payment";
+
+        return `
+          <tr>
+            <td>${index + 1}</td>
+
+            <td>
+              ${formatDate(
+                entry.entryDate ||
+                  entry.date
+              )}
+            </td>
+
+            <td>
+              ${
+                isPurchase
+                  ? "Purchase"
+                  : isPayment
+                  ? "Payment"
+                  : "-"
+              }
+            </td>
+
+            <td>
+              ${
+                isPurchase
+                  ? getFuelName(
+                      entry.fuelType
+                    )
+                  : "-"
+              }
+            </td>
+
+            <td>
+              ${
+                isPurchase
+                  ? `₹ ${money(
+                      entry.totalAmount
+                    )}`
+                  : "-"
+              }
+            </td>
+
+            <td>
+              ${
+                isPurchase
+                  ? `₹ ${money(
+                      entry.paidAmount
+                    )}`
+                  : isPayment
+                  ? `₹ ${money(
+                      entry.paymentAmount ||
+                        entry.amount
+                    )}`
+                  : "-"
+              }
+            </td>
+
+            <td>
+              ${
+                isPurchase
+                  ? `₹ ${money(
+                      entry.pendingAmount
+                    )}`
+                  : "-"
+              }
+            </td>
+
+            <td>
+              ${entry.note || "-"}
+            </td>
+          </tr>
+        `;
+      })
+      .join("");
+
   printWindow.document.write(`
     <!DOCTYPE html>
 
@@ -710,14 +1551,14 @@ export const printLedger = ({
     <head>
 
       <title>
-        ${customer.name} Ledger
+        ${customer.name || "Customer"} Ledger
       </title>
 
       <style>
 
         @page {
           size: A4;
-          margin: 15mm;
+          margin: 12mm;
         }
 
         body {
@@ -729,29 +1570,72 @@ export const printLedger = ({
         .header {
           text-align: center;
           border-bottom: 1px solid #ddd;
-          padding-bottom: 16px;
+          padding-bottom: 12px;
         }
 
         .header h1 {
           margin: 0;
-          font-size: 25px;
+          font-size: 24px;
+        }
+
+        .header .owner {
+          margin: 5px 0 0;
+          font-size: 13px;
+          font-weight: bold;
         }
 
         .header p {
-          margin: 5px 0 0;
-          font-size: 13px;
+          margin: 4px 0 0;
+          font-size: 12px;
         }
 
         .title {
           text-align: center;
-          margin: 20px 0;
+          margin: 18px 0;
+        }
+
+        .title h2 {
+          margin: 0;
+          font-size: 18px;
         }
 
         .customer {
           display: flex;
           justify-content: space-between;
+          margin-bottom: 15px;
+          font-size: 12px;
+          line-height: 1.8;
+        }
+
+        .summary {
+          display: grid;
+          grid-template-columns:
+            repeat(4, 1fr);
+          gap: 8px;
           margin-bottom: 18px;
+        }
+
+        .summary-box {
+          border: 1px solid #ddd;
+          padding: 9px;
+          text-align: center;
+        }
+
+        .summary-box strong {
+          display: block;
+          font-size: 11px;
+          margin-bottom: 4px;
+        }
+
+        .summary-box span {
           font-size: 13px;
+          font-weight: bold;
+        }
+
+        .section-title {
+          font-size: 14px;
+          font-weight: bold;
+          margin: 15px 0 8px;
         }
 
         table {
@@ -762,27 +1646,51 @@ export const printLedger = ({
         th,
         td {
           border: 1px solid #ddd;
-          padding: 10px;
-          font-size: 12px;
+          padding: 7px;
+          font-size: 10px;
           text-align: left;
         }
 
         th {
           background: #f5f5f5;
+          font-weight: bold;
         }
 
         .remarks {
-          margin-top: 20px;
+          margin-top: 18px;
+          font-size: 12px;
         }
 
         .signature {
           margin-top: 55px;
           text-align: right;
-          font-size: 13px;
+          font-size: 12px;
         }
 
-        .signature-space {
-          height: 35px;
+        .signature-line {
+          display: inline-block;
+          width: 160px;
+          border-top: 1px solid #333;
+          margin-top: 40px;
+          padding-top: 6px;
+        }
+
+        .page-footer {
+          margin-top: 25px;
+          font-size: 9px;
+          color: #777;
+          display: flex;
+          justify-content: space-between;
+        }
+
+        @media print {
+          tr {
+            page-break-inside: avoid;
+          }
+
+          thead {
+            display: table-header-group;
+          }
         }
 
       </style>
@@ -794,11 +1702,12 @@ export const printLedger = ({
       <div class="header">
 
         <h1>
-          ${String(
-            pump.pumpName ||
-              "My Petrol Pump"
-          ).toUpperCase()}
+          ${pumpName}
         </h1>
+
+        <p class="owner">
+          Owner: ${ownerName}
+        </p>
 
         ${
           pump.companyName
@@ -812,18 +1721,18 @@ export const printLedger = ({
             : ""
         }
 
-        ${
-          pump.dealerCode
-            ? `<p>Dealer Code: ${pump.dealerCode}</p>`
-            : ""
-        }
+        <p>
+          Pump ID: ${getPumpId(pump)}
+        </p>
 
       </div>
 
       <div class="title">
+
         <h2>
           CUSTOMER LEDGER
         </h2>
+
       </div>
 
       <div class="customer">
@@ -834,10 +1743,7 @@ export const printLedger = ({
             Customer:
           </strong>
 
-          ${
-            customer.name ||
-            "-"
-          }
+          ${customer.name || "-"}
 
           <br />
 
@@ -869,15 +1775,69 @@ export const printLedger = ({
         <div>
 
           <strong>
-            Date:
+            Status:
           </strong>
 
-          ${formatDate(
-            customer.purchaseDate
-          )}
+          ${payment}
 
         </div>
 
+      </div>
+
+      <div class="summary">
+
+        <div class="summary-box">
+
+          <strong>
+            Total Purchased
+          </strong>
+
+          <span>
+            ₹ ${money(totalPurchased)}
+          </span>
+
+        </div>
+
+        <div class="summary-box">
+
+          <strong>
+            Total Paid
+          </strong>
+
+          <span>
+            ₹ ${money(totalPaid)}
+          </span>
+
+        </div>
+
+        <div class="summary-box">
+
+          <strong>
+            Total Pending
+          </strong>
+
+          <span>
+            ₹ ${money(totalPending)}
+          </span>
+
+        </div>
+
+        <div class="summary-box">
+
+          <strong>
+            Transactions
+          </strong>
+
+          <span>
+            ${entries.length}
+          </span>
+
+        </div>
+
+      </div>
+
+      <div class="section-title">
+        TRANSACTION HISTORY
       </div>
 
       <table>
@@ -885,75 +1845,30 @@ export const printLedger = ({
         <thead>
 
           <tr>
-            <th>
-              Fuel Type
-            </th>
-
-            <th>
-              Purchase Date
-            </th>
-
-            <th>
-              Total Amount
-            </th>
-
-            <th>
-              Paid Amount
-            </th>
-
-            <th>
-              Pending Amount
-            </th>
-
-            <th>
-              Payment
-            </th>
+            <th>#</th>
+            <th>Date</th>
+            <th>Type</th>
+            <th>Fuel</th>
+            <th>Total</th>
+            <th>Paid / Payment</th>
+            <th>Pending</th>
+            <th>Note</th>
           </tr>
 
         </thead>
 
         <tbody>
 
-          <tr>
-
-            <td>
-              ${
-                customer.fuelType ===
-                "petrol"
-                  ? "Petrol"
-                  : "Diesel"
-              }
-            </td>
-
-            <td>
-              ${formatDate(
-                customer.purchaseDate
-              )}
-            </td>
-
-            <td>
-              ₹ ${money(
-                customer.totalAmount
-              )}
-            </td>
-
-            <td>
-              ₹ ${money(
-                customer.paidAmount
-              )}
-            </td>
-
-            <td>
-              ₹ ${money(
-                customer.currentBalance
-              )}
-            </td>
-
-            <td>
-              ${payment}
-            </td>
-
-          </tr>
+          ${
+            historyRows ||
+            `
+              <tr>
+                <td colspan="8">
+                  No transaction history available.
+                </td>
+              </tr>
+            `
+          }
 
         </tbody>
 
@@ -976,25 +1891,38 @@ export const printLedger = ({
       <div class="signature">
 
         <strong>
-          For ${String(
-            pump.pumpName ||
-              "My Petrol Pump"
-          ).toUpperCase()}
-        </strong>
-
-        <div class="signature-space">
-        </div>
-
-        <strong>
-          ${
-            pump.ownerName ||
-            "Pump Owner"
-          }
+          For ${pumpName}
         </strong>
 
         <br />
 
-        (Authorized Signatory)
+        <span class="signature-line">
+
+          <strong>
+            ${ownerName}
+          </strong>
+
+          <br />
+
+          (Authorized Signatory)
+
+        </span>
+
+      </div>
+
+      <div class="page-footer">
+
+        <span>
+          Pump: ${pumpName}
+        </span>
+
+        <span>
+          Owner: ${ownerName}
+        </span>
+
+        <span>
+          Customer Ledger
+        </span>
 
       </div>
 

@@ -4,9 +4,12 @@ import {
   useNavigate,
 } from "react-router-dom";
 
+import logo from "../assets/logo.png";
+
 import {
   Building2,
   ClipboardCheck,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   RefreshCw,
@@ -69,6 +72,10 @@ const SuperAdminLayout = () => {
       clearInterval(interval);
   }, [loadPendingCount]);
 
+  /* =====================================
+     LOGOUT
+  ===================================== */
+
   const logout = () => {
     localStorage.removeItem(
       "token"
@@ -88,12 +95,41 @@ const SuperAdminLayout = () => {
   return (
     <div className="super-admin-layout">
 
+      {/* =================================
+          SIDEBAR
+      ================================= */}
+
       <aside className="super-admin-sidebar">
+
+        {/* =================================
+            BRAND
+        ================================= */}
 
         <div className="super-admin-brand">
 
-          <div className="super-admin-logo">
-            MP
+          <div
+            className="super-admin-logo"
+            style={{
+              width: "42px",
+              height: "42px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              overflow: "hidden",
+              borderRadius: "50%",
+              flexShrink: 0,
+            }}
+          >
+            <img
+              src={logo}
+              alt="ShivShambho Logo"
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "contain",
+                display: "block",
+              }}
+            />
           </div>
 
           <div>
@@ -108,7 +144,13 @@ const SuperAdminLayout = () => {
 
         </div>
 
+        {/* =================================
+            NAVIGATION
+        ================================= */}
+
         <nav className="super-admin-nav">
+
+          {/* DASHBOARD */}
 
           <NavLink
             to="/superadmin"
@@ -120,6 +162,8 @@ const SuperAdminLayout = () => {
 
             Dashboard
           </NavLink>
+
+          {/* REGISTRATION REQUESTS */}
 
           <NavLink
             to="/superadmin/requests"
@@ -141,6 +185,22 @@ const SuperAdminLayout = () => {
             )}
           </NavLink>
 
+          {/* PASSWORD REQUESTS */}
+
+          <NavLink
+            to="/superadmin/password-requests"
+          >
+            <KeyRound
+              size={19}
+            />
+
+            <span>
+              Password Requests
+            </span>
+          </NavLink>
+
+          {/* CLIENTS */}
+
           <NavLink
             to="/superadmin/clients"
           >
@@ -150,6 +210,8 @@ const SuperAdminLayout = () => {
 
             Clients
           </NavLink>
+
+          {/* USERS */}
 
           <NavLink
             to="/superadmin/users"
@@ -162,6 +224,10 @@ const SuperAdminLayout = () => {
           </NavLink>
 
         </nav>
+
+        {/* =================================
+            LOGOUT
+        ================================= */}
 
         <button
           type="button"
@@ -177,7 +243,13 @@ const SuperAdminLayout = () => {
 
       </aside>
 
+      {/* =================================
+          MAIN CONTENT
+      ================================= */}
+
       <main className="super-admin-main">
+
+        {/* TOPBAR */}
 
         <header className="super-admin-topbar">
 
@@ -213,6 +285,8 @@ const SuperAdminLayout = () => {
           </button>
 
         </header>
+
+        {/* PAGE CONTENT */}
 
         <div className="super-admin-content">
 
