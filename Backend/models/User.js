@@ -75,9 +75,13 @@ userSchema.pre("save", async function () {
   }
 
   /*
-   * Prevent double hashing when an existing bcrypt
-   * password hash is assigned to the User document.
+   * RegistrationRequest already stores a bcrypt hash.
+   * During approval, that existing hash is assigned to
+   * the User model.
+   *
+   * Prevent hashing that value again.
    */
+
   if (isBcryptHash(this.password)) {
     return;
   }
