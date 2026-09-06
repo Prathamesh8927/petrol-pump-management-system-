@@ -1,18 +1,16 @@
 {
-  "name": " pump-backend",
+  "name": "pump-backend",
   "version": "1.0.0",
-  "description": "",
+  "description": "ShivShambho Petrol Pump Management Backend",
   "license": "ISC",
   "author": "Prathamesh Mandage",
   "type": "module",
-  "main": "app.js",
+  "main": "server.js",
   "scripts": {
-    "start": "nodemon server.js",
+    "start": "node server.js",
     "dev": "nodemon server.js",
     "create-superadmin": "node scripts/createSuperAdmin.js",
-    "add-existing-client": "node scripts/addExistingPumpAsClient.js",
-     "backup": "node scripts/backupDatabase.js",
-  "restore": "node scripts/restoreDatabase.js"
+    "add-existing-client": "node scripts/addExistingPumpAsClient.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

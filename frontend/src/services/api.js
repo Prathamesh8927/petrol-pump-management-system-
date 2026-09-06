@@ -1,13 +1,17 @@
 import axios from "axios";
 
-const api = axios.create({
-  baseURL:
-    import.meta.env.VITE_API_URL ||
-    "http://localhost:8080/api",
+const API_URL = import.meta.env.VITE_API_URL;
 
+if (!API_URL) {
+  throw new Error(
+    "VITE_API_URL is not configured. Please add it to the Vercel environment variables."
+  );
+}
+
+const api = axios.create({
+  baseURL: API_URL,
   headers: {
-    "Content-Type":
-      "application/json",
+    "Content-Type": "application/json",
   },
 });
 
@@ -17,22 +21,16 @@ const api = axios.create({
 
 api.interceptors.request.use(
   (config) => {
-    const token =
-      localStorage.getItem(
-        "token"
-      );
+    const token = localStorage.getItem("token");
 
     if (token) {
-      config.headers.Authorization =
-        `Bearer ${token}`;
+      config.headers.Authorization = `Bearer ${token}`;
     }
 
     return config;
   },
   (error) => {
-    return Promise.reject(
-      error
-    );
+    return Promise.reject(error);
   }
 );
 
