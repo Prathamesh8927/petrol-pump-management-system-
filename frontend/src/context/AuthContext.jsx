@@ -12,78 +12,73 @@ export const AuthContext =
 export const AuthProvider = ({
   children,
 }) => {
-  const [
-    user,
-    setUser,
-  ] = useState(null);
+  const [user, setUser] =
+    useState(null);
 
-  const [
-    loading,
-    setLoading,
-  ] = useState(true);
+  const [loading, setLoading] =
+    useState(true);
 
   /* =====================================================
      LOAD CURRENT USER
   ===================================================== */
 
   useEffect(() => {
-    const loadUser =
-      async () => {
-        try {
-          const token =
-            localStorage.getItem(
-              "token"
-            );
+    const loadUser = async () => {
+      try {
+        /*
+         * sessionStorage is intentionally used here.
+         *
+         * Each browser tab/window gets its own authentication
+         * session, allowing multiple accounts to work at the
+         * same time.
+         */
 
-          if (!token) {
-            setUser(null);
-            return;
-          }
+        const token =
+          sessionStorage.getItem("token");
 
-          const response =
-            await api.get(
-              "/auth/me"
-            );
-
-          const currentUser =
-            response.data?.user ||
-            response.data;
-
-          if (!currentUser) {
-            throw new Error(
-              "User not found"
-            );
-          }
-
-          setUser(
-            currentUser
-          );
-
-          localStorage.setItem(
-            "user",
-            JSON.stringify(
-              currentUser
-            )
-          );
-        } catch (error) {
-          console.error(
-            "AUTH LOAD ERROR:",
-            error
-          );
-
-          localStorage.removeItem(
-            "token"
-          );
-
-          localStorage.removeItem(
-            "user"
-          );
-
+        if (!token) {
           setUser(null);
-        } finally {
-          setLoading(false);
+          return;
         }
-      };
+
+        const response =
+          await api.get("/auth/me");
+
+        const currentUser =
+          response.data?.user ||
+          response.data;
+
+        if (!currentUser) {
+          throw new Error(
+            "User not found"
+          );
+        }
+
+        setUser(currentUser);
+
+        sessionStorage.setItem(
+          "user",
+          JSON.stringify(currentUser)
+        );
+      } catch (error) {
+        console.error(
+          "AUTH LOAD ERROR:",
+          error
+        );
+
+        sessionStorage.removeItem(
+          "token"
+        );
+
+        sessionStorage.removeItem(
+          "user"
+        );
+
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
+    };
 
     loadUser();
   }, []);
@@ -106,12 +101,9 @@ export const AuthProvider = ({
         await api.post(
           "/auth/login",
           {
-            email:
-              String(
-                email
-              )
-                .trim()
-                .toLowerCase(),
+            email: String(email)
+              .trim()
+              .toLowerCase(),
 
             password,
           }
@@ -127,8 +119,7 @@ export const AuthProvider = ({
         false
       ) {
         throw new Error(
-          response.data
-            ?.message ||
+          response.data?.message ||
             "Login failed"
         );
       }
@@ -151,27 +142,27 @@ export const AuthProvider = ({
         );
       }
 
-      localStorage.setItem(
+      /*
+       * IMPORTANT:
+       * Store authentication only in this tab.
+       */
+
+      sessionStorage.setItem(
         "token",
         token
       );
 
-      localStorage.setItem(
+      sessionStorage.setItem(
         "user",
-        JSON.stringify(
-          loggedInUser
-        )
+        JSON.stringify(loggedInUser)
       );
 
-      setUser(
-        loggedInUser
-      );
+      setUser(loggedInUser);
 
       return {
         success: true,
         token,
-        user:
-          loggedInUser,
+        user: loggedInUser,
       };
     } catch (error) {
       console.error(
@@ -189,11 +180,17 @@ export const AuthProvider = ({
         error.response?.data
       );
 
-      localStorage.removeItem(
+      /*
+       * Clear only THIS TAB'S session.
+       *
+       * Other tabs/accounts remain logged in.
+       */
+
+      sessionStorage.removeItem(
         "token"
       );
 
-      localStorage.removeItem(
+      sessionStorage.removeItem(
         "user"
       );
 
@@ -205,9 +202,7 @@ export const AuthProvider = ({
         error.message ||
         "Login failed";
 
-      throw new Error(
-        message
-      );
+      throw new Error(message);
     }
   };
 
@@ -216,11 +211,16 @@ export const AuthProvider = ({
   ===================================================== */
 
   const logout = () => {
-    localStorage.removeItem(
+    /*
+     * Remove authentication only from
+     * the current browser tab.
+     */
+
+    sessionStorage.removeItem(
       "token"
     );
 
-    localStorage.removeItem(
+    sessionStorage.removeItem(
       "user"
     );
 
