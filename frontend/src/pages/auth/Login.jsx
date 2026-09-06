@@ -19,6 +19,8 @@ import api from "../../services/api";
 import LoginTankerAnimation
   from "../../components/LoginTankerAnimation";
 
+import logo from "../../assets/logo.png";
+
 import "./Login.css";
 
 /* =====================================================
@@ -60,11 +62,11 @@ const Login = () => {
     useState(false);
 
   const [pumpName, setPumpName] =
-    useState("MyPump");
+    useState("ShivShambho");
 
   /* =====================================================
      SUPER ADMIN ACCOUNT CHECK
-     
+
      This message will ONLY appear when the
      Super Admin email is entered.
   ===================================================== */
@@ -97,14 +99,14 @@ const Login = () => {
 
       return name
         ? String(name)
-        : "MyPump";
+        : "ShivShambho";
     } catch (error) {
       console.error(
         "LOAD LOGIN PUMP NAME ERROR:",
         error
       );
 
-      return "MyPump";
+      return "ShivShambho";
     }
   };
 
@@ -174,7 +176,7 @@ const Login = () => {
         "superadmin"
       ) {
         setPumpName(
-          "MyPump Super Admin"
+          "ShivShambho Super Admin"
         );
 
         toast.success(
@@ -313,8 +315,14 @@ const Login = () => {
 
           <div className="login-header">
 
+            <img
+              src={logo}
+              alt="ShivShambho Logo"
+              className="login-logo"
+            />
+
             <h1>
-              MyPump
+              SHIVSHAMBHO
             </h1>
 
             <p>
@@ -467,7 +475,7 @@ const Login = () => {
 
           {/* ===========================================
               SUPER ADMIN MESSAGE
-              
+
               ONLY SHOWS FOR:
               superadmin@mypump.com
           =========================================== */}

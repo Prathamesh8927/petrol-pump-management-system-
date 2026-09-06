@@ -59,7 +59,7 @@ const SuperAdminDashboard =
             </h1>
 
             <p>
-              Manage all MyPump
+              Manage all SHIVSHAMBHO
               petrol pump clients.
             </p>
           </div>
