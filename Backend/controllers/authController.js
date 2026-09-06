@@ -56,7 +56,7 @@ export const login = async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message: "Email and password are required",
+        message: "Email and password are required.",
       });
     }
 
@@ -65,10 +65,8 @@ export const login = async (req, res) => {
     /* -----------------------------------------------
        FIND USER
 
-       IMPORTANT:
-       User.password has select:false in User.js.
-       Therefore +password is required here so that
-       matchPassword() can compare the entered password.
+       password has select:false in User.js,
+       therefore +password is mandatory.
     ------------------------------------------------ */
 
     const user = await User.findOne({
@@ -121,7 +119,7 @@ export const login = async (req, res) => {
 
       return res.status(401).json({
         success: false,
-        message: "Invalid email or password",
+        message: "Invalid email or password.",
       });
     }
 
@@ -139,16 +137,10 @@ export const login = async (req, res) => {
     }
 
     /* -----------------------------------------------
-       SUPERADMIN / CLIENT VALIDATION
-
-       Superadmin does not require pumpId.
-       All client users must have pumpId.
+       PUMP VALIDATION
     ------------------------------------------------ */
 
-    if (
-      user.role !== "superadmin" &&
-      !user.pumpId
-    ) {
+    if (user.role !== "superadmin" && !user.pumpId) {
       console.error(
         `AUTH SECURITY: User ${user._id} has role ${user.role} but no pumpId`
       );
@@ -162,25 +154,32 @@ export const login = async (req, res) => {
     }
 
     /* -----------------------------------------------
-       PASSWORD
-
-       Password is explicitly selected above.
+       PASSWORD VALIDATION
     ------------------------------------------------ */
 
+    if (!user.password) {
+      console.error(
+        `AUTH SECURITY: User ${user._id} has no password hash`
+      );
+
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password.",
+      });
+    }
+
     const passwordMatched =
-      await user.matchPassword(password);
+      await bcrypt.compare(password, user.password);
 
     if (!passwordMatched) {
       return res.status(401).json({
         success: false,
-        message: "Invalid email or password",
+        message: "Invalid email or password.",
       });
     }
 
     /* -----------------------------------------------
        PUMP STATUS
-
-       Superadmin does NOT have a pump.
     ------------------------------------------------ */
 
     if (
@@ -196,7 +195,7 @@ export const login = async (req, res) => {
     }
 
     /* -----------------------------------------------
-       TOKEN
+       GENERATE TOKEN
     ------------------------------------------------ */
 
     const token = generateToken(user._id);
@@ -224,17 +223,13 @@ export const login = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Login failed",
+      message: "Login failed.",
     });
   }
 };
 
 /* ======================================================
    REGISTER
-   PUBLIC REGISTRATION REQUEST
-
-   IMPORTANT:
-   Password is NEVER stored as plaintext.
 ====================================================== */
 
 export const register = async (req, res) => {
@@ -244,17 +239,14 @@ export const register = async (req, res) => {
       email,
       password,
       phone,
-
       pumpName,
       companyName,
       dealerCode,
       gstin,
-
       address,
       city,
       state,
       pincode,
-
       plan,
     } = req.body;
 
@@ -277,8 +269,7 @@ export const register = async (req, res) => {
     }
 
     const cleanName = name.trim();
-    const normalizedEmail =
-      email.trim().toLowerCase();
+    const normalizedEmail = email.trim().toLowerCase();
     const cleanPhone = phone.trim();
     const cleanPumpName = pumpName.trim();
 
@@ -317,11 +308,10 @@ export const register = async (req, res) => {
     }
 
     /* -----------------------------------------------
-       EMAIL BASIC VALIDATION
+       EMAIL VALIDATION
     ------------------------------------------------ */
 
-    const emailRegex =
-      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!emailRegex.test(normalizedEmail)) {
       return res.status(400).json({
@@ -334,10 +324,9 @@ export const register = async (req, res) => {
        EXISTING USER
     ------------------------------------------------ */
 
-    const existingUser =
-      await User.findOne({
-        email: normalizedEmail,
-      });
+    const existingUser = await User.findOne({
+      email: normalizedEmail,
+    });
 
     if (existingUser) {
       return res.status(409).json({
@@ -369,8 +358,6 @@ export const register = async (req, res) => {
 
     /* -----------------------------------------------
        HASH PASSWORD
-
-       NEVER store plaintext password.
     ------------------------------------------------ */
 
     const passwordHash =
@@ -378,24 +365,13 @@ export const register = async (req, res) => {
 
     /* -----------------------------------------------
        CREATE REGISTRATION REQUEST
-
-       Password field contains ONLY bcrypt hash.
-
-       This keeps compatibility with the existing
-       Superadmin approval flow which can pass
-       request.password into User.create().
-
-       User.js is also protected against double hashing.
     ------------------------------------------------ */
 
     const request =
       await RegistrationRequest.create({
         ownerName: cleanName,
-
         email: normalizedEmail,
-
         password: passwordHash,
-
         phone: cleanPhone,
 
         pumpName: cleanPumpName,
@@ -412,7 +388,7 @@ export const register = async (req, res) => {
 
         gstin:
           typeof gstin === "string"
-            ? gstin.trim()
+            ? gstin.trim().toUpperCase()
             : "",
 
         address:
@@ -444,48 +420,24 @@ export const register = async (req, res) => {
         status: "pending",
       });
 
-    /* -----------------------------------------------
-       SUCCESS
-    ------------------------------------------------ */
-
     return res.status(201).json({
       success: true,
-
       message:
         "Registration submitted successfully. Please wait for Super Admin approval.",
-
       requestId: request._id,
-
       status: request.status,
     });
   } catch (error) {
-    console.error(
-      "REGISTER ERROR:",
-      error
-    );
+    console.error("REGISTER ERROR:", error);
 
-    /* -----------------------------------------------
-       MONGOOSE VALIDATION ERROR
-    ------------------------------------------------ */
-
-    if (
-      error.name ===
-      "ValidationError"
-    ) {
+    if (error.name === "ValidationError") {
       return res.status(400).json({
         success: false,
-        message:
-          Object.values(error.errors)
-            .map(
-              (item) => item.message
-            )
-            .join(", "),
+        message: Object.values(error.errors)
+          .map((item) => item.message)
+          .join(", "),
       });
     }
-
-    /* -----------------------------------------------
-       DUPLICATE
-    ------------------------------------------------ */
 
     if (error.code === 11000) {
       return res.status(409).json({
@@ -516,8 +468,7 @@ export const getMe = async (req, res) => {
     if (!userId) {
       return res.status(401).json({
         success: false,
-        message:
-          "Authentication required",
+        message: "Authentication required.",
       });
     }
 
@@ -532,7 +483,7 @@ export const getMe = async (req, res) => {
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: "User not found",
+        message: "User not found.",
       });
     }
 
@@ -540,8 +491,7 @@ export const getMe = async (req, res) => {
       return res.status(403).json({
         success: false,
         code: "ACCOUNT_INACTIVE",
-        message:
-          "Your account is inactive.",
+        message: "Your account is inactive.",
       });
     }
 
@@ -550,15 +500,11 @@ export const getMe = async (req, res) => {
       user,
     });
   } catch (error) {
-    console.error(
-      "GET ME ERROR:",
-      error
-    );
+    console.error("GET ME ERROR:", error);
 
     return res.status(500).json({
       success: false,
-      message:
-        "Unable to load user",
+      message: "Unable to load user.",
     });
   }
 };
