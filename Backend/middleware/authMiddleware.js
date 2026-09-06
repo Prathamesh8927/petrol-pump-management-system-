@@ -4,14 +4,15 @@ import User from "../models/User.js";
 /* =====================================================
    AUTHENTICATION MIDDLEWARE
 
-   Security rules:
+   SECURITY RULES:
+
    1. JWT must be valid.
    2. User is always loaded from MongoDB.
    3. Current database role is trusted.
    4. Current database pumpId is trusted.
-   5. Old JWT pumpId values are NEVER trusted.
+   5. JWT pumpId is NEVER trusted.
    6. Inactive users are blocked.
-   7. Client users must have a valid pumpId.
+   7. Client users must have pumpId.
    8. Superadmin does not require pumpId.
 ===================================================== */
 
@@ -22,7 +23,7 @@ const authMiddleware = async (
 ) => {
   try {
     /* =================================================
-       CHECK AUTHORIZATION HEADER
+       AUTHORIZATION HEADER
     ================================================= */
 
     const authHeader =
@@ -79,30 +80,27 @@ const authMiddleware = async (
     }
 
     /* =================================================
-       VERIFY TOKEN
-
-       HS256 is explicitly required.
+       VERIFY JWT
     ================================================= */
 
-    const decoded =
-      jwt.verify(
-        token,
-        secret,
-        {
-          algorithms: ["HS256"],
-        }
-      );
+    const decoded = jwt.verify(
+      token,
+      secret,
+      {
+        algorithms: ["HS256"],
+      }
+    );
 
     /* =================================================
-       GET USER ID
+       USER ID
+       
+       New tokens:
+       decoded.userId
 
-       New tokens use userId.
+       Older tokens:
+       decoded.id
 
-       id is retained only for compatibility with
-       older tokens.
-
-       IMPORTANT:
-       pumpId is intentionally NOT read from JWT.
+       pumpId is intentionally ignored.
     ================================================= */
 
     const userId =
@@ -119,12 +117,10 @@ const authMiddleware = async (
     }
 
     /* =================================================
-       LOAD CURRENT USER FROM DATABASE
-
-       This guarantees that current role,
-       pumpId and active status come from MongoDB.
-
-       Password is not required here.
+       LOAD CURRENT USER
+       
+       IMPORTANT:
+       Role, pumpId and active status come from MongoDB.
     ================================================= */
 
     const user =
@@ -159,12 +155,11 @@ const authMiddleware = async (
        NORMALIZE ROLE
     ================================================= */
 
-    const role =
-      String(
-        user.role || ""
-      )
-        .trim()
-        .toLowerCase();
+    const role = String(
+      user.role || ""
+    )
+      .trim()
+      .toLowerCase();
 
     /* =================================================
        ROLE VALIDATION
@@ -177,9 +172,7 @@ const authMiddleware = async (
       "staff",
     ];
 
-    if (
-      !allowedRoles.includes(role)
-    ) {
+    if (!allowedRoles.includes(role)) {
       console.error(
         `AUTH SECURITY: Invalid role "${user.role}" for user ${user._id}`
       );
@@ -194,13 +187,6 @@ const authMiddleware = async (
 
     /* =================================================
        CLIENT PUMP VALIDATION
-
-       Only Superadmin can exist without pumpId.
-
-       Owner / Manager / Staff MUST have pumpId.
-
-       IMPORTANT:
-       We do NOT use decoded.pumpId as a fallback.
     ================================================= */
 
     if (
@@ -221,10 +207,7 @@ const authMiddleware = async (
     }
 
     /* =================================================
-       ATTACH DATABASE USER
-
-       req.user.pumpId now comes exclusively from
-       MongoDB.
+       ATTACH USER
     ================================================= */
 
     req.user = user;
@@ -233,7 +216,7 @@ const authMiddleware = async (
        CONTINUE
     ================================================= */
 
-    next();
+    return next();
   } catch (error) {
     /* =================================================
        TOKEN EXPIRED
@@ -278,7 +261,7 @@ const authMiddleware = async (
     }
 
     /* =================================================
-       INVALID USER ID / MONGOOSE ERROR
+       INVALID USER ID
     ================================================= */
 
     if (

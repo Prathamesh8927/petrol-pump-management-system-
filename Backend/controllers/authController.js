@@ -4,14 +4,17 @@ import bcrypt from "bcryptjs";
 import User from "../models/User.js";
 import RegistrationRequest from "../models/RegistrationRequest.js";
 
-/* ======================================================
+/* =====================================================
    JWT CONFIGURATION
-====================================================== */
+===================================================== */
 
 const getJwtSecret = () => {
   const secret = process.env.JWT_SECRET;
 
-  if (!secret || secret.trim().length < 32) {
+  if (
+    !secret ||
+    secret.trim().length < 32
+  ) {
     throw new Error(
       "JWT_SECRET is missing or too weak. JWT_SECRET must contain at least 32 characters."
     );
@@ -20,9 +23,9 @@ const getJwtSecret = () => {
   return secret;
 };
 
-/* ======================================================
+/* =====================================================
    GENERATE JWT
-====================================================== */
+===================================================== */
 
 const generateToken = (userId) => {
   return jwt.sign(
@@ -31,18 +34,27 @@ const generateToken = (userId) => {
     },
     getJwtSecret(),
     {
-      expiresIn: process.env.JWT_EXPIRES_IN || "7d",
+      expiresIn:
+        process.env.JWT_EXPIRES_IN ||
+        "7d",
+      algorithm: "HS256",
     }
   );
 };
 
-/* ======================================================
+/* =====================================================
    LOGIN
-====================================================== */
+===================================================== */
 
-export const login = async (req, res) => {
+export const login = async (
+  req,
+  res
+) => {
   try {
-    const { email, password } = req.body;
+    const {
+      email,
+      password,
+    } = req.body;
 
     /* -----------------------------------------------
        VALIDATION
@@ -56,33 +68,55 @@ export const login = async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message: "Email and password are required.",
+        message:
+          "Email and password are required.",
       });
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedEmail =
+      email.trim().toLowerCase();
+
+    /* -----------------------------------------------
+       EMAIL VALIDATION
+    ------------------------------------------------ */
+
+    const emailRegex =
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailRegex.test(normalizedEmail)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Please enter a valid email address.",
+      });
+    }
 
     /* -----------------------------------------------
        FIND USER
-
-       password has select:false in User.js,
-       therefore +password is mandatory.
+       
+       Password has select:false in User.js.
+       Therefore +password is mandatory.
     ------------------------------------------------ */
 
-    const user = await User.findOne({
-      email: normalizedEmail,
-    })
-      .select("+password")
-      .populate(
-        "pumpId",
-        "pumpName ownerName phone email active"
-      );
+    const user =
+      await User.findOne({
+        email: normalizedEmail,
+      })
+        .select("+password")
+        .populate(
+          "pumpId",
+          "pumpName ownerName phone email active"
+        );
 
     /* -----------------------------------------------
        USER NOT FOUND
     ------------------------------------------------ */
 
     if (!user) {
+      /* ---------------------------------------------
+         CHECK PENDING REGISTRATION
+      --------------------------------------------- */
+
       const pendingRequest =
         await RegistrationRequest.findOne({
           email: normalizedEmail,
@@ -97,6 +131,10 @@ export const login = async (req, res) => {
             "Your registration request is waiting for Super Admin approval.",
         });
       }
+
+      /* ---------------------------------------------
+         CHECK REJECTED REGISTRATION
+      --------------------------------------------- */
 
       const rejectedRequest =
         await RegistrationRequest.findOne({
@@ -117,9 +155,14 @@ export const login = async (req, res) => {
         });
       }
 
+      /* ---------------------------------------------
+         GENERIC LOGIN ERROR
+      --------------------------------------------- */
+
       return res.status(401).json({
         success: false,
-        message: "Invalid email or password.",
+        message:
+          "Invalid email or password.",
       });
     }
 
@@ -137,17 +180,54 @@ export const login = async (req, res) => {
     }
 
     /* -----------------------------------------------
-       PUMP VALIDATION
+       NORMALIZE ROLE
     ------------------------------------------------ */
 
-    if (user.role !== "superadmin" && !user.pumpId) {
+    const role =
+      String(user.role || "")
+        .trim()
+        .toLowerCase();
+
+    /* -----------------------------------------------
+       VALIDATE ROLE
+    ------------------------------------------------ */
+
+    const allowedRoles = [
+      "superadmin",
+      "owner",
+      "manager",
+      "staff",
+    ];
+
+    if (!allowedRoles.includes(role)) {
       console.error(
-        `AUTH SECURITY: User ${user._id} has role ${user.role} but no pumpId`
+        `AUTH SECURITY: Invalid role "${user.role}" for user ${user._id}`
       );
 
       return res.status(403).json({
         success: false,
-        code: "ACCOUNT_CONFIGURATION_ERROR",
+        code: "INVALID_ROLE",
+        message:
+          "Invalid account role.",
+      });
+    }
+
+    /* -----------------------------------------------
+       PUMP VALIDATION
+    ------------------------------------------------ */
+
+    if (
+      role !== "superadmin" &&
+      !user.pumpId
+    ) {
+      console.error(
+        `AUTH SECURITY: User ${user._id} has role ${role} but no pumpId`
+      );
+
+      return res.status(403).json({
+        success: false,
+        code:
+          "ACCOUNT_CONFIGURATION_ERROR",
         message:
           "Your account is not correctly configured. Please contact Super Admin.",
       });
@@ -164,17 +244,22 @@ export const login = async (req, res) => {
 
       return res.status(401).json({
         success: false,
-        message: "Invalid email or password.",
+        message:
+          "Invalid email or password.",
       });
     }
 
     const passwordMatched =
-      await bcrypt.compare(password, user.password);
+      await bcrypt.compare(
+        password,
+        user.password
+      );
 
     if (!passwordMatched) {
       return res.status(401).json({
         success: false,
-        message: "Invalid email or password.",
+        message:
+          "Invalid email or password.",
       });
     }
 
@@ -183,7 +268,7 @@ export const login = async (req, res) => {
     ------------------------------------------------ */
 
     if (
-      user.role !== "superadmin" &&
+      role !== "superadmin" &&
       user.pumpId?.active === false
     ) {
       return res.status(403).json({
@@ -198,7 +283,8 @@ export const login = async (req, res) => {
        GENERATE TOKEN
     ------------------------------------------------ */
 
-    const token = generateToken(user._id);
+    const token =
+      generateToken(user._id);
 
     /* -----------------------------------------------
        RESPONSE
@@ -207,32 +293,41 @@ export const login = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Login successful",
+
       token,
 
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role,
-        pumpId: user.pumpId || null,
+        role,
+        pumpId:
+          user.pumpId || null,
         active: user.active,
       },
     });
   } catch (error) {
-    console.error("LOGIN ERROR:", error);
+    console.error(
+      "LOGIN ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: "Login failed.",
+      message:
+        "Login failed.",
     });
   }
 };
 
-/* ======================================================
+/* =====================================================
    REGISTER
-====================================================== */
+===================================================== */
 
-export const register = async (req, res) => {
+export const register = async (
+  req,
+  res
+) => {
   try {
     const {
       name,
@@ -268,10 +363,17 @@ export const register = async (req, res) => {
       });
     }
 
-    const cleanName = name.trim();
-    const normalizedEmail = email.trim().toLowerCase();
-    const cleanPhone = phone.trim();
-    const cleanPumpName = pumpName.trim();
+    const cleanName =
+      name.trim();
+
+    const normalizedEmail =
+      email.trim().toLowerCase();
+
+    const cleanPhone =
+      phone.trim();
+
+    const cleanPumpName =
+      pumpName.trim();
 
     if (
       !cleanName ||
@@ -311,12 +413,18 @@ export const register = async (req, res) => {
        EMAIL VALIDATION
     ------------------------------------------------ */
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const emailRegex =
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-    if (!emailRegex.test(normalizedEmail)) {
+    if (
+      !emailRegex.test(
+        normalizedEmail
+      )
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Please enter a valid email address.",
+        message:
+          "Please enter a valid email address.",
       });
     }
 
@@ -324,9 +432,10 @@ export const register = async (req, res) => {
        EXISTING USER
     ------------------------------------------------ */
 
-    const existingUser = await User.findOne({
-      email: normalizedEmail,
-    });
+    const existingUser =
+      await User.findOne({
+        email: normalizedEmail,
+      });
 
     if (existingUser) {
       return res.status(409).json({
@@ -350,7 +459,8 @@ export const register = async (req, res) => {
     if (existingPending) {
       return res.status(409).json({
         success: false,
-        code: "REGISTRATION_PENDING",
+        code:
+          "REGISTRATION_PENDING",
         message:
           "A registration request for this email is already pending approval.",
       });
@@ -358,10 +468,15 @@ export const register = async (req, res) => {
 
     /* -----------------------------------------------
        HASH PASSWORD
+       
+       RegistrationRequest stores the hash.
     ------------------------------------------------ */
 
     const passwordHash =
-      await bcrypt.hash(password, 12);
+      await bcrypt.hash(
+        password,
+        12
+      );
 
     /* -----------------------------------------------
        CREATE REGISTRATION REQUEST
@@ -369,75 +484,120 @@ export const register = async (req, res) => {
 
     const request =
       await RegistrationRequest.create({
-        ownerName: cleanName,
-        email: normalizedEmail,
-        password: passwordHash,
-        phone: cleanPhone,
+        ownerName:
+          cleanName,
 
-        pumpName: cleanPumpName,
+        email:
+          normalizedEmail,
+
+        password:
+          passwordHash,
+
+        phone:
+          cleanPhone,
+
+        pumpName:
+          cleanPumpName,
 
         companyName:
-          typeof companyName === "string"
+          typeof companyName ===
+          "string"
             ? companyName.trim()
             : "",
 
         dealerCode:
-          typeof dealerCode === "string"
+          typeof dealerCode ===
+          "string"
             ? dealerCode.trim()
             : "",
 
         gstin:
-          typeof gstin === "string"
-            ? gstin.trim().toUpperCase()
+          typeof gstin ===
+          "string"
+            ? gstin
+                .trim()
+                .toUpperCase()
             : "",
 
         address:
-          typeof address === "string"
+          typeof address ===
+          "string"
             ? address.trim()
             : "",
 
         city:
-          typeof city === "string"
+          typeof city ===
+          "string"
             ? city.trim()
             : "",
 
         state:
-          typeof state === "string"
+          typeof state ===
+          "string"
             ? state.trim()
             : "",
 
         pincode:
-          typeof pincode === "string"
+          typeof pincode ===
+          "string"
             ? pincode.trim()
             : "",
 
         plan:
-          typeof plan === "string" &&
+          typeof plan ===
+            "string" &&
           plan.trim()
             ? plan.trim()
             : "standard",
 
-        status: "pending",
+        status:
+          "pending",
       });
+
+    /* -----------------------------------------------
+       RESPONSE
+    ------------------------------------------------ */
 
     return res.status(201).json({
       success: true,
       message:
         "Registration submitted successfully. Please wait for Super Admin approval.",
-      requestId: request._id,
-      status: request.status,
+      requestId:
+        request._id,
+      status:
+        request.status,
     });
   } catch (error) {
-    console.error("REGISTER ERROR:", error);
+    console.error(
+      "REGISTER ERROR:",
+      error
+    );
 
-    if (error.name === "ValidationError") {
+    /* -----------------------------------------------
+       MONGOOSE VALIDATION
+    ------------------------------------------------ */
+
+    if (
+      error.name ===
+      "ValidationError"
+    ) {
       return res.status(400).json({
         success: false,
-        message: Object.values(error.errors)
-          .map((item) => item.message)
-          .join(", "),
+        message:
+          Object.values(
+            error.errors
+          )
+            .map(
+              (item) =>
+                item.message
+            )
+            .join(", "),
       });
     }
+
+    /* -----------------------------------------------
+       DUPLICATE KEY
+    ------------------------------------------------ */
 
     if (error.code === 11000) {
       return res.status(409).json({
@@ -455,11 +615,14 @@ export const register = async (req, res) => {
   }
 };
 
-/* ======================================================
+/* =====================================================
    GET CURRENT USER
-====================================================== */
+===================================================== */
 
-export const getMe = async (req, res) => {
+export const getMe = async (
+  req,
+  res
+) => {
   try {
     const userId =
       req.user?._id ||
@@ -468,7 +631,8 @@ export const getMe = async (req, res) => {
     if (!userId) {
       return res.status(401).json({
         success: false,
-        message: "Authentication required.",
+        message:
+          "Authentication required.",
       });
     }
 
@@ -483,15 +647,18 @@ export const getMe = async (req, res) => {
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: "User not found.",
+        message:
+          "User not found.",
       });
     }
 
     if (user.active !== true) {
       return res.status(403).json({
         success: false,
-        code: "ACCOUNT_INACTIVE",
-        message: "Your account is inactive.",
+        code:
+          "ACCOUNT_INACTIVE",
+        message:
+          "Your account is inactive.",
       });
     }
 
@@ -500,11 +667,15 @@ export const getMe = async (req, res) => {
       user,
     });
   } catch (error) {
-    console.error("GET ME ERROR:", error);
+    console.error(
+      "GET ME ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: "Unable to load user.",
+      message:
+        "Unable to load user.",
     });
   }
 };

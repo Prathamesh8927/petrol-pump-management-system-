@@ -1,14 +1,26 @@
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 
+/* =====================================================
+   USER SCHEMA
+===================================================== */
+
 const userSchema = new mongoose.Schema(
   {
+    /* -----------------------------------------------
+       NAME
+    ------------------------------------------------ */
+
     name: {
       type: String,
       required: true,
       trim: true,
       maxlength: 100,
     },
+
+    /* -----------------------------------------------
+       EMAIL
+    ------------------------------------------------ */
 
     email: {
       type: String,
@@ -19,6 +31,10 @@ const userSchema = new mongoose.Schema(
       maxlength: 254,
     },
 
+    /* -----------------------------------------------
+       PASSWORD
+    ------------------------------------------------ */
+
     password: {
       type: String,
       required: true,
@@ -26,12 +42,31 @@ const userSchema = new mongoose.Schema(
       select: false,
     },
 
+    /* -----------------------------------------------
+       ROLE
+    ------------------------------------------------ */
+
     role: {
       type: String,
-      enum: ["superadmin", "owner", "manager", "staff"],
+      enum: [
+        "superadmin",
+        "owner",
+        "manager",
+        "staff",
+      ],
       default: "owner",
       index: true,
     },
+
+    /* -----------------------------------------------
+       PUMP
+       
+       Superadmin:
+       pumpId = null / undefined
+
+       Owner / Manager / Staff:
+       pumpId is required
+    ------------------------------------------------ */
 
     pumpId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -41,6 +76,10 @@ const userSchema = new mongoose.Schema(
       },
       index: true,
     },
+
+    /* -----------------------------------------------
+       ACCOUNT STATUS
+    ------------------------------------------------ */
 
     active: {
       type: Boolean,
@@ -69,18 +108,22 @@ const isBcryptHash = (value) => {
    HASH PASSWORD
 ===================================================== */
 
+/*
+ * IMPORTANT:
+ *
+ * RegistrationRequest stores an already-hashed password.
+ *
+ * When Super Admin approves the request, that hash can
+ * be assigned to User.
+ *
+ * Therefore we must NOT hash an existing bcrypt hash
+ * again.
+ */
+
 userSchema.pre("save", async function () {
   if (!this.isModified("password")) {
     return;
   }
-
-  /*
-   * RegistrationRequest already stores a bcrypt hash.
-   * During approval, that existing hash is assigned to
-   * the User model.
-   *
-   * Prevent hashing that value again.
-   */
 
   if (isBcryptHash(this.password)) {
     return;
