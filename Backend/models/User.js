@@ -7,6 +7,7 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
+      maxlength: 100,
     },
 
     email: {
@@ -15,6 +16,7 @@ const userSchema = new mongoose.Schema(
       unique: true,
       lowercase: true,
       trim: true,
+      maxlength: 254,
     },
 
     password: {
@@ -26,13 +28,9 @@ const userSchema = new mongoose.Schema(
 
     role: {
       type: String,
-      enum: [
-        "superadmin",
-        "owner",
-        "manager",
-        "staff",
-      ],
+      enum: ["superadmin", "owner", "manager", "staff"],
       default: "owner",
+      index: true,
     },
 
     pumpId: {
@@ -41,11 +39,13 @@ const userSchema = new mongoose.Schema(
       required: function () {
         return this.role !== "superadmin";
       },
+      index: true,
     },
 
     active: {
       type: Boolean,
       default: true,
+      index: true,
     },
   },
   {
@@ -75,13 +75,9 @@ userSchema.pre("save", async function () {
   }
 
   /*
-   * RegistrationRequest may already contain
-   * a bcrypt hash.
-   *
-   * Prevent double hashing when an existing
-   * bcrypt password is saved.
+   * Prevent double hashing when an existing bcrypt
+   * password hash is assigned to the User document.
    */
-
   if (isBcryptHash(this.password)) {
     return;
   }
@@ -102,8 +98,9 @@ userSchema.methods.matchPassword = async function (
   enteredPassword
 ) {
   if (
-    !this.password ||
-    !enteredPassword
+    typeof enteredPassword !== "string" ||
+    !enteredPassword ||
+    !this.password
   ) {
     return false;
   }
@@ -112,7 +109,7 @@ userSchema.methods.matchPassword = async function (
     enteredPassword,
     this.password
   );
-};
+});
 
 /* =====================================================
    MODEL
