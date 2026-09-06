@@ -1,6 +1,10 @@
 import axios from "axios";
 
-const API_URL = import.meta.env.VITE_API_URL;
+/* =====================================================
+   API CONFIGURATION
+===================================================== */
+
+const API_URL = import.meta.env.VITE_API_URL?.trim();
 
 if (!API_URL) {
   throw new Error(
@@ -8,8 +12,15 @@ if (!API_URL) {
   );
 }
 
+// Remove trailing slash to prevent duplicate "/" in API requests
+const BASE_URL = API_URL.replace(/\/+$/, "");
+
+/* =====================================================
+   AXIOS INSTANCE
+===================================================== */
+
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: BASE_URL,
   headers: {
     "Content-Type": "application/json",
   },
@@ -24,12 +35,26 @@ api.interceptors.request.use(
     const token = localStorage.getItem("token");
 
     if (token) {
+      config.headers = config.headers || {};
       config.headers.Authorization = `Bearer ${token}`;
     }
 
     return config;
   },
+  (error) => Promise.reject(error)
+);
+
+/* =====================================================
+   RESPONSE INTERCEPTOR
+===================================================== */
+
+api.interceptors.response.use(
+  (response) => response,
   (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem("token");
+    }
+
     return Promise.reject(error);
   }
 );
