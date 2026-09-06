@@ -21,7 +21,7 @@ const LoginTankerAnimation = ({
 
         <div className="login-welcome-pump">
           {pumpName ||
-            "MyPump"}
+            "ShivShambho"}
         </div>
 
       </div>
