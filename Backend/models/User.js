@@ -109,7 +109,7 @@ userSchema.methods.matchPassword = async function (
     enteredPassword,
     this.password
   );
-});
+};
 
 /* =====================================================
    MODEL
