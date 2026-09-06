@@ -1027,3 +1027,10 @@
 .login-register-link a:hover {
   text-decoration: underline;
 }
+.login-logo {
+  width: 60px;
+  height: 60px;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto 8px;
+}
