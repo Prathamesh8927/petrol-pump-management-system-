@@ -20,16 +20,12 @@ import {
 import api from "../services/api";
 
 const Navbar = () => {
-  const navigate =
-    useNavigate();
+  const navigate = useNavigate();
 
   const {
     user,
     logout,
-  } =
-    useContext(
-      AuthContext
-    );
+  } = useContext(AuthContext);
 
   const [
     pump,
@@ -38,104 +34,93 @@ const Navbar = () => {
 
   /* =====================================================
      LOAD PUMP INFORMATION
-
-     IMPORTANT:
-     Super Admin has no pumpId.
-     Therefore do NOT request /settings/pump.
   ===================================================== */
 
   useEffect(() => {
-    const loadPump =
-      async () => {
-        if (!user) {
-          return;
-        }
+    const loadPump = async () => {
+      if (!user) {
+        return;
+      }
 
-        /* ===============================================
-           SUPER ADMIN
-        =============================================== */
+      /* ===============================================
+         SUPER ADMIN
+      =============================================== */
 
-        if (
-          user.role ===
-          "superadmin"
-        ) {
-          setPump(null);
+      if (user.role === "superadmin") {
+        setPump(null);
+        return;
+      }
 
-          return;
-        }
+      /* ===============================================
+         NORMAL PUMP USER
+      =============================================== */
 
-        /* ===============================================
-           NORMAL PUMP USER
-        =============================================== */
+      if (!user.pumpId) {
+        setPump(null);
+        return;
+      }
 
-        if (!user.pumpId) {
-          setPump(null);
+      try {
+        const response = await api.get(
+          "/settings/pump"
+        );
 
-          return;
-        }
+        const data =
+          response.data?.pump ||
+          response.data?.settings ||
+          response.data;
 
-        try {
-          const response =
-            await api.get(
-              "/settings/pump"
-            );
+        setPump(data || null);
+      } catch (error) {
+        console.error(
+          "NAVBAR PUMP ERROR:",
+          error
+        );
 
-          const data =
-            response.data?.pump ||
-            response.data?.settings ||
-            response.data;
-
-          setPump(
-            data || null
-          );
-        } catch (error) {
-          console.error(
-            "NAVBAR PUMP ERROR:",
-            error
-          );
-
-          setPump(null);
-        }
-      };
+        setPump(null);
+      }
+    };
 
     loadPump();
-  }, [
-    user,
-  ]);
+  }, [user]);
 
   /* =====================================================
      LOGOUT
   ===================================================== */
 
-  const handleLogout =
-    () => {
-      logout();
+  const handleLogout = () => {
+    logout();
 
-      navigate(
-        "/login",
-        {
-          replace: true,
-        }
-      );
-    };
+    navigate("/login", {
+      replace: true,
+    });
+  };
 
   /* =====================================================
-     TITLE
+     DISPLAY INFORMATION
   ===================================================== */
 
   const displayName =
-    user?.role ===
-    "superadmin"
+    user?.role === "superadmin"
       ? "MyPump Super Admin"
       : pump?.pumpName ||
         "ShivShambho";
 
+  const displayOwner =
+    user?.role === "superadmin"
+      ? "MyPump Super Admin"
+      : pump?.ownerName ||
+        user?.name ||
+        "Owner";
+
   const displayRole =
-    user?.role ===
-    "superadmin"
+    user?.role === "superadmin"
       ? "Super Admin"
-      : user?.role ||
-        "User";
+      : user?.role || "User";
+
+  /* =====================================================
+     UI
+  ===================================================== */
 
   return (
     <header className="navbar">
@@ -147,9 +132,7 @@ const Navbar = () => {
         </h3>
 
         <small>
-          {user?.name
-            ? `${user.name} • ${displayRole}`
-            : displayRole}
+          {displayOwner} • {displayRole}
         </small>
 
       </div>
@@ -171,30 +154,27 @@ const Navbar = () => {
             fontSize: "14px",
           }}
         >
-          <User
-            size={17}
-          />
+
+          <User size={17} />
 
           <span>
-            {user?.email ||
-              ""}
+            {user?.email || ""}
           </span>
+
         </div>
 
         <button
           type="button"
           className="logout-button"
-          onClick={
-            handleLogout
-          }
+          onClick={handleLogout}
         >
-          <LogOut
-            size={17}
-          />
+
+          <LogOut size={17} />
 
           <span>
             Logout
           </span>
+
         </button>
 
       </div>
