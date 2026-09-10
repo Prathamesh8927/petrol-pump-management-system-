@@ -19,6 +19,8 @@ import {
 
 import ProfessionalSearch from "../../components/ProfessionalSearch";
 
+import api from "../../services/api";
+
 import {
   addLedgerCustomer,
   getLedgerCustomers,
@@ -28,14 +30,16 @@ import {
   updateLedgerCustomer,
 } from "../../services/ledgerService";
 
+import {
+  exportLedgerPDF,
+} from "../../utils/ledgerExport";
+
 const CustomerLedger = () => {
   const navigate = useNavigate();
 
-  const [searchParams] =
-    useSearchParams();
+  const [searchParams] = useSearchParams();
 
-  const customerId =
-    searchParams.get("id");
+  const customerId = searchParams.get("id");
 
   const editMode =
     searchParams.get("edit") === "true";
@@ -100,6 +104,15 @@ const CustomerLedger = () => {
     totalPending: 0,
     purchaseCount: 0,
   });
+
+  /* =====================================================
+     PUMP SETTINGS
+  ===================================================== */
+
+  const [
+    pumpSettings,
+    setPumpSettings,
+  ] = useState(null);
 
   /* =====================================================
      PURCHASE
@@ -176,6 +189,35 @@ const CustomerLedger = () => {
     );
 
   /* =====================================================
+     LOAD PUMP SETTINGS
+  ===================================================== */
+
+  const loadPumpSettings =
+    async () => {
+      try {
+        const data =
+          await api.get(
+            "/settings/pump"
+          );
+
+        setPumpSettings(
+          data?.settings || {}
+        );
+      } catch (error) {
+        console.error(
+          "LOAD PUMP SETTINGS ERROR:",
+          error
+        );
+
+        setPumpSettings(null);
+      }
+    };
+
+  useEffect(() => {
+    loadPumpSettings();
+  }, []);
+
+  /* =====================================================
      LOAD PREVIOUS CUSTOMERS
   ===================================================== */
 
@@ -186,7 +228,11 @@ const CustomerLedger = () => {
           await getLedgerCustomers();
 
         setPreviousCustomers(
-          data?.customers || []
+          Array.isArray(
+            data?.customers
+          )
+            ? data.customers
+            : []
         );
       } catch (error) {
         console.error(
@@ -216,14 +262,16 @@ const CustomerLedger = () => {
       }
 
       return previousCustomers
-        .filter(
-          (item) =>
+        .filter((item) => {
+          const name =
             String(
-              item.name || ""
+              item?.name || ""
             )
-              .toLowerCase()
-              .includes(value)
-        )
+              .trim()
+              .toLowerCase();
+
+          return name.includes(value);
+        })
         .slice(0, 8);
     }, [
       customerForm.name,
@@ -253,7 +301,11 @@ const CustomerLedger = () => {
         );
 
         setEntries(
-          data?.entries || []
+          Array.isArray(
+            data?.entries
+          )
+            ? data.entries
+            : []
         );
 
         setSummary({
@@ -310,7 +362,7 @@ const CustomerLedger = () => {
         );
 
         toast.error(
-          error.response?.data
+          error?.response?.data
             ?.message ||
             "Unable to load customer ledger"
         );
@@ -324,6 +376,79 @@ const CustomerLedger = () => {
   }, [customerId]);
 
   /* =====================================================
+     EXPORT LEDGER PDF
+  ===================================================== */
+
+  const handleExportPDF =
+    async () => {
+      if (!customer) {
+        toast.error(
+          "Customer ledger is not loaded"
+        );
+
+        return;
+      }
+
+      if (!pumpSettings) {
+        toast.error(
+          "Unable to load pump profile"
+        );
+
+        return;
+      }
+
+      try {
+        await exportLedgerPDF({
+          customer: {
+            ...customer,
+
+            entries,
+
+            totalPurchases:
+              summary.totalPurchased,
+
+            totalPaid:
+              summary.totalPaid,
+
+            totalPending:
+              summary.totalPending,
+          },
+
+          pump: pumpSettings,
+
+          billNo:
+            customer?.billNo || "",
+
+          billDate:
+            customer?.billDate || "",
+
+          billFrom:
+            customer?.billFrom || "",
+
+          logoUrl:
+            pumpSettings?.logo ||
+            pumpSettings?.logoUrl ||
+            pumpSettings?.companyLogo ||
+            pumpSettings?.pumpLogo ||
+            null,
+        });
+
+        toast.success(
+          "Ledger PDF exported successfully"
+        );
+      } catch (error) {
+        console.error(
+          "EXPORT LEDGER PDF ERROR:",
+          error
+        );
+
+        toast.error(
+          "Unable to export ledger PDF"
+        );
+      }
+    };
+
+  /* =====================================================
      CREATE CUSTOMER
   ===================================================== */
 
@@ -331,13 +456,55 @@ const CustomerLedger = () => {
     async (event) => {
       event.preventDefault();
 
-      if (!customerForm.name.trim()) {
+      /* -----------------------------------------------
+         CLEAN VALUES
+      ------------------------------------------------ */
+
+      const name =
+        customerForm.name.trim();
+
+      const phone =
+        customerForm.phone.trim();
+
+      const vehicleNumber =
+        customerForm.vehicleNumber.trim();
+
+      const address =
+        customerForm.address.trim();
+
+      const note =
+        customerForm.note.trim();
+
+      /* -----------------------------------------------
+         NAME VALIDATION
+      ------------------------------------------------ */
+
+      if (!name) {
         toast.error(
           "Customer name is required"
         );
 
         return;
       }
+
+      /* -----------------------------------------------
+         PHONE VALIDATION
+      ------------------------------------------------ */
+
+      if (
+        phone &&
+        !/^[0-9]{10}$/.test(phone)
+      ) {
+        toast.error(
+          "Enter a valid 10-digit mobile number"
+        );
+
+        return;
+      }
+
+      /* -----------------------------------------------
+         SELECTED EXISTING CUSTOMER
+      ------------------------------------------------ */
 
       if (
         selectedExistingCustomer?._id
@@ -349,25 +516,37 @@ const CustomerLedger = () => {
         return;
       }
 
+      /* -----------------------------------------------
+         DUPLICATE CHECK
+      ------------------------------------------------ */
+
+      const normalizedName =
+        name.toLowerCase();
+
       const duplicate =
         previousCustomers.find(
           (item) => {
-            const sameName =
+            const existingName =
               String(
-                item.name || ""
+                item?.name || ""
               )
-                .trim()
-                .toLowerCase() ===
-              customerForm.name
                 .trim()
                 .toLowerCase();
 
+            const existingPhone =
+              String(
+                item?.phone || ""
+              ).trim();
+
+            const sameName =
+              existingName ===
+              normalizedName;
+
             const samePhone =
-              customerForm.phone
-                ?.trim() &&
-              item.phone?.trim() &&
-              customerForm.phone.trim() ===
-                item.phone.trim();
+              Boolean(phone) &&
+              Boolean(existingPhone) &&
+              phone ===
+                existingPhone;
 
             return (
               sameName ||
@@ -391,11 +570,121 @@ const CustomerLedger = () => {
         return;
       }
 
+      /* -----------------------------------------------
+         CREATE CUSTOMER
+      ------------------------------------------------ */
+
       try {
+        const payload = {
+          name,
+          phone,
+          vehicleNumber,
+          address,
+          note,
+        };
+
         const data =
           await addLedgerCustomer(
-            customerForm
+            payload
           );
+
+        const createdCustomer =
+          data?.customer ||
+          data?.data?.customer ||
+          (
+            data?.data?._id
+              ? data.data
+              : null
+          );
+
+        const createdCustomerId =
+          createdCustomer?._id ||
+          createdCustomer?.id ||
+          data?.customerId ||
+          data?.data?.customerId;
+
+        /* ---------------------------------------------
+           RESPONSE WITHOUT ID
+        --------------------------------------------- */
+
+        if (!createdCustomerId) {
+          await loadPreviousCustomers();
+
+          let refreshedData;
+
+          try {
+            refreshedData =
+              await getLedgerCustomers();
+          } catch (refreshError) {
+            console.error(
+              "REFRESH CUSTOMERS AFTER CREATE ERROR:",
+              refreshError
+            );
+          }
+
+          const refreshedCustomers =
+            Array.isArray(
+              refreshedData?.customers
+            )
+              ? refreshedData.customers
+              : [];
+
+          const createdFromList =
+            refreshedCustomers.find(
+              (item) => {
+                const itemName =
+                  String(
+                    item?.name || ""
+                  )
+                    .trim()
+                    .toLowerCase();
+
+                const itemPhone =
+                  String(
+                    item?.phone || ""
+                  ).trim();
+
+                return (
+                  itemName ===
+                    normalizedName &&
+                  (
+                    !phone ||
+                    itemPhone === phone
+                  )
+                );
+              }
+            );
+
+          if (
+            createdFromList?._id
+          ) {
+            toast.success(
+              "Customer added successfully"
+            );
+
+            navigate(
+              `/ledger/customer?id=${createdFromList._id}`,
+              {
+                replace: true,
+              }
+            );
+
+            return;
+          }
+
+          toast.success(
+            "Customer added successfully"
+          );
+
+          navigate(
+            "/ledger",
+            {
+              replace: true,
+            }
+          );
+
+          return;
+        }
 
         toast.success(
           "Customer added successfully"
@@ -404,18 +693,23 @@ const CustomerLedger = () => {
         await loadPreviousCustomers();
 
         navigate(
-          `/ledger/customer?id=${data.customer._id}`,
+          `/ledger/customer?id=${createdCustomerId}`,
           {
             replace: true,
           }
         );
       } catch (error) {
+        console.error(
+          "CREATE CUSTOMER ERROR:",
+          error
+        );
+
         const existing =
-          error.response?.data
+          error?.response?.data
             ?.customer;
 
         if (
-          error.response?.status ===
+          error?.response?.status ===
             409 &&
           existing?._id
         ) {
@@ -431,8 +725,9 @@ const CustomerLedger = () => {
         }
 
         toast.error(
-          error.response?.data
+          error?.response?.data
             ?.message ||
+            error?.message ||
             "Unable to add customer"
         );
       }
@@ -468,7 +763,7 @@ const CustomerLedger = () => {
         await loadLedger();
       } catch (error) {
         toast.error(
-          error.response?.data
+          error?.response?.data
             ?.message ||
             "Unable to update customer"
         );
@@ -547,7 +842,7 @@ const CustomerLedger = () => {
         await loadPreviousCustomers();
       } catch (error) {
         toast.error(
-          error.response?.data
+          error?.response?.data
             ?.message ||
             "Unable to add purchase"
         );
@@ -573,6 +868,19 @@ const CustomerLedger = () => {
       ) {
         toast.error(
           "Enter valid payment amount"
+        );
+
+        return;
+      }
+
+      if (
+        amount >
+        Number(
+          summary.totalPending || 0
+        )
+      ) {
+        toast.error(
+          "Payment cannot exceed pending amount"
         );
 
         return;
@@ -613,7 +921,7 @@ const CustomerLedger = () => {
         await loadPreviousCustomers();
       } catch (error) {
         toast.error(
-          error.response?.data
+          error?.response?.data
             ?.message ||
             "Unable to add payment"
         );
@@ -657,9 +965,7 @@ const CustomerLedger = () => {
 
         </div>
 
-        {/* =================================================
-            CENTERED CUSTOMER FORM
-        ================================================= */}
+        {/* CUSTOMER FORM */}
 
         <div
           style={{
@@ -717,7 +1023,6 @@ const CustomerLedger = () => {
                       setCustomerForm(
                         (previous) => ({
                           ...previous,
-
                           name: value,
                         })
                       );
@@ -745,13 +1050,13 @@ const CustomerLedger = () => {
                     }
 
                     getTitle={(item) =>
-                      item.name
+                      item?.name || "Unnamed Customer"
                     }
 
                     getSubtitle={(item) =>
                       [
-                        item.phone,
-                        item.vehicleNumber,
+                        item?.phone,
+                        item?.vehicleNumber,
                       ]
                         .filter(Boolean)
                         .join(" • ")
@@ -781,7 +1086,6 @@ const CustomerLedger = () => {
                       setCustomerForm(
                         (previous) => ({
                           ...previous,
-
                           name: "",
                         })
                       );
@@ -798,23 +1102,23 @@ const CustomerLedger = () => {
                     onSelect={(item) => {
                       setCustomerForm({
                         name:
-                          item.name ||
+                          item?.name ||
                           "",
 
                         phone:
-                          item.phone ||
+                          item?.phone ||
                           "",
 
                         vehicleNumber:
-                          item.vehicleNumber ||
+                          item?.vehicleNumber ||
                           "",
 
                         address:
-                          item.address ||
+                          item?.address ||
                           "",
 
                         note:
-                          item.note ||
+                          item?.note ||
                           "",
                       });
 
@@ -836,26 +1140,14 @@ const CustomerLedger = () => {
 
                   <div
                     style={{
-                      marginBottom:
-                        "16px",
-
-                      padding:
-                        "12px 14px",
-
+                      marginBottom: "16px",
+                      padding: "12px 14px",
                       border:
                         "1px solid #bbf7d0",
-
-                      borderRadius:
-                        "9px",
-
-                      background:
-                        "#f0fdf4",
-
-                      color:
-                        "#166534",
-
-                      fontSize:
-                        "13px",
+                      borderRadius: "9px",
+                      background: "#f0fdf4",
+                      color: "#166534",
+                      fontSize: "13px",
                     }}
                   >
                     Existing customer selected:{" "}
@@ -891,10 +1183,8 @@ const CustomerLedger = () => {
                         setCustomerForm(
                           (previous) => ({
                             ...previous,
-
                             phone:
-                              e.target
-                                .value,
+                              e.target.value,
                           })
                         )
                       }
@@ -917,10 +1207,8 @@ const CustomerLedger = () => {
                         setCustomerForm(
                           (previous) => ({
                             ...previous,
-
                             vehicleNumber:
-                              e.target
-                                .value,
+                              e.target.value,
                           })
                         )
                       }
@@ -947,10 +1235,8 @@ const CustomerLedger = () => {
                       setCustomerForm(
                         (previous) => ({
                           ...previous,
-
                           address:
-                            e.target
-                              .value,
+                            e.target.value,
                         })
                       )
                     }
@@ -975,16 +1261,16 @@ const CustomerLedger = () => {
                       setCustomerForm(
                         (previous) => ({
                           ...previous,
-
                           note:
-                            e.target
-                              .value,
+                            e.target.value,
                         })
                       )
                     }
                   />
 
                 </div>
+
+                {/* SUBMIT */}
 
                 <button
                   type="submit"
@@ -1101,6 +1387,17 @@ const CustomerLedger = () => {
               Add Payment
             </button>
 
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={!pumpSettings}
+              onClick={
+                handleExportPDF
+              }
+            >
+              Export PDF
+            </button>
+
           </div>
 
         )}
@@ -1143,10 +1440,8 @@ const CustomerLedger = () => {
                       setCustomerForm(
                         (previous) => ({
                           ...previous,
-
                           name:
-                            e.target
-                              .value,
+                            e.target.value,
                         })
                       )
                     }
@@ -1168,10 +1463,8 @@ const CustomerLedger = () => {
                       setCustomerForm(
                         (previous) => ({
                           ...previous,
-
                           phone:
-                            e.target
-                              .value,
+                            e.target.value,
                         })
                       )
                     }
@@ -1197,10 +1490,8 @@ const CustomerLedger = () => {
                       setCustomerForm(
                         (previous) => ({
                           ...previous,
-
                           vehicleNumber:
-                            e.target
-                              .value,
+                            e.target.value,
                         })
                       )
                     }
@@ -1222,10 +1513,8 @@ const CustomerLedger = () => {
                       setCustomerForm(
                         (previous) => ({
                           ...previous,
-
                           address:
-                            e.target
-                              .value,
+                            e.target.value,
                         })
                       )
                     }
@@ -1358,10 +1647,8 @@ const CustomerLedger = () => {
                           setPurchaseForm(
                             (previous) => ({
                               ...previous,
-
                               fuelType:
-                                e.target
-                                  .value,
+                                e.target.value,
                             })
                           )
                         }
@@ -1392,10 +1679,8 @@ const CustomerLedger = () => {
                           setPurchaseForm(
                             (previous) => ({
                               ...previous,
-
                               entryDate:
-                                e.target
-                                  .value,
+                                e.target.value,
                             })
                           )
                         }
@@ -1424,10 +1709,8 @@ const CustomerLedger = () => {
                           setPurchaseForm(
                             (previous) => ({
                               ...previous,
-
                               totalAmount:
-                                e.target
-                                  .value,
+                                e.target.value,
                             })
                           )
                         }
@@ -1452,10 +1735,8 @@ const CustomerLedger = () => {
                           setPurchaseForm(
                             (previous) => ({
                               ...previous,
-
                               paidAmount:
-                                e.target
-                                  .value,
+                                e.target.value,
                             })
                           )
                         }
@@ -1472,20 +1753,12 @@ const CustomerLedger = () => {
 
                     <div
                       style={{
-                        marginBottom:
-                          "16px",
-
-                        padding:
-                          "13px 15px",
-
-                        background:
-                          "#f8fafc",
-
+                        marginBottom: "16px",
+                        padding: "13px 15px",
+                        background: "#f8fafc",
                         border:
                           "1px solid #e2e8f0",
-
-                        borderRadius:
-                          "9px",
+                        borderRadius: "9px",
                       }}
                     >
                       Pending for this purchase:{" "}
@@ -1525,10 +1798,8 @@ const CustomerLedger = () => {
                         setPurchaseForm(
                           (previous) => ({
                             ...previous,
-
                             note:
-                              e.target
-                                .value,
+                              e.target.value,
                           })
                         )
                       }
@@ -1608,10 +1879,8 @@ const CustomerLedger = () => {
                           setPaymentForm(
                             (previous) => ({
                               ...previous,
-
                               amount:
-                                e.target
-                                  .value,
+                                e.target.value,
                             })
                           )
                         }
@@ -1634,10 +1903,8 @@ const CustomerLedger = () => {
                           setPaymentForm(
                             (previous) => ({
                               ...previous,
-
                               entryDate:
-                                e.target
-                                  .value,
+                                e.target.value,
                             })
                           )
                         }
@@ -1662,10 +1929,8 @@ const CustomerLedger = () => {
                         setPaymentForm(
                           (previous) => ({
                             ...previous,
-
                             note:
-                              e.target
-                                .value,
+                              e.target.value,
                           })
                         )
                       }
@@ -1697,6 +1962,7 @@ const CustomerLedger = () => {
             <div className="content-panel-header">
 
               <div>
+
                 <h2>
                   Complete Ledger
                 </h2>
@@ -1705,6 +1971,7 @@ const CustomerLedger = () => {
                   Complete customer purchase
                   and payment history.
                 </p>
+
               </div>
 
             </div>
@@ -1732,12 +1999,14 @@ const CustomerLedger = () => {
                   {entries.length === 0 ? (
 
                     <tr>
+
                       <td
                         colSpan="9"
                         className="empty-table"
                       >
                         No transactions found.
                       </td>
+
                     </tr>
 
                   ) : (

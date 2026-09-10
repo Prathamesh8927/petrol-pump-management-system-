@@ -6,18 +6,80 @@ import {
 import toast from "react-hot-toast";
 
 import {
-  Save,
   Building2,
   MapPin,
   Phone,
   Mail,
   Bell,
+  Save,
 } from "lucide-react";
 
 import {
   getPumpSettings,
   updatePumpSettings,
 } from "../../services/settingsService";
+
+/* =========================================================
+   SUPPORTED OIL COMPANIES
+
+   Logo is automatically selected by the system
+   from frontend assets according to companyName.
+========================================================= */
+
+const OIL_COMPANIES = [
+  {
+    value: "Indian Oil",
+    label: "Indian Oil",
+  },
+  {
+    value: "BPCL",
+    label: "BPCL",
+  },
+  {
+    value: "HPCL",
+    label: "HPCL",
+  },
+  {
+    value: "Nayara Energy",
+    label: "Nayara Energy",
+  },
+  {
+    value: "Reliance",
+    label: "Reliance",
+  },
+  {
+    value: "Shell",
+    label: "Shell",
+  },
+];
+
+/* =========================================================
+   DEFAULT FORM
+========================================================= */
+
+const DEFAULT_FORM = {
+  pumpName: "",
+  ownerName: "",
+  phone: "",
+  email: "",
+
+  companyName: "",
+
+  dealerCode: "",
+  gstin: "",
+
+  address: "",
+  city: "",
+  state: "Maharashtra",
+  pincode: "",
+
+  lowStockAlert: 1000,
+  enableLowStockAlert: true,
+};
+
+/* =========================================================
+   COMPONENT
+========================================================= */
 
 const PumpSettings = () => {
   const [
@@ -33,28 +95,11 @@ const PumpSettings = () => {
   const [
     form,
     setForm,
-  ] = useState({
-    pumpName: "",
-    ownerName: "",
-    phone: "",
-    email: "",
-    companyName: "",
-    dealerCode: "",
-    gstin: "",
-    address: "",
-    city: "",
-    state:
-      "Maharashtra",
-    pincode: "",
-    lowStockAlert:
-      1000,
-    enableLowStockAlert:
-      true,
-  });
+  ] = useState(DEFAULT_FORM);
 
-  /* =====================================
-     LOAD
-  ===================================== */
+  /* =======================================================
+     LOAD SETTINGS
+  ======================================================= */
 
   const loadSettings =
     async () => {
@@ -65,52 +110,12 @@ const PumpSettings = () => {
           await getPumpSettings();
 
         const settings =
-          data.settings || {};
+          data?.settings || {};
 
         setForm({
-          pumpName:
-            settings.pumpName ||
-            "",
+          ...DEFAULT_FORM,
 
-          ownerName:
-            settings.ownerName ||
-            "",
-
-          phone:
-            settings.phone ||
-            "",
-
-          email:
-            settings.email ||
-            "",
-
-          companyName:
-            settings.companyName ||
-            "",
-
-          dealerCode:
-            settings.dealerCode ||
-            "",
-
-          gstin:
-            settings.gstin ||
-            "",
-
-          address:
-            settings.address ||
-            "",
-
-          city:
-            settings.city ||
-            "",
-
-          state:
-            settings.state ||
-            "Maharashtra",
-
-          pincode:
-            settings.pincode ||
-            "",
+          ...settings,
 
           lowStockAlert:
             settings.lowStockAlert ??
@@ -121,6 +126,11 @@ const PumpSettings = () => {
             true,
         });
       } catch (error) {
+        console.error(
+          "LOAD PUMP SETTINGS ERROR:",
+          error
+        );
+
         toast.error(
           error.response?.data
             ?.message ||
@@ -135,31 +145,55 @@ const PumpSettings = () => {
     loadSettings();
   }, []);
 
-  const handleChange =
-    (e) => {
-      const {
-        name,
-        value,
-        type,
-        checked,
-      } = e.target;
+  /* =======================================================
+     HANDLE CHANGE
+  ======================================================= */
 
-      setForm(
-        (previous) => ({
-          ...previous,
+  const handleChange = (
+    event
+  ) => {
+    const {
+      name,
+      value,
+      type,
+      checked,
+    } = event.target;
 
-          [name]:
-            type ===
-            "checkbox"
-              ? checked
-              : value,
-        })
-      );
-    };
+    setForm(
+      (previous) => ({
+        ...previous,
+
+        [name]:
+          type === "checkbox"
+            ? checked
+            : value,
+      })
+    );
+  };
+
+  /* =======================================================
+     SAVE SETTINGS
+  ======================================================= */
 
   const handleSubmit =
-    async (e) => {
-      e.preventDefault();
+    async (event) => {
+      event.preventDefault();
+
+      if (!form.pumpName.trim()) {
+        toast.error(
+          "Pump name is required"
+        );
+
+        return;
+      }
+
+      if (!form.companyName.trim()) {
+        toast.error(
+          "Please select oil company"
+        );
+
+        return;
+      }
 
       try {
         setSaving(true);
@@ -167,10 +201,42 @@ const PumpSettings = () => {
         await updatePumpSettings({
           ...form,
 
+          pumpName:
+            form.pumpName.trim(),
+
+          ownerName:
+            form.ownerName.trim(),
+
+          phone:
+            form.phone.trim(),
+
+          email:
+            form.email.trim(),
+
+          companyName:
+            form.companyName.trim(),
+
+          dealerCode:
+            form.dealerCode.trim(),
+
+          gstin:
+            form.gstin.trim(),
+
+          address:
+            form.address.trim(),
+
+          city:
+            form.city.trim(),
+
+          state:
+            form.state.trim(),
+
+          pincode:
+            form.pincode.trim(),
+
           lowStockAlert:
             Number(
-              form.lowStockAlert ||
-                0
+              form.lowStockAlert || 0
             ),
         });
 
@@ -178,6 +244,11 @@ const PumpSettings = () => {
           "Pump settings saved successfully"
         );
       } catch (error) {
+        console.error(
+          "SAVE PUMP SETTINGS ERROR:",
+          error
+        );
+
         toast.error(
           error.response?.data
             ?.message ||
@@ -188,16 +259,28 @@ const PumpSettings = () => {
       }
     };
 
+  /* =======================================================
+     LOADING
+  ======================================================= */
+
   if (loading) {
     return (
       <div className="page-container">
-        Loading settings...
+        Loading pump settings...
       </div>
     );
   }
 
+  /* =======================================================
+     UI
+  ======================================================= */
+
   return (
     <div className="page-container">
+
+      {/* =================================================
+          PAGE HEADER
+      ================================================= */}
 
       <div className="page-header">
 
@@ -207,40 +290,64 @@ const PumpSettings = () => {
           </h1>
 
           <p>
-            Configure petrol pump
-            business information.
+            Manage your petrol pump
+            profile and business
+            information.
           </p>
         </div>
 
       </div>
+
+      {/* =================================================
+          SETTINGS FORM
+      ================================================= */}
 
       <div className="content-panel">
 
         <div className="content-panel-body">
 
           <form
-            className="clean-form"
             onSubmit={
               handleSubmit
             }
+            className="clean-form"
           >
 
-            <h3>
+            {/* =========================================
+                PUMP INFORMATION
+            ========================================= */}
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                marginBottom: "18px",
+              }}
+            >
               <Building2
-                size={18}
-              />{" "}
-              Business Information
-            </h3>
+                size={20}
+              />
+
+              <h2
+                style={{
+                  margin: 0,
+                }}
+              >
+                Pump Information
+              </h2>
+            </div>
 
             <div className="form-row">
 
               <div className="form-group">
 
                 <label>
-                  Pump Name
+                  Pump Name *
                 </label>
 
                 <input
+                  type="text"
                   name="pumpName"
                   value={
                     form.pumpName
@@ -248,6 +355,7 @@ const PumpSettings = () => {
                   onChange={
                     handleChange
                   }
+                  placeholder="Enter pump name"
                   required
                 />
 
@@ -260,6 +368,7 @@ const PumpSettings = () => {
                 </label>
 
                 <input
+                  type="text"
                   name="ownerName"
                   value={
                     form.ownerName
@@ -267,11 +376,16 @@ const PumpSettings = () => {
                   onChange={
                     handleChange
                   }
+                  placeholder="Enter owner name"
                 />
 
               </div>
 
             </div>
+
+            {/* =========================================
+                CONTACT
+            ========================================= */}
 
             <div className="form-row">
 
@@ -280,11 +394,19 @@ const PumpSettings = () => {
                 <label>
                   <Phone
                     size={14}
+                    style={{
+                      verticalAlign:
+                        "middle",
+                      marginRight:
+                        "5px",
+                    }}
                   />
+
                   Phone
                 </label>
 
                 <input
+                  type="text"
                   name="phone"
                   value={
                     form.phone
@@ -292,6 +414,7 @@ const PumpSettings = () => {
                   onChange={
                     handleChange
                   }
+                  placeholder="Enter phone number"
                 />
 
               </div>
@@ -301,7 +424,14 @@ const PumpSettings = () => {
                 <label>
                   <Mail
                     size={14}
+                    style={{
+                      verticalAlign:
+                        "middle",
+                      marginRight:
+                        "5px",
+                    }}
                   />
+
                   Email
                 </label>
 
@@ -314,21 +444,54 @@ const PumpSettings = () => {
                   onChange={
                     handleChange
                   }
+                  placeholder="Enter email"
                 />
 
               </div>
 
             </div>
 
-            <div className="form-row">
+            {/* =========================================
+                OIL COMPANY
+            ========================================= */}
+
+            <div
+              style={{
+                marginTop: "8px",
+                marginBottom: "20px",
+              }}
+            >
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  marginBottom: "12px",
+                }}
+              >
+
+                <Building2
+                  size={18}
+                />
+
+                <h3
+                  style={{
+                    margin: 0,
+                  }}
+                >
+                  Oil Company
+                </h3>
+
+              </div>
 
               <div className="form-group">
 
                 <label>
-                  Oil Company
+                  Oil Company *
                 </label>
 
-                <input
+                <select
                   name="companyName"
                   value={
                     form.companyName
@@ -336,10 +499,55 @@ const PumpSettings = () => {
                   onChange={
                     handleChange
                   }
-                  placeholder="Indian Oil / BPCL / HPCL"
-                />
+                  required
+                >
+
+                  <option value="">
+                    Select Oil Company
+                  </option>
+
+                  {OIL_COMPANIES.map(
+                    (company) => (
+                      <option
+                        key={
+                          company.value
+                        }
+                        value={
+                          company.value
+                        }
+                      >
+                        {company.label}
+                      </option>
+                    )
+                  )}
+
+                </select>
+
+                <small
+                  style={{
+                    display:
+                      "block",
+                    marginTop:
+                      "7px",
+                    color:
+                      "#64748b",
+                  }}
+                >
+                  The system automatically
+                  uses the corresponding
+                  company logo in reports
+                  and PDF documents.
+                </small>
 
               </div>
+
+            </div>
+
+            {/* =========================================
+                DEALER DETAILS
+            ========================================= */}
+
+            <div className="form-row">
 
               <div className="form-group">
 
@@ -348,6 +556,7 @@ const PumpSettings = () => {
                 </label>
 
                 <input
+                  type="text"
                   name="dealerCode"
                   value={
                     form.dealerCode
@@ -355,36 +564,60 @@ const PumpSettings = () => {
                   onChange={
                     handleChange
                   }
+                  placeholder="Enter dealer code"
+                />
+
+              </div>
+
+              <div className="form-group">
+
+                <label>
+                  GSTIN
+                </label>
+
+                <input
+                  type="text"
+                  name="gstin"
+                  value={
+                    form.gstin
+                  }
+                  onChange={
+                    handleChange
+                  }
+                  placeholder="Enter GSTIN"
                 />
 
               </div>
 
             </div>
 
-            <div className="form-group">
+            {/* =========================================
+                ADDRESS
+            ========================================= */}
 
-              <label>
-                GSTIN
-              </label>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                marginTop: "18px",
+                marginBottom: "12px",
+              }}
+            >
 
-              <input
-                name="gstin"
-                value={
-                  form.gstin
-                }
-                onChange={
-                  handleChange
-                }
-              />
-
-            </div>
-
-            <h3>
               <MapPin
                 size={18}
-              />{" "}
-              Address
-            </h3>
+              />
+
+              <h3
+                style={{
+                  margin: 0,
+                }}
+              >
+                Address
+              </h3>
+
+            </div>
 
             <div className="form-group">
 
@@ -392,7 +625,8 @@ const PumpSettings = () => {
                 Address
               </label>
 
-              <textarea
+              <input
+                type="text"
                 name="address"
                 value={
                   form.address
@@ -400,7 +634,7 @@ const PumpSettings = () => {
                 onChange={
                   handleChange
                 }
-                rows="3"
+                placeholder="Enter address"
               />
 
             </div>
@@ -414,6 +648,7 @@ const PumpSettings = () => {
                 </label>
 
                 <input
+                  type="text"
                   name="city"
                   value={
                     form.city
@@ -421,6 +656,7 @@ const PumpSettings = () => {
                   onChange={
                     handleChange
                   }
+                  placeholder="Enter city"
                 />
 
               </div>
@@ -432,9 +668,83 @@ const PumpSettings = () => {
                 </label>
 
                 <input
+                  type="text"
                   name="state"
                   value={
                     form.state
+                  }
+                  onChange={
+                    handleChange
+                  }
+                  placeholder="Enter state"
+                />
+
+              </div>
+
+              <div className="form-group">
+
+                <label>
+                  Pincode
+                </label>
+
+                <input
+                  type="text"
+                  name="pincode"
+                  value={
+                    form.pincode
+                  }
+                  onChange={
+                    handleChange
+                  }
+                  placeholder="Enter pincode"
+                />
+
+              </div>
+
+            </div>
+
+            {/* =========================================
+                LOW STOCK
+            ========================================= */}
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                marginTop: "22px",
+                marginBottom: "12px",
+              }}
+            >
+
+              <Bell
+                size={18}
+              />
+
+              <h3
+                style={{
+                  margin: 0,
+                }}
+              >
+                Notifications
+              </h3>
+
+            </div>
+
+            <div className="form-row">
+
+              <div className="form-group">
+
+                <label>
+                  Low Stock Alert
+                </label>
+
+                <input
+                  type="number"
+                  min="0"
+                  name="lowStockAlert"
+                  value={
+                    form.lowStockAlert
                   }
                   onChange={
                     handleChange
@@ -443,91 +753,77 @@ const PumpSettings = () => {
 
               </div>
 
-            </div>
+              <div
+                className="form-group"
+                style={{
+                  display: "flex",
+                  alignItems:
+                    "center",
+                  paddingTop:
+                    "28px",
+                }}
+              >
 
-            <div className="form-group">
+                <label
+                  style={{
+                    display:
+                      "flex",
+                    alignItems:
+                      "center",
+                    gap: "8px",
+                    cursor:
+                      "pointer",
+                  }}
+                >
 
-              <label>
-                Pincode
-              </label>
+                  <input
+                    type="checkbox"
+                    name="enableLowStockAlert"
+                    checked={
+                      Boolean(
+                        form.enableLowStockAlert
+                      )
+                    }
+                    onChange={
+                      handleChange
+                    }
+                  />
 
-              <input
-                name="pincode"
-                value={
-                  form.pincode
-                }
-                onChange={
-                  handleChange
-                }
-              />
+                  Enable Low Stock Alert
 
-            </div>
+                </label>
 
-            <h3>
-              <Bell
-                size={18}
-              />{" "}
-              Stock Alerts
-            </h3>
-
-            <div className="form-group">
-
-              <label>
-                Low Stock Alert
-                Level (Litres)
-              </label>
-
-              <input
-                type="number"
-                min="0"
-                name="lowStockAlert"
-                value={
-                  form.lowStockAlert
-                }
-                onChange={
-                  handleChange
-                }
-              />
+              </div>
 
             </div>
 
-            <label
+            {/* =========================================
+                SAVE
+            ========================================= */}
+
+            <div
               style={{
-                display: "flex",
-                alignItems:
-                  "center",
-                gap: "8px",
-                marginBottom:
-                  "20px",
+                marginTop: "24px",
               }}
             >
-              <input
-                type="checkbox"
-                name="enableLowStockAlert"
-                checked={
-                  form.enableLowStockAlert
-                }
-                onChange={
-                  handleChange
-                }
-              />
 
-              Enable low stock alert
-            </label>
+              <button
+                type="submit"
+                className="primary-button"
+                disabled={saving}
+              >
 
-            <button
-              type="submit"
-              className="primary-button"
-              disabled={
-                saving
-              }
-            >
-              <Save size={17} />
+                <Save
+                  size={17}
+                />
 
-              {saving
-                ? "Saving..."
-                : "Save Settings"}
-            </button>
+                {saving
+                  ? "Saving..."
+                  : "Save Settings"}
+
+              </button>
+
+            </div>
 
           </form>
 

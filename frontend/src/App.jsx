@@ -204,8 +204,6 @@ function App() {
           }
         />
 
-        {/* Password Recovery */}
-
         <Route
           path="/forgot-password"
           element={
@@ -466,6 +464,35 @@ function App() {
               <Customers />
             }
           />
+
+          {/* ===============================================
+              CUSTOMER LEDGER
+
+              IMPORTANT:
+              CustomerLedger uses useParams():
+
+              const { customerId } = useParams();
+
+              Therefore the route MUST contain
+              :customerId.
+          =============================================== */}
+
+          <Route
+            path="/ledger/customer/:customerId"
+            element={
+              <CustomerLedger />
+            }
+          />
+
+          {/* ===============================================
+              BACKWARD COMPATIBILITY
+
+              Keeps /ledger/customer available for
+              Add Customer / existing navigation.
+
+              CustomerLedger can handle the missing ID
+              and show "Customer not found".
+          =============================================== */}
 
           <Route
             path="/ledger/customer"
