@@ -524,6 +524,4 @@ If you’re a developer, recruiter, founder, or business owner interested in the
 
 ---
 
-## 📄 License
 
-Add your preferred license here, such as MIT, if you intend to make the source code open source.
