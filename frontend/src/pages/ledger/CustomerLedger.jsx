@@ -34,15 +34,47 @@ import {
   exportLedgerPDF,
 } from "../../utils/ledgerExport";
 
+/* =========================================================
+   LOGO RESOLVER
+========================================================= */
+
+const resolveLogoUrl = (settings = {}) => {
+  const candidates = [
+    settings?.logoUrl,
+    settings?.logoURL,
+    settings?.companyLogo,
+    settings?.pumpLogo,
+    settings?.logo?.url,
+    settings?.logo?.secure_url,
+    settings?.logo?.secureUrl,
+    settings?.logo?.path,
+    settings?.logo?.src,
+    settings?.logo,
+  ];
+
+  const resolved = candidates.find(
+    (value) =>
+      typeof value === "string" &&
+      value.trim().length > 0
+  );
+
+  return resolved
+    ? resolved.trim()
+    : null;
+};
+
 const CustomerLedger = () => {
   const navigate = useNavigate();
 
-  const [searchParams] = useSearchParams();
+  const [searchParams] =
+    useSearchParams();
 
-  const customerId = searchParams.get("id");
+  const customerId =
+    searchParams.get("id");
 
   const editMode =
-    searchParams.get("edit") === "true";
+    searchParams.get("edit") ===
+    "true";
 
   const isExistingCustomer =
     Boolean(customerId);
@@ -195,13 +227,88 @@ const CustomerLedger = () => {
   const loadPumpSettings =
     async () => {
       try {
-        const data =
+        const response =
           await api.get(
             "/settings/pump"
           );
 
+        const settings =
+          response?.settings ||
+          response?.data?.settings ||
+          response?.data ||
+          {};
+
+        const logoUrl =
+          resolveLogoUrl(
+            settings
+          );
+
+        const normalizedSettings = {
+          ...settings,
+
+          pumpName:
+            settings?.pumpName ||
+            settings?.name ||
+            "Shivshambho",
+
+          ownerName:
+            settings?.ownerName ||
+            settings?.owner ||
+            "",
+
+          companyName:
+            settings?.companyName ||
+            settings?.oilCompanyName ||
+            settings?.oilCompany ||
+            "",
+
+          gstin:
+            settings?.gstin ||
+            settings?.gstNo ||
+            "",
+
+          address:
+            settings?.address ||
+            "",
+
+          city:
+            settings?.city ||
+            "",
+
+          state:
+            settings?.state ||
+            "",
+
+          pincode:
+            settings?.pincode ||
+            settings?.pinCode ||
+            "",
+
+          phone:
+            settings?.phone ||
+            settings?.mobile ||
+            settings?.mobileNumber ||
+            "",
+
+          email:
+            settings?.email ||
+            "",
+
+          /*
+           * Preserve every original setting and
+           * normalize the logo into predictable fields.
+           */
+          logoUrl:
+            logoUrl || null,
+
+          logo:
+            settings?.logo ||
+            logoUrl ||
+            null,
+        };
+
         setPumpSettings(
-          data?.settings || {}
+          normalizedSettings
         );
       } catch (error) {
         console.error(
@@ -270,7 +377,9 @@ const CustomerLedger = () => {
               .trim()
               .toLowerCase();
 
-          return name.includes(value);
+          return name.includes(
+            value
+          );
         })
         .slice(0, 8);
     }, [
@@ -312,25 +421,29 @@ const CustomerLedger = () => {
           totalPurchased:
             Number(
               data?.summary
-                ?.totalPurchased || 0
+                ?.totalPurchased ||
+                0
             ),
 
           totalPaid:
             Number(
               data?.summary
-                ?.totalPaid || 0
+                ?.totalPaid ||
+                0
             ),
 
           totalPending:
             Number(
               data?.summary
-                ?.totalPending || 0
+                ?.totalPending ||
+                0
             ),
 
           purchaseCount:
             Number(
               data?.summary
-                ?.purchaseCount || 0
+                ?.purchaseCount ||
+                0
             ),
         });
 
@@ -345,7 +458,8 @@ const CustomerLedger = () => {
 
           vehicleNumber:
             data?.customer
-              ?.vehicleNumber || "",
+              ?.vehicleNumber ||
+            "",
 
           address:
             data?.customer
@@ -398,6 +512,85 @@ const CustomerLedger = () => {
       }
 
       try {
+        const logoUrl =
+          resolveLogoUrl(
+            pumpSettings
+          );
+
+        /*
+         * Normalize pump profile before
+         * sending it to ledgerExport.js.
+         *
+         * This ensures customer PDF receives:
+         * - pump name
+         * - owner
+         * - company
+         * - GSTIN
+         * - address
+         * - city/state/pincode
+         * - phone/email
+         * - profile logo
+         */
+        const pump = {
+          ...pumpSettings,
+
+          pumpName:
+            pumpSettings?.pumpName ||
+            pumpSettings?.name ||
+            "Shivshambho",
+
+          ownerName:
+            pumpSettings?.ownerName ||
+            pumpSettings?.owner ||
+            "",
+
+          companyName:
+            pumpSettings?.companyName ||
+            pumpSettings?.oilCompanyName ||
+            pumpSettings?.oilCompany ||
+            "",
+
+          gstin:
+            pumpSettings?.gstin ||
+            pumpSettings?.gstNo ||
+            "",
+
+          address:
+            pumpSettings?.address ||
+            "",
+
+          city:
+            pumpSettings?.city ||
+            "",
+
+          state:
+            pumpSettings?.state ||
+            "",
+
+          pincode:
+            pumpSettings?.pincode ||
+            pumpSettings?.pinCode ||
+            "",
+
+          phone:
+            pumpSettings?.phone ||
+            pumpSettings?.mobile ||
+            pumpSettings?.mobileNumber ||
+            "",
+
+          email:
+            pumpSettings?.email ||
+            "",
+
+          logoUrl:
+            logoUrl || null,
+
+          logo:
+            pumpSettings?.logo ||
+            logoUrl ||
+            null,
+        };
+
         await exportLedgerPDF({
           customer: {
             ...customer,
@@ -407,30 +600,47 @@ const CustomerLedger = () => {
             totalPurchases:
               summary.totalPurchased,
 
+            totalAmount:
+              summary.totalPurchased,
+
             totalPaid:
+              summary.totalPaid,
+
+            paidAmount:
               summary.totalPaid,
 
             totalPending:
               summary.totalPending,
+
+            currentBalance:
+              summary.totalPending,
           },
 
-          pump: pumpSettings,
+          pump,
 
           billNo:
-            customer?.billNo || "",
+            customer?.billNo ||
+            customer?.billNumber ||
+            customer?.invoiceNo ||
+            customer?.invoiceNumber ||
+            "",
 
           billDate:
-            customer?.billDate || "",
+            customer?.billDate ||
+            customer?.invoiceDate ||
+            customer?.createdAt ||
+            "",
 
           billFrom:
-            customer?.billFrom || "",
+            customer?.billFrom ||
+            "",
 
+          /*
+           * Explicit logo argument.
+           * ledgerExport.js uses this first.
+           */
           logoUrl:
-            pumpSettings?.logo ||
-            pumpSettings?.logoUrl ||
-            pumpSettings?.companyLogo ||
-            pumpSettings?.pumpLogo ||
-            null,
+            logoUrl || null,
         });
 
         toast.success(
@@ -443,7 +653,10 @@ const CustomerLedger = () => {
         );
 
         toast.error(
-          "Unable to export ledger PDF"
+          error?.response?.data
+            ?.message ||
+            error?.message ||
+            "Unable to export ledger PDF"
         );
       }
     };
@@ -493,7 +706,9 @@ const CustomerLedger = () => {
 
       if (
         phone &&
-        !/^[0-9]{10}$/.test(phone)
+        !/^[0-9]{10}$/.test(
+          phone
+        )
       ) {
         toast.error(
           "Enter a valid 10-digit mobile number"
@@ -544,7 +759,9 @@ const CustomerLedger = () => {
 
             const samePhone =
               Boolean(phone) &&
-              Boolean(existingPhone) &&
+              Boolean(
+                existingPhone
+              ) &&
               phone ===
                 existingPhone;
 
@@ -876,7 +1093,8 @@ const CustomerLedger = () => {
       if (
         amount >
         Number(
-          summary.totalPending || 0
+          summary.totalPending ||
+            0
         )
       ) {
         toast.error(
@@ -1050,7 +1268,8 @@ const CustomerLedger = () => {
                     }
 
                     getTitle={(item) =>
-                      item?.name || "Unnamed Customer"
+                      item?.name ||
+                      "Unnamed Customer"
                     }
 
                     getSubtitle={(item) =>
@@ -1141,7 +1360,8 @@ const CustomerLedger = () => {
                   <div
                     style={{
                       marginBottom: "16px",
-                      padding: "12px 14px",
+                      padding:
+                        "12px 14px",
                       border:
                         "1px solid #bbf7d0",
                       borderRadius: "9px",
@@ -1373,7 +1593,8 @@ const CustomerLedger = () => {
               type="button"
               className="secondary-button"
               disabled={
-                summary.totalPending <= 0
+                summary.totalPending <=
+                0
               }
               onClick={() => {
                 setShowPayment(
@@ -1549,16 +1770,21 @@ const CustomerLedger = () => {
           <div className="stats-grid">
 
             <div className="stat-card">
-              <h4>Purchases</h4>
+
+              <h4>
+                Purchases
+              </h4>
 
               <h2>
                 {
                   summary.purchaseCount
                 }
               </h2>
+
             </div>
 
             <div className="stat-card">
+
               <h4>
                 Total Purchase
               </h4>
@@ -1569,9 +1795,11 @@ const CustomerLedger = () => {
                   summary.totalPurchased
                 )}
               </h2>
+
             </div>
 
             <div className="stat-card">
+
               <h4>
                 Total Paid
               </h4>
@@ -1582,9 +1810,11 @@ const CustomerLedger = () => {
                   summary.totalPaid
                 )}
               </h2>
+
             </div>
 
             <div className="stat-card">
+
               <h4>
                 Pending
               </h4>
@@ -1595,6 +1825,7 @@ const CustomerLedger = () => {
                   summary.totalPending
                 )}
               </h2>
+
             </div>
 
           </div>
@@ -1615,7 +1846,8 @@ const CustomerLedger = () => {
 
                 <p
                   style={{
-                    marginBottom: "20px",
+                    marginBottom:
+                      "20px",
                   }}
                 >
                   Customer:{" "}
@@ -1653,6 +1885,7 @@ const CustomerLedger = () => {
                           )
                         }
                       >
+
                         <option value="petrol">
                           Petrol
                         </option>
@@ -1660,6 +1893,7 @@ const CustomerLedger = () => {
                         <option value="diesel">
                           Diesel
                         </option>
+
                       </select>
 
                     </div>
@@ -1753,12 +1987,16 @@ const CustomerLedger = () => {
 
                     <div
                       style={{
-                        marginBottom: "16px",
-                        padding: "13px 15px",
-                        background: "#f8fafc",
+                        marginBottom:
+                          "16px",
+                        padding:
+                          "13px 15px",
+                        background:
+                          "#f8fafc",
                         border:
                           "1px solid #e2e8f0",
-                        borderRadius: "9px",
+                        borderRadius:
+                          "9px",
                       }}
                     >
                       Pending for this purchase:{" "}
@@ -1838,7 +2076,8 @@ const CustomerLedger = () => {
 
                 <p
                   style={{
-                    marginBottom: "20px",
+                    marginBottom:
+                      "20px",
                   }}
                 >
                   Current Pending:{" "}
@@ -1981,22 +2220,53 @@ const CustomerLedger = () => {
               <table>
 
                 <thead>
+
                   <tr>
-                    <th>#</th>
-                    <th>Date</th>
-                    <th>Type</th>
-                    <th>Fuel</th>
-                    <th>Total</th>
-                    <th>Paid</th>
-                    <th>Pending</th>
-                    <th>Payment</th>
-                    <th>Note</th>
+
+                    <th>
+                      #
+                    </th>
+
+                    <th>
+                      Date
+                    </th>
+
+                    <th>
+                      Type
+                    </th>
+
+                    <th>
+                      Fuel
+                    </th>
+
+                    <th>
+                      Total
+                    </th>
+
+                    <th>
+                      Paid
+                    </th>
+
+                    <th>
+                      Pending
+                    </th>
+
+                    <th>
+                      Payment
+                    </th>
+
+                    <th>
+                      Note
+                    </th>
+
                   </tr>
+
                 </thead>
 
                 <tbody>
 
-                  {entries.length === 0 ? (
+                  {entries.length ===
+                  0 ? (
 
                     <tr>
 
@@ -2028,69 +2298,85 @@ const CustomerLedger = () => {
                           </td>
 
                           <td>
-                            {entry.entryDate ||
-                              "-"}
+                            {
+                              entry.entryDate ||
+                              "-"
+                            }
                           </td>
 
                           <td>
-                            {entry.entryType ===
-                            "purchase"
-                              ? "Purchase"
-                              : "Payment"}
+                            {
+                              entry.entryType ===
+                              "purchase"
+                                ? "Purchase"
+                                : "Payment"
+                            }
                           </td>
 
                           <td>
-                            {entry.entryType ===
-                            "purchase"
-                              ? String(
-                                  entry.fuelType ||
-                                    ""
-                                ).toLowerCase() ===
-                                "petrol"
-                                ? "Petrol"
-                                : "Diesel"
-                              : "-"}
+                            {
+                              entry.entryType ===
+                              "purchase"
+                                ? String(
+                                    entry.fuelType ||
+                                      ""
+                                  ).toLowerCase() ===
+                                  "petrol"
+                                  ? "Petrol"
+                                  : "Diesel"
+                                : "-"
+                            }
                           </td>
 
                           <td>
-                            {entry.entryType ===
-                            "purchase"
-                              ? `₹ ${money(
-                                  entry.totalAmount
-                                )}`
-                              : "-"}
+                            {
+                              entry.entryType ===
+                              "purchase"
+                                ? `₹ ${money(
+                                    entry.totalAmount
+                                  )}`
+                                : "-"
+                            }
                           </td>
 
                           <td>
-                            {entry.entryType ===
-                            "purchase"
-                              ? `₹ ${money(
-                                  entry.paidAmount
-                                )}`
-                              : "-"}
+                            {
+                              entry.entryType ===
+                              "purchase"
+                                ? `₹ ${money(
+                                    entry.paidAmount
+                                  )}`
+                                : "-"
+                            }
                           </td>
 
                           <td>
-                            {entry.entryType ===
-                            "purchase"
-                              ? `₹ ${money(
-                                  entry.pendingAmount
-                                )}`
-                              : "-"}
+                            {
+                              entry.entryType ===
+                              "purchase"
+                                ? `₹ ${money(
+                                    entry.pendingAmount
+                                  )}`
+                                : "-"
+                            }
                           </td>
 
                           <td>
-                            {entry.entryType ===
-                            "payment"
-                              ? `₹ ${money(
-                                  entry.paymentAmount
-                                )}`
-                              : "-"}
+                            {
+                              entry.entryType ===
+                              "payment"
+                                ? `₹ ${money(
+                                    entry.paymentAmount
+                                  )}`
+                                : "-"
+                            }
                           </td>
 
                           <td>
-                            {entry.note ||
-                              "-"}
+                            {
+                              entry.note ||
+                              "-"
+                            }
                           </td>
 
                         </tr>

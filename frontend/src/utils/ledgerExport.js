@@ -25,14 +25,11 @@ const safeString = (value) => {
   return String(value).trim();
 };
 
-const formatMoney = (value) => {
-  const number = Number(value || 0);
-
-  return number.toLocaleString("en-IN", {
+const formatMoney = (value) =>
+  Number(value || 0).toLocaleString("en-IN", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
-};
 
 const formatDate = (value) => {
   if (!value) return "-";
@@ -54,30 +51,26 @@ const formatDate = (value) => {
   }
 };
 
-/* =====================================================
-   BILL NUMBER
-===================================================== */
-
 const getNextBillNo = () => {
   try {
-    const storedValue = Number(
+    const stored = Number(
       localStorage.getItem("mypump_next_bill_no")
     );
 
-    const nextBillNo =
-      Number.isInteger(storedValue) && storedValue >= 1
-        ? storedValue
+    const next =
+      Number.isInteger(stored) && stored >= 1
+        ? stored
         : 1;
 
     localStorage.setItem(
       "mypump_next_bill_no",
-      String(nextBillNo + 1)
+      String(next + 1)
     );
 
-    return String(nextBillNo);
+    return String(next);
   } catch (error) {
     console.warn(
-      "Unable to access localStorage for bill number:",
+      "Unable to access bill number storage:",
       error
     );
 
@@ -127,6 +120,7 @@ const getVehicleNumber = (customer) =>
 ===================================================== */
 
 const getTransactionDate = (entry) =>
+  entry?.entryDate ||
   entry?.date ||
   entry?.transactionDate ||
   entry?.createdAt ||
@@ -134,21 +128,78 @@ const getTransactionDate = (entry) =>
   entry?.paymentDate ||
   null;
 
+/* =====================================================
+   BILL PERIOD / DATE RANGE
+
+   Uses the earliest and latest transaction dates from
+   the customer's complete ledger history.
+
+   Example:
+   05/09/2026
+   10/09/2026
+   19/09/2026
+
+   Bill From:
+   05/09/2026 - 19/09/2026
+===================================================== */
+
+const getBillPeriod = (
+  entries = [],
+  fallbackDate = null
+) => {
+  const validDates = entries
+    .map((entry) =>
+      getTransactionDate(entry)
+    )
+    .filter(Boolean)
+    .map((value) => {
+      const date = new Date(value);
+
+      return Number.isNaN(
+        date.getTime()
+      )
+        ? null
+        : date;
+    })
+    .filter(Boolean)
+    .sort(
+      (a, b) =>
+        a.getTime() - b.getTime()
+    );
+
+  if (validDates.length === 0) {
+    return fallbackDate
+      ? formatDate(fallbackDate)
+      : "-";
+  }
+
+  const firstDate = formatDate(
+    validDates[0]
+  );
+
+  const lastDate = formatDate(
+    validDates[
+      validDates.length - 1
+    ]
+  );
+
+  return firstDate === lastDate
+    ? firstDate
+    : `${firstDate} - ${lastDate}`;
+};
+
 const getTransactionType = (entry) => {
   const type = safeString(
-    entry?.type ||
+    entry?.entryType ||
+      entry?.type ||
       entry?.transactionType ||
       ""
   ).toLowerCase();
 
-  if (
-    type.includes("payment") ||
+  return type.includes("payment") ||
     type.includes("paid")
-  ) {
-    return "Payment";
-  }
-
-  return "Purchase";
+    ? "Payment"
+    : "Purchase";
 };
 
 const getFuelType = (entry) =>
@@ -179,24 +230,29 @@ const getPaidAmount = (entry) =>
   );
 
 const getPendingAmount = (entry) => {
-  const amount = getAmount(entry);
-  const paid = getPaidAmount(entry);
-
   if (
     entry?.pending !== undefined &&
     entry?.pending !== null
   ) {
-    return Number(entry.pending || 0);
+    return Number(
+      entry.pending || 0
+    );
   }
 
   if (
     entry?.pendingAmount !== undefined &&
     entry?.pendingAmount !== null
   ) {
-    return Number(entry.pendingAmount || 0);
+    return Number(
+      entry.pendingAmount || 0
+    );
   }
 
-  return Math.max(amount - paid, 0);
+  return Math.max(
+    getAmount(entry) -
+      getPaidAmount(entry),
+    0
+  );
 };
 
 const getPaymentMode = (entry) =>
@@ -219,10 +275,16 @@ const getRemarks = (entry) =>
    INDIAN CURRENCY WORDS
 ===================================================== */
 
-const numberToWordsIndian = (number) => {
-  const value = Math.floor(Number(number || 0));
+const numberToWordsIndian = (
+  number
+) => {
+  const value = Math.floor(
+    Number(number || 0)
+  );
 
-  if (value === 0) return "Zero";
+  if (value === 0) {
+    return "Zero";
+  }
 
   const ones = [
     "",
@@ -265,8 +327,12 @@ const numberToWordsIndian = (number) => {
       return ones[num];
     }
 
-    return `${tens[Math.floor(num / 10)]}${
-      num % 10 ? ` ${ones[num % 10]}` : ""
+    return `${tens[
+      Math.floor(num / 10)
+    ]}${
+      num % 10
+        ? ` ${ones[num % 10]}`
+        : ""
     }`;
   };
 
@@ -275,11 +341,18 @@ const numberToWordsIndian = (number) => {
       return twoDigits(num);
     }
 
-    const hundred = Math.floor(num / 100);
+    const hundred = Math.floor(
+      num / 100
+    );
+
     const remainder = num % 100;
 
     return `${ones[hundred]} Hundred${
-      remainder ? ` ${twoDigits(remainder)}` : ""
+      remainder
+        ? ` ${twoDigits(
+            remainder
+          )}`
+        : ""
     }`;
   };
 
@@ -292,8 +365,11 @@ const numberToWordsIndian = (number) => {
 
   if (crore) {
     parts.push(
-      `${threeDigits(crore)} Crore`
+      `${threeDigits(
+        crore
+      )} Crore`
     );
+
     remaining %= 10000000;
   }
 
@@ -303,8 +379,11 @@ const numberToWordsIndian = (number) => {
 
   if (lakh) {
     parts.push(
-      `${twoDigits(lakh)} Lakh`
+      `${twoDigits(
+        lakh
+      )} Lakh`
     );
+
     remaining %= 100000;
   }
 
@@ -314,8 +393,11 @@ const numberToWordsIndian = (number) => {
 
   if (thousand) {
     parts.push(
-      `${twoDigits(thousand)} Thousand`
+      `${twoDigits(
+        thousand
+      )} Thousand`
     );
+
     remaining %= 1000;
   }
 
@@ -328,13 +410,19 @@ const numberToWordsIndian = (number) => {
   return parts.join(" ");
 };
 
-const amountInWords = (amount) => {
-  const numericAmount = Number(amount || 0);
+const amountInWords = (
+  amount
+) => {
+  const numeric = Number(
+    amount || 0
+  );
 
-  const rupees = Math.floor(numericAmount);
+  const rupees = Math.floor(
+    numeric
+  );
 
   const paise = Math.round(
-    (numericAmount - rupees) * 100
+    (numeric - rupees) * 100
   );
 
   let result = `Rupees ${numberToWordsIndian(
@@ -385,7 +473,9 @@ const getPumpPhone = (pump) =>
   );
 
 const getPumpEmail = (pump) =>
-  safeString(pump?.email || "");
+  safeString(
+    pump?.email || ""
+  );
 
 const getPumpGstin = (pump) =>
   safeString(
@@ -395,13 +485,19 @@ const getPumpGstin = (pump) =>
   );
 
 const getPumpAddress = (pump) =>
-  safeString(pump?.address || "");
+  safeString(
+    pump?.address || ""
+  );
 
 const getPumpCity = (pump) =>
-  safeString(pump?.city || "");
+  safeString(
+    pump?.city || ""
+  );
 
 const getPumpState = (pump) =>
-  safeString(pump?.state || "");
+  safeString(
+    pump?.state || ""
+  );
 
 const getPumpPincode = (pump) =>
   safeString(
@@ -411,22 +507,56 @@ const getPumpPincode = (pump) =>
   );
 
 /* =====================================================
-   ONLINE COMPANY LOGO RESOLVER
+   PROFILE LOGO RESOLUTION
 ===================================================== */
+
+const resolveLogoValue = (
+  value
+) => {
+  if (
+    typeof value === "string" &&
+    value.trim()
+  ) {
+    return value.trim();
+  }
+
+  if (
+    value &&
+    typeof value === "object"
+  ) {
+    const nested = [
+      value.url,
+      value.secure_url,
+      value.secureUrl,
+      value.path,
+      value.src,
+    ];
+
+    const resolved =
+      nested.find(
+        (item) =>
+          typeof item ===
+            "string" &&
+          item.trim().length > 0
+      );
+
+    return resolved
+      ? resolved.trim()
+      : null;
+  }
+
+  return null;
+};
 
 const COMPANY_DOMAINS = {
   "indian oil": "iocl.com",
-  "indian oil corporation": "iocl.com",
-  "indian oil corporation ltd": "iocl.com",
-  "indian oil corporation limited": "iocl.com",
+  "indian oil corporation":
+    "iocl.com",
   iocl: "iocl.com",
 
-  "bharat petroleum": "bharatpetroleum.in",
+  "bharat petroleum":
+    "bharatpetroleum.in",
   "bharat petroleum corporation":
-    "bharatpetroleum.in",
-  "bharat petroleum corporation ltd":
-    "bharatpetroleum.in",
-  "bharat petroleum corporation limited":
     "bharatpetroleum.in",
   bpcl: "bharatpetroleum.in",
 
@@ -434,85 +564,103 @@ const COMPANY_DOMAINS = {
     "hindustanpetroleum.com",
   "hindustan petroleum corporation":
     "hindustanpetroleum.com",
-  "hindustan petroleum corporation ltd":
+  hpcl:
     "hindustanpetroleum.com",
-  "hindustan petroleum corporation limited":
-    "hindustanpetroleum.com",
-  hpcl: "hindustanpetroleum.com",
 
-  nayara: "nayaraenergy.com",
-  "nayara energy": "nayaraenergy.com",
+  nayara:
+    "nayaraenergy.com",
+  "nayara energy":
+    "nayaraenergy.com",
 
   reliance: "ril.com",
-  "reliance industries": "ril.com",
-  "reliance industries limited": "ril.com",
+  "reliance industries":
+    "ril.com",
 
   shell: "shell.com",
-  "shell india": "shell.com",
+  "shell india":
+    "shell.com",
 
-  "oil india": "oil-india.com",
-  "oil india limited": "oil-india.com",
-  "oil india ltd": "oil-india.com",
+  "oil india":
+    "oil-india.com",
+  "oil india limited":
+    "oil-india.com",
 
   "jio bp": "jiobp.com",
   "jio-bp": "jiobp.com",
 
   adani: "adani.com",
-  "adani total gas": "adani.com",
+  "adani total gas":
+    "adani.com",
 
   gulf: "gulf.com",
-  "gulf oil": "gulfoilltd.com",
+  "gulf oil":
+    "gulfoilltd.com",
 };
 
-/* =====================================================
-   NORMALIZE COMPANY NAME
-===================================================== */
-
-const normalizeCompanyName = (companyName) => {
-  return safeString(companyName)
+const normalizeCompanyName = (
+  companyName
+) =>
+  safeString(companyName)
     .toLowerCase()
     .replace(/[.,()]/g, "")
-    .replace(/\blimited\b/g, "")
-    .replace(/\bltd\b/g, "")
-    .replace(/\bcorporation\b/g, "")
-    .replace(/\s+/g, " ")
+    .replace(
+      /\blimited\b/g,
+      ""
+    )
+    .replace(
+      /\bltd\b/g,
+      ""
+    )
+    .replace(
+      /\bcorporation\b/g,
+      ""
+    )
+    .replace(
+      /\s+/g,
+      " "
+    )
     .trim();
-};
 
-/* =====================================================
-   GET ONLINE COMPANY LOGO URL
-===================================================== */
-
-const getOnlineCompanyLogo = (companyName) => {
+const getOnlineCompanyLogo = (
+  companyName
+) => {
   const normalized =
-    normalizeCompanyName(companyName);
+    normalizeCompanyName(
+      companyName
+    );
 
   if (!normalized) {
     return null;
   }
 
   let domain =
-    COMPANY_DOMAINS[normalized];
+    COMPANY_DOMAINS[
+      normalized
+    ];
 
   if (!domain) {
-    const matchedKey =
-      Object.keys(COMPANY_DOMAINS).find(
+    const matched =
+      Object.keys(
+        COMPANY_DOMAINS
+      ).find(
         (key) =>
-          normalized.includes(key) ||
-          key.includes(normalized)
+          normalized.includes(
+            key
+          ) ||
+          key.includes(
+            normalized
+          )
       );
 
-    if (matchedKey) {
+    if (matched) {
       domain =
-        COMPANY_DOMAINS[matchedKey];
+        COMPANY_DOMAINS[
+          matched
+        ];
     }
   }
 
   if (!domain) {
-    console.warn(
-      `No online logo mapping found for company: ${companyName}`
-    );
-
     return null;
   }
 
@@ -521,36 +669,47 @@ const getOnlineCompanyLogo = (companyName) => {
   )}&sz=256`;
 };
 
-/* =====================================================
-   GET CLIENT LOGO
-===================================================== */
-
 const getClientLogo = (
   pump,
   explicitLogoUrl = null
 ) => {
-  if (explicitLogoUrl) {
-    return explicitLogoUrl;
+  const explicit =
+    resolveLogoValue(
+      explicitLogoUrl
+    );
+
+  if (explicit) {
+    return explicit;
   }
 
-  if (pump?.logoUrl) {
-    return pump.logoUrl;
-  }
+  const candidates = [
+    pump?.logoUrl,
+    pump?.logoURL,
+    pump?.companyLogo,
+    pump?.pumpLogo,
+    pump?.logo,
+  ];
 
-  if (pump?.logo) {
-    return pump.logo;
-  }
+  for (
+    const candidate of candidates
+  ) {
+    const resolved =
+      resolveLogoValue(
+        candidate
+      );
 
-  const companyName =
-    getCompanyName(pump);
+    if (resolved) {
+      return resolved;
+    }
+  }
 
   return getOnlineCompanyLogo(
-    companyName
+    getCompanyName(pump)
   );
 };
 
 /* =====================================================
-   LOAD IMAGE AS DATA URL
+   IMAGE LOADER
 ===================================================== */
 
 const loadImageAsDataURL = async (
@@ -561,20 +720,27 @@ const loadImageAsDataURL = async (
   }
 
   if (
-    typeof imageSource === "string" &&
-    imageSource.startsWith("data:image/")
+    typeof imageSource ===
+      "string" &&
+    imageSource.startsWith(
+      "data:image/"
+    )
   ) {
     return imageSource;
   }
 
-  const blobToDataURL = (blob) => {
-    return new Promise(
+  const blobToDataURL = (
+    blob
+  ) =>
+    new Promise(
       (resolve, reject) => {
         const reader =
           new FileReader();
 
         reader.onloadend = () =>
-          resolve(reader.result);
+          resolve(
+            reader.result
+          );
 
         reader.onerror = () =>
           reject(
@@ -583,12 +749,15 @@ const loadImageAsDataURL = async (
             )
           );
 
-        reader.readAsDataURL(blob);
+        reader.readAsDataURL(
+          blob
+        );
       }
     );
-  };
 
-  const fetchImage = async (url) => {
+  const fetchImage = async (
+    url
+  ) => {
     const response =
       await fetch(url, {
         method: "GET",
@@ -606,14 +775,18 @@ const loadImageAsDataURL = async (
       await response.blob();
 
     if (
-      !blob.type.startsWith("image/")
+      !blob.type.startsWith(
+        "image/"
+      )
     ) {
       throw new Error(
         `Logo response is not an image: ${blob.type}`
       );
     }
 
-    return blobToDataURL(blob);
+    return blobToDataURL(
+      blob
+    );
   };
 
   try {
@@ -662,11 +835,6 @@ export const exportLedgerPDF = async ({
   billFrom = null,
   logoUrl = null,
 } = {}) => {
-
-  /* ===================================================
-     BILL INFORMATION
-  =================================================== */
-
   const suppliedBillNo =
     safeString(
       billNo ||
@@ -688,17 +856,23 @@ export const exportLedgerPDF = async ({
     customer?.date ||
     new Date();
 
-  const finalBillFrom =
-    safeString(
-      billFrom ||
-        customer?.billFrom ||
-        customer?.billingPeriod ||
-        ""
-    ) || "-";
+  /*
+     Always derive the customer ledger
+     period from actual transaction history.
 
-  /* ===================================================
-     PUMP INFORMATION
-  =================================================== */
+     This intentionally ignores a stale/manual
+     billFrom value so the PDF always shows:
+
+     FIRST TRANSACTION DATE - LAST TRANSACTION DATE
+  */
+
+  const finalBillFrom =
+    getBillPeriod(
+      Array.isArray(entries)
+        ? entries
+        : [],
+      finalBillDate
+    );
 
   const pumpName =
     getPumpName(pump);
@@ -730,33 +904,37 @@ export const exportLedgerPDF = async ({
   const pumpPincode =
     getPumpPincode(pump);
 
-  /* ===================================================
-     CUSTOMER INFORMATION
-  =================================================== */
-
   const customerName =
-    getCustomerName(customer);
+    getCustomerName(
+      customer
+    );
 
   const customerPhone =
-    getCustomerPhone(customer);
+    getCustomerPhone(
+      customer
+    );
 
   const customerAddress =
-    getCustomerAddress(customer);
+    getCustomerAddress(
+      customer
+    );
 
   const customerGstin =
-    getCustomerGstin(customer);
+    getCustomerGstin(
+      customer
+    );
 
   const vehicleNumber =
-    getVehicleNumber(customer);
-
-  /* ===================================================
-     SUMMARY
-  =================================================== */
+    getVehicleNumber(
+      customer
+    );
 
   const totalPurchased =
     Number(
       summary?.totalPurchased ??
+        summary?.totalPurchase ??
         customer?.totalPurchased ??
+        customer?.totalPurchases ??
         customer?.totalAmount ??
         0
     );
@@ -775,7 +953,8 @@ export const exportLedgerPDF = async ({
         customer?.totalPending ??
         customer?.currentBalance ??
         Math.max(
-          totalPurchased - totalPaid,
+          totalPurchased -
+            totalPaid,
           0
         )
     );
@@ -786,14 +965,11 @@ export const exportLedgerPDF = async ({
         customer?.purchaseCount ??
         entries.filter(
           (entry) =>
-            getTransactionType(entry) ===
-            "Purchase"
+            getTransactionType(
+              entry
+            ) === "Purchase"
         ).length
     );
-
-  /* ===================================================
-     CREATE PDF
-  =================================================== */
 
   const doc = new jsPDF({
     orientation: "portrait",
@@ -810,11 +986,8 @@ export const exportLedgerPDF = async ({
   const margin = 10;
 
   const contentWidth =
-    pageWidth - margin * 2;
-
-  /* ===================================================
-     FONT
-  =================================================== */
+    pageWidth -
+    margin * 2;
 
   doc.setFont(
     "helvetica",
@@ -824,10 +997,6 @@ export const exportLedgerPDF = async ({
   doc.setTextColor(
     COLORS.text
   );
-
-  /* ===================================================
-     OUTER BORDER
-  =================================================== */
 
   doc.setDrawColor(
     COLORS.border
@@ -843,7 +1012,7 @@ export const exportLedgerPDF = async ({
   );
 
   /* ===================================================
-     LOAD ONLINE COMPANY LOGO
+     RESOLVE PROFILE LOGO
   =================================================== */
 
   let logoData = null;
@@ -914,20 +1083,12 @@ export const exportLedgerPDF = async ({
     );
   }
 
-  /* ===================================================
-     PUMP NAME
-  =================================================== */
-
   doc.setFont(
     "helvetica",
     "bold"
   );
 
   doc.setFontSize(15);
-
-  doc.setTextColor(
-    COLORS.text
-  );
 
   doc.text(
     pumpName,
@@ -937,10 +1098,6 @@ export const exportLedgerPDF = async ({
       align: "center",
     }
   );
-
-  /* ===================================================
-     OIL COMPANY
-  =================================================== */
 
   doc.setFont(
     "helvetica",
@@ -969,10 +1126,10 @@ export const exportLedgerPDF = async ({
       doc.addImage(
         logoData,
         "PNG",
-        17,
+        15,
+        23,
         25,
-        28,
-        28,
+        25,
         undefined,
         "FAST"
       );
@@ -988,15 +1145,14 @@ export const exportLedgerPDF = async ({
      PUMP ADDRESS
   =================================================== */
 
-  const addressParts = [
+  const addressText = [
     pumpAddress,
     pumpCity,
     pumpState,
     pumpPincode,
-  ].filter(Boolean);
-
-  const addressText =
-    addressParts.join(", ");
+  ]
+    .filter(Boolean)
+    .join(", ");
 
   doc.setFont(
     "helvetica",
@@ -1024,46 +1180,21 @@ export const exportLedgerPDF = async ({
 
   /* ===================================================
      BUYER / BILL INFORMATION
-     
-     LEFT SIDE:
-     Buyer
-     Address
-     GST No.
-     Vehicle
-
-     RIGHT SIDE:
-     Bill No.
-     Bill Date
-     Bill From
   =================================================== */
 
-  const infoY = 60;
+  const infoY = 56;
 
   const leftX = margin;
 
-  /*
-     Right side starts from the middle area.
-     This keeps Bill No., Bill Date and Bill From
-     clearly separated from the buyer information.
-  */
   const rightX =
     pageWidth / 2 + 8;
 
   doc.setFont(
     "helvetica",
-    "normal"
+    "bold"
   );
 
   doc.setFontSize(7);
-
-  /* ===================================================
-     LEFT — BUYER
-  =================================================== */
-
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
 
   doc.text(
     "Buyer :",
@@ -1081,10 +1212,6 @@ export const exportLedgerPDF = async ({
     leftX + 11,
     infoY
   );
-
-  /* ===================================================
-     RIGHT — BILL NO.
-  =================================================== */
 
   doc.setFont(
     "helvetica",
@@ -1108,10 +1235,6 @@ export const exportLedgerPDF = async ({
     infoY
   );
 
-  /* ===================================================
-     LEFT — ADDRESS
-  =================================================== */
-
   doc.setFont(
     "helvetica",
     "bold"
@@ -1128,21 +1251,15 @@ export const exportLedgerPDF = async ({
     "normal"
   );
 
-  const customerAddressLines =
-    doc.splitTextToSize(
-      customerAddress || "-",
-      75
-    );
-
   doc.text(
-    customerAddressLines,
+    doc.splitTextToSize(
+      customerAddress ||
+        "-",
+      75
+    ),
     leftX + 15,
     infoY + 5
   );
-
-  /* ===================================================
-     RIGHT — BILL DATE
-  =================================================== */
 
   doc.setFont(
     "helvetica",
@@ -1161,14 +1278,12 @@ export const exportLedgerPDF = async ({
   );
 
   doc.text(
-    formatDate(finalBillDate),
+    formatDate(
+      finalBillDate
+    ),
     rightX + 17,
     infoY + 5
   );
-
-  /* ===================================================
-     LEFT — CUSTOMER GST
-  =================================================== */
 
   doc.setFont(
     "helvetica",
@@ -1187,14 +1302,11 @@ export const exportLedgerPDF = async ({
   );
 
   doc.text(
-    customerGstin || "-",
+    customerGstin ||
+      "-",
     leftX + 15,
     infoY + 10
   );
-
-  /* ===================================================
-     RIGHT — BILL FROM
-  =================================================== */
 
   doc.setFont(
     "helvetica",
@@ -1212,15 +1324,21 @@ export const exportLedgerPDF = async ({
     "normal"
   );
 
+  /*
+     IMPORTANT:
+     This now displays:
+
+     First Transaction Date - Last Transaction Date
+
+     Example:
+     05/09/2026 - 19/09/2026
+  */
+
   doc.text(
     finalBillFrom,
     rightX + 19,
     infoY + 10
   );
-
-  /* ===================================================
-     LEFT — VEHICLE
-  =================================================== */
 
   if (vehicleNumber) {
     doc.setFont(
@@ -1245,10 +1363,6 @@ export const exportLedgerPDF = async ({
       infoY + 15
     );
   }
-
-  /* ===================================================
-     HEADER SEPARATOR
-  =================================================== */
 
   const separatorY =
     infoY + 18;
@@ -1290,10 +1404,6 @@ export const exportLedgerPDF = async ({
     }
   );
 
-  /* ===================================================
-     CUSTOMER META
-  =================================================== */
-
   doc.setFont(
     "helvetica",
     "normal"
@@ -1316,7 +1426,9 @@ export const exportLedgerPDF = async ({
   }
 
   doc.text(
-    `Ledger Date: ${formatDate(new Date())}`,
+    `Ledger Date: ${formatDate(
+      new Date()
+    )}`,
     pageWidth - margin,
     separatorY + 14,
     {
@@ -1339,47 +1451,48 @@ export const exportLedgerPDF = async ({
       right: margin,
     },
 
-    tableWidth: contentWidth,
+    tableWidth:
+      contentWidth,
 
     theme: "grid",
 
-    head: [
-      [
-        "TOTAL PURCHASES",
-        "TOTAL PAID",
-        "TOTAL PENDING",
-        "TRANSACTIONS",
-        "STATUS",
-      ],
-    ],
+    head: [[
+      "TOTAL PURCHASES",
+      "TOTAL PAID",
+      "TOTAL PENDING",
+      "TRANSACTIONS",
+      "STATUS",
+    ]],
 
-    body: [
-      [
-        `Rs. ${formatMoney(
-          totalPurchased
-        )}`,
+    body: [[
+      `Rs. ${formatMoney(
+        totalPurchased
+      )}`,
 
-        `Rs. ${formatMoney(
-          totalPaid
-        )}`,
+      `Rs. ${formatMoney(
+        totalPaid
+      )}`,
 
-        `Rs. ${formatMoney(
-          totalPending
-        )}`,
+      `Rs. ${formatMoney(
+        totalPending
+      )}`,
 
-        String(purchaseCount),
+      String(
+        purchaseCount
+      ),
 
-        totalPending > 0
-          ? "Pending"
-          : "Paid",
-      ],
-    ],
+      totalPending > 0
+        ? "Pending"
+        : "Paid",
+    ]],
 
     styles: {
       font: "helvetica",
       fontSize: 6.5,
-      textColor: COLORS.text,
-      lineColor: COLORS.border,
+      textColor:
+        COLORS.text,
+      lineColor:
+        COLORS.border,
       lineWidth: 0.3,
       cellPadding: 2,
       halign: "center",
@@ -1387,57 +1500,58 @@ export const exportLedgerPDF = async ({
     },
 
     headStyles: {
-      fillColor: COLORS.mainHeader,
-      textColor: COLORS.white,
-      fontStyle: "bold",
+      fillColor:
+        COLORS.mainHeader,
+      textColor:
+        COLORS.white,
+      fontStyle:
+        "bold",
       fontSize: 6,
       halign: "center",
       valign: "middle",
     },
 
     bodyStyles: {
-      fillColor: COLORS.white,
+      fillColor:
+        COLORS.white,
       fontSize: 6.5,
     },
 
-    didParseCell: (hookData) => {
-      if (
-        hookData.section === "body" &&
-        hookData.column.index === 2
-      ) {
-        hookData.cell.styles.textColor =
-          totalPending > 0
-            ? COLORS.pending
-            : COLORS.paid;
+    didParseCell:
+      (data) => {
+        if (
+          data.section !==
+          "body"
+        ) {
+          return;
+        }
 
-        hookData.cell.styles.fontStyle =
-          "bold";
-      }
+        if (
+          data.column.index ===
+          1
+        ) {
+          data.cell.styles.textColor =
+            COLORS.paid;
 
-      if (
-        hookData.section === "body" &&
-        hookData.column.index === 1
-      ) {
-        hookData.cell.styles.textColor =
-          COLORS.paid;
+          data.cell.styles.fontStyle =
+            "bold";
+        }
 
-        hookData.cell.styles.fontStyle =
-          "bold";
-      }
+        if (
+          data.column.index ===
+            2 ||
+          data.column.index ===
+            4
+        ) {
+          data.cell.styles.textColor =
+            totalPending > 0
+              ? COLORS.pending
+              : COLORS.paid;
 
-      if (
-        hookData.section === "body" &&
-        hookData.column.index === 4
-      ) {
-        hookData.cell.styles.textColor =
-          totalPending > 0
-            ? COLORS.pending
-            : COLORS.paid;
-
-        hookData.cell.styles.fontStyle =
-          "bold";
-      }
-    },
+          data.cell.styles.fontStyle =
+            "bold";
+        }
+      },
   });
 
   /* ===================================================
@@ -1445,7 +1559,8 @@ export const exportLedgerPDF = async ({
   =================================================== */
 
   const transactionStartY =
-    doc.lastAutoTable.finalY + 8;
+    doc.lastAutoTable
+      .finalY + 8;
 
   doc.setFillColor(
     COLORS.sectionBar
@@ -1477,100 +1592,104 @@ export const exportLedgerPDF = async ({
   doc.text(
     "TRANSACTION HISTORY",
     margin + 3,
-    transactionStartY + 5.5
+    transactionStartY +
+      5.5
   );
-
-  /* ===================================================
-     TRANSACTION ROWS
-
-     Quantity and Rate intentionally removed.
-  =================================================== */
 
   const transactionRows =
     entries.map(
-      (entry, index) => {
-        const amount =
-          getAmount(entry);
+      (
+        entry,
+        index
+      ) => [
+        String(index + 1),
 
-        const paid =
-          getPaidAmount(entry);
+        formatDate(
+          getTransactionDate(
+            entry
+          )
+        ),
 
-        const pending =
-          getPendingAmount(entry);
+        getTransactionType(
+          entry
+        ),
 
-        return [
-          String(index + 1),
+        getFuelType(entry),
 
-          formatDate(
-            getTransactionDate(entry)
-          ),
+        `Rs. ${formatMoney(
+          getAmount(entry)
+        )}`,
 
-          getTransactionType(entry),
+        `Rs. ${formatMoney(
+          getPaidAmount(
+            entry
+          )
+        )}`,
 
-          getFuelType(entry),
+        `Rs. ${formatMoney(
+          getPendingAmount(
+            entry
+          )
+        )}`,
 
-          `Rs. ${formatMoney(amount)}`,
+        getPaymentMode(
+          entry
+        ),
 
-          `Rs. ${formatMoney(paid)}`,
-
-          `Rs. ${formatMoney(pending)}`,
-
-          getPaymentMode(entry),
-
-          getRemarks(entry),
-        ];
-      }
+        getRemarks(entry),
+      ]
     );
 
   autoTable(doc, {
     startY:
-      transactionStartY + 8,
+      transactionStartY +
+      8,
 
     margin: {
       left: margin,
       right: margin,
     },
 
-    tableWidth: contentWidth,
+    tableWidth:
+      contentWidth,
 
     theme: "grid",
 
-    head: [
-      [
-        "#",
-        "Date",
-        "Type",
-        "Fuel",
-        "Amount",
-        "Paid",
-        "Pending",
-        "Payment Mode",
-        "Remarks",
-      ],
-    ],
+    head: [[
+      "#",
+      "Date",
+      "Type",
+      "Fuel",
+      "Amount",
+      "Paid",
+      "Pending",
+      "Payment Mode",
+      "Remarks",
+    ]],
 
     body:
-      transactionRows.length > 0
+      transactionRows.length >
+      0
         ? transactionRows
-        : [
-            [
-              "-",
-              "-",
-              "-",
-              "-",
-              "Rs. 0.00",
-              "Rs. 0.00",
-              "Rs. 0.00",
-              "-",
-              "-",
-            ],
-          ],
+        : [[
+            "-",
+            "-",
+            "-",
+            "-",
+            "Rs. 0.00",
+            "Rs. 0.00",
+            "Rs. 0.00",
+            "-",
+            "-",
+          ]],
 
     styles: {
       font: "helvetica",
       fontSize: 6.2,
-      textColor: COLORS.text,
-      lineColor: COLORS.border,
+      textColor:
+        COLORS.text,
+      lineColor:
+        COLORS.border,
       lineWidth: 0.25,
       cellPadding: 1.5,
       valign: "middle",
@@ -1578,17 +1697,22 @@ export const exportLedgerPDF = async ({
     },
 
     headStyles: {
-      fillColor: COLORS.mainHeader,
-      textColor: COLORS.white,
-      fontStyle: "bold",
+      fillColor:
+        COLORS.mainHeader,
+      textColor:
+        COLORS.white,
+      fontStyle:
+        "bold",
       fontSize: 5.8,
       halign: "center",
       valign: "middle",
     },
 
     bodyStyles: {
-      fillColor: COLORS.white,
-      textColor: COLORS.text,
+      fillColor:
+        COLORS.white,
+      textColor:
+        COLORS.text,
     },
 
     columnStyles: {
@@ -1629,43 +1753,46 @@ export const exportLedgerPDF = async ({
       },
     },
 
-    didParseCell: (hookData) => {
-      if (
-        hookData.section !== "body"
-      ) {
-        return;
-      }
-
-      if (
-        hookData.column.index === 5
-      ) {
-        hookData.cell.styles.textColor =
-          COLORS.paid;
-      }
-
-      if (
-        hookData.column.index === 6
-      ) {
-        const rawValue =
-          hookData.cell.raw;
-
-        const numericValue =
-          Number(
-            String(rawValue).replace(
-              /[^0-9.-]/g,
-              ""
-            )
-          );
-
-        if (numericValue > 0) {
-          hookData.cell.styles.textColor =
-            COLORS.pending;
-
-          hookData.cell.styles.fontStyle =
-            "bold";
+    didParseCell:
+      (data) => {
+        if (
+          data.section !==
+          "body"
+        ) {
+          return;
         }
-      }
-    },
+
+        if (
+          data.column.index ===
+          5
+        ) {
+          data.cell.styles.textColor =
+            COLORS.paid;
+        }
+
+        if (
+          data.column.index ===
+          6
+        ) {
+          const numeric =
+            Number(
+              String(
+                data.cell.raw
+              ).replace(
+                /[^0-9.-]/g,
+                ""
+              )
+            );
+
+          if (numeric > 0) {
+            data.cell.styles.textColor =
+              COLORS.pending;
+
+            data.cell.styles.fontStyle =
+              "bold";
+          }
+        }
+      },
   });
 
   /* ===================================================
@@ -1673,13 +1800,11 @@ export const exportLedgerPDF = async ({
   =================================================== */
 
   let summaryYPosition =
-    doc.lastAutoTable.finalY + 8;
+    doc.lastAutoTable
+      .finalY + 8;
 
   const summaryX =
     pageWidth / 2 + 8;
-
-  const summaryLabelX =
-    summaryX;
 
   const summaryValueX =
     pageWidth - margin;
@@ -1701,12 +1826,14 @@ export const exportLedgerPDF = async ({
     summaryYPosition
   );
 
-  summaryYPosition += 5;
+  summaryYPosition +=
+    5;
 
   const drawSummaryLine = (
     label,
     value,
-    valueColor = COLORS.text
+    valueColor =
+      COLORS.text
   ) => {
     doc.setFont(
       "helvetica",
@@ -1721,7 +1848,7 @@ export const exportLedgerPDF = async ({
 
     doc.text(
       label,
-      summaryLabelX,
+      summaryX,
       summaryYPosition
     );
 
@@ -1735,7 +1862,9 @@ export const exportLedgerPDF = async ({
     );
 
     doc.text(
-      `Rs. ${formatMoney(value)}`,
+      `Rs. ${formatMoney(
+        value
+      )}`,
       summaryValueX,
       summaryYPosition,
       {
@@ -1743,7 +1872,8 @@ export const exportLedgerPDF = async ({
       }
     );
 
-    summaryYPosition += 4;
+    summaryYPosition +=
+      4;
   };
 
   drawSummaryLine(
@@ -1800,32 +1930,32 @@ export const exportLedgerPDF = async ({
     adjustmentAmount
   );
 
-  /* ===================================================
-     NET AMOUNT
-  =================================================== */
-
   const netAmount =
     Number(
       summary?.netAmount ??
         totalPending
     );
 
-  summaryYPosition += 2;
+  summaryYPosition +=
+    2;
 
   doc.setDrawColor(
     COLORS.border
   );
 
-  doc.setLineWidth(0.3);
+  doc.setLineWidth(
+    0.3
+  );
 
   doc.line(
-    summaryLabelX,
+    summaryX,
     summaryYPosition,
     pageWidth - margin,
     summaryYPosition
   );
 
-  summaryYPosition += 5;
+  summaryYPosition +=
+    5;
 
   doc.setFont(
     "helvetica",
@@ -1840,7 +1970,7 @@ export const exportLedgerPDF = async ({
 
   doc.text(
     "NET AMOUNT",
-    summaryLabelX,
+    summaryX,
     summaryYPosition
   );
 
@@ -1851,7 +1981,9 @@ export const exportLedgerPDF = async ({
   );
 
   doc.text(
-    `Rs. ${formatMoney(netAmount)}`,
+    `Rs. ${formatMoney(
+      netAmount
+    )}`,
     summaryValueX,
     summaryYPosition,
     {
@@ -1864,7 +1996,8 @@ export const exportLedgerPDF = async ({
   =================================================== */
 
   const amountWordsY =
-    summaryYPosition + 9;
+    summaryYPosition +
+    9;
 
   doc.setFont(
     "helvetica",
@@ -1896,16 +2029,15 @@ export const exportLedgerPDF = async ({
         summary?.netAmountWords ||
         ""
     ) ||
-    amountInWords(netAmount);
-
-  const wordsLines =
-    doc.splitTextToSize(
-      words,
-      80
+    amountInWords(
+      netAmount
     );
 
   doc.text(
-    wordsLines,
+    doc.splitTextToSize(
+      words,
+      80
+    ),
     margin,
     amountWordsY + 4
   );
@@ -1960,14 +2092,11 @@ export const exportLedgerPDF = async ({
   const termsText =
     "If bill is not paid on presentation, interest will be charged at 12% p.a. and supply will be suspended till bill payment.";
 
-  const termsLines =
+  doc.text(
     doc.splitTextToSize(
       termsText,
       contentWidth - 4
-    );
-
-  doc.text(
-    termsLines,
+    ),
     margin + 2,
     termsY + 5
   );
@@ -1979,15 +2108,13 @@ export const exportLedgerPDF = async ({
   const signatureY =
     pageHeight - 14;
 
-  /* ===================================================
-     CUSTOMER SIGNATURE
-  =================================================== */
-
   doc.setDrawColor(
     COLORS.text
   );
 
-  doc.setLineWidth(0.3);
+  doc.setLineWidth(
+    0.3
+  );
 
   doc.line(
     margin,
@@ -2013,12 +2140,10 @@ export const exportLedgerPDF = async ({
     signatureY
   );
 
-  /* ===================================================
-     AUTHORIZED SIGNATORY
-  =================================================== */
-
   doc.line(
-    pageWidth - margin - 45,
+    pageWidth -
+      margin -
+      45,
     signatureY - 4,
     pageWidth - margin,
     signatureY - 4
@@ -2049,7 +2174,7 @@ export const exportLedgerPDF = async ({
     ownerName ||
       "Authorized Signatory",
     pageWidth - margin,
-    signatureY + 1,
+    signatureY,
     {
       align: "right",
     }
@@ -2058,7 +2183,7 @@ export const exportLedgerPDF = async ({
   doc.text(
     "(Authorized Signatory)",
     pageWidth - margin,
-    signatureY + 5,
+    signatureY + 4,
     {
       align: "right",
     }
@@ -2091,7 +2216,7 @@ export const exportLedgerPDF = async ({
   );
 
   doc.text(
-    "Generated by Shivshambho ",
+    "Generated by MyPump - Petrol Pump Management System",
     pageWidth / 2,
     pageHeight - 7,
     {
@@ -2112,10 +2237,13 @@ export const exportLedgerPDF = async ({
       .replace(
         /^_+|_+$/g,
         ""
-      ) || "Customer";
+      ) ||
+    "Customer";
 
   const safeBillNo =
-    String(finalBillNo).replace(
+    String(
+      finalBillNo
+    ).replace(
       /[^a-zA-Z0-9-_]/g,
       "_"
     );
@@ -2131,8 +2259,12 @@ export const exportLedgerPDF = async ({
   doc.save(fileName);
 
   return {
-    billNo: finalBillNo,
-    billDate: finalBillDate,
+    billNo:
+      finalBillNo,
+
+    billDate:
+      finalBillDate,
+
     fileName,
   };
 };
@@ -2141,10 +2273,13 @@ export const exportLedgerPDF = async ({
    PRINT / BACKWARD COMPATIBILITY
 ===================================================== */
 
-export const printLedger = async (
-  options = {}
-) => {
-  return exportLedgerPDF(options);
-};
+export const printLedger =
+  async (
+    options = {}
+  ) =>
+    exportLedgerPDF(
+      options
+    );
 
-export default exportLedgerPDF;
+export default
+  exportLedgerPDF;
