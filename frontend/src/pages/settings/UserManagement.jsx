@@ -15,7 +15,6 @@ import {
 import {
   getPumpUsers,
   addPumpUser,
-  updatePumpUser,
   deletePumpUser,
 } from "../../services/settingsService";
 
@@ -121,36 +120,6 @@ const UserManagement = () => {
     };
 
   /* =====================================
-     STATUS
-  ===================================== */
-
-  const toggleStatus =
-    async (user) => {
-      try {
-        await updatePumpUser(
-          user._id,
-          {
-            active:
-              user.active ===
-              false,
-          }
-        );
-
-        toast.success(
-          "User status updated"
-        );
-
-        await loadUsers();
-      } catch (error) {
-        toast.error(
-          error.response?.data
-            ?.message ||
-            "Unable to update user"
-        );
-      }
-    };
-
-  /* =====================================
      DELETE
   ===================================== */
 
@@ -223,7 +192,6 @@ const UserManagement = () => {
                 <th>User</th>
                 <th>Email</th>
                 <th>Role</th>
-                <th>Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -234,7 +202,7 @@ const UserManagement = () => {
 
                 <tr>
                   <td
-                    colSpan="6"
+                    colSpan="5"
                     className="empty-table"
                   >
                     Loading users...
@@ -246,7 +214,7 @@ const UserManagement = () => {
 
                 <tr>
                   <td
-                    colSpan="6"
+                    colSpan="5"
                     className="empty-table"
                   >
                     No users found.
@@ -311,30 +279,6 @@ const UserManagement = () => {
                         {
                           user.role
                         }
-                      </td>
-
-                      <td>
-
-                        <button
-                          type="button"
-                          className={
-                            user.active ===
-                            false
-                              ? "secondary-button"
-                              : "primary-button"
-                          }
-                          onClick={() =>
-                            toggleStatus(
-                              user
-                            )
-                          }
-                        >
-                          {user.active ===
-                          false
-                            ? "Inactive"
-                            : "Active"}
-                        </button>
-
                       </td>
 
                       <td>

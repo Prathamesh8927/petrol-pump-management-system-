@@ -9,7 +9,6 @@ import {
   getWeeklyReport,
 } from "../../services/reportService";
 
-import ReportExportButtons from "../../components/ReportExportButtons";
 
 const WeeklyReport = () => {
   const now =
@@ -143,10 +142,7 @@ const WeeklyReport = () => {
             Generate
           </button>
 
-          <ReportExportButtons
-            report={report}
-            title="Weekly Report"
-          />
+          
 
         </div>
 
