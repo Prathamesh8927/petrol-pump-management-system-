@@ -1,67 +1,131 @@
 import api from "./api";
 
-export const getNozzles =
-  async () => {
-    const response =
-      await api.get(
-        "/nozzles"
-      );
+/* =====================================================
+   GET NOZZLES
+===================================================== */
 
-    return response.data;
+export const getNozzles = async () => {
+  const response = await api.get("/nozzles");
+
+  return response?.data ?? response;
+};
+
+/* =====================================================
+   ADD NOZZLE
+===================================================== */
+
+export const addNozzle = async (payload) => {
+  const response = await api.post(
+    "/nozzles",
+    payload
+  );
+
+  return response?.data ?? response;
+};
+
+/* =====================================================
+   UPDATE NOZZLE
+===================================================== */
+
+export const updateNozzle = async (
+  nozzleId,
+  payload
+) => {
+  const response = await api.put(
+    `/nozzles/${nozzleId}`,
+    payload
+  );
+
+  return response?.data ?? response;
+};
+
+/* =====================================================
+   DELETE NOZZLE
+===================================================== */
+
+export const deleteNozzle = async (
+  nozzleId
+) => {
+  const response = await api.delete(
+    `/nozzles/${nozzleId}`
+  );
+
+  return response?.data ?? response;
+};
+
+/* =====================================================
+   ADD NOZZLE READING
+===================================================== */
+
+export const addNozzleReading = async (
+  payload
+) => {
+  const response = await api.post(
+    "/nozzles/readings",
+    payload
+  );
+
+  return response?.data ?? response;
+};
+
+/* =====================================================
+   GET NOZZLE READING HISTORY
+ *
+ * Server-side pagination + filtering.
+ *
+ * Example:
+ *
+ * getNozzleReadings({
+ *   page: 1,
+ *   limit: 50,
+ *   date: "2026-09-25",
+ *   shift: "morning",
+ *   staffId: "...",
+ *   nozzleId: "...",
+ *   paymentMethod: "cash"
+ * });
+===================================================== */
+
+export const getNozzleReadings = async ({
+  page = 1,
+  limit = 50,
+  date = "",
+  shift = "",
+  staffId = "",
+  nozzleId = "",
+  paymentMethod = "",
+} = {}) => {
+  const params = {
+    page,
+    limit,
   };
 
-export const addNozzle =
-  async (data) => {
-    const response =
-      await api.post(
-        "/nozzles",
-        data
-      );
+  if (date) {
+    params.date = date;
+  }
 
-    return response.data;
-  };
+  if (shift) {
+    params.shift = shift;
+  }
 
-export const updateNozzle =
-  async (id, data) => {
-    const response =
-      await api.patch(
-        `/nozzles/${id}`,
-        data
-      );
+  if (staffId) {
+    params.staffId = staffId;
+  }
 
-    return response.data;
-  };
+  if (nozzleId) {
+    params.nozzleId = nozzleId;
+  }
 
-export const deleteNozzle =
-  async (id) => {
-    const response =
-      await api.delete(
-        `/nozzles/${id}`
-      );
+  if (paymentMethod) {
+    params.paymentMethod = paymentMethod;
+  }
 
-    return response.data;
-  };
+  const response = await api.get(
+    "/nozzles/readings",
+    {
+      params,
+    }
+  );
 
-export const addNozzleReading =
-  async (data) => {
-    const response =
-      await api.post(
-        "/nozzles/readings",
-        data
-      );
-
-    return response.data;
-  };
-
-export const getNozzleReadings =
-  async () => {
-    const response =
-      await api.get(
-        "/nozzles/readings"
-      );
-
-    return response.data;
-  };
-
-export const getReadingHistory =
-  getNozzleReadings;
+  return response?.data ?? response;
+};
