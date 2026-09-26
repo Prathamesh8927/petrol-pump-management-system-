@@ -4,19 +4,14 @@ import {
   Routes,
 } from "react-router-dom";
 
-import {
-  Toaster,
-} from "react-hot-toast";
+import { Toaster } from "react-hot-toast";
 
 /* =====================================================
    SUPER ADMIN
 ===================================================== */
 
-import SuperAdminRoute
-  from "./components/SuperAdminRoute";
-
-import SuperAdminLayout
-  from "./layouts/SuperAdminLayout";
+import SuperAdminRoute from "./components/SuperAdminRoute";
+import SuperAdminLayout from "./layouts/SuperAdminLayout";
 
 import SuperAdminDashboard
   from "./pages/superadmin/SuperAdminDashboard";
@@ -37,134 +32,87 @@ import SuperAdminPasswordRequests
    AUTH
 ===================================================== */
 
-import Login
-  from "./pages/auth/Login";
-
-import Register
-  from "./pages/auth/Register";
-
-import ForgotPassword
-  from "./pages/auth/ForgotPassword";
-
-import ResetPassword
-  from "./pages/auth/ResetPassword";
+import Login from "./pages/auth/Login";
+import Register from "./pages/auth/Register";
+import ForgotPassword from "./pages/auth/ForgotPassword";
+import ResetPassword from "./pages/auth/ResetPassword";
 
 /* =====================================================
-   LAYOUT
+   NORMAL APPLICATION LAYOUT
 ===================================================== */
 
-import DashboardLayout
-  from "./layouts/DashboardLayout";
-
-import ProtectedRoute
-  from "./components/ProtectedRoute";
+import DashboardLayout from "./layouts/DashboardLayout";
+import ProtectedRoute from "./components/ProtectedRoute";
 
 /* =====================================================
    DASHBOARD
 ===================================================== */
 
-import Dashboard
-  from "./pages/dashboard/Dashboard";
+import Dashboard from "./pages/dashboard/Dashboard";
 
 /* =====================================================
    FUEL
 ===================================================== */
 
-import FuelStock
-  from "./pages/fuel/FuelStock";
-
-import AddFuelPurchase
-  from "./pages/fuel/AddFuelPurchase";
-
-import FuelPurchaseHistory
-  from "./pages/fuel/FuelPurchaseHistory";
-
-import FuelPrice
-  from "./pages/fuel/FuelPrice";
+import FuelStock from "./pages/fuel/FuelStock";
+import AddFuelPurchase from "./pages/fuel/AddFuelPurchase";
+import FuelPurchaseHistory from "./pages/fuel/FuelPurchaseHistory";
+import FuelPrice from "./pages/fuel/FuelPrice";
 
 /* =====================================================
    NOZZLES
 ===================================================== */
 
-import NozzleList
-  from "./pages/nozzle/NozzleList";
-
-import AddReading
-  from "./pages/nozzle/AddReading";
-
-import ReadingHistory
-  from "./pages/nozzle/ReadingHistory";
+import NozzleList from "./pages/nozzle/NozzleList";
+import AddReading from "./pages/nozzle/AddReading";
+import ReadingHistory from "./pages/nozzle/ReadingHistory";
 
 /* =====================================================
    SALES
 ===================================================== */
 
-import DailySales
-  from "./pages/sales/DailySales";
-
-import SalesHistory
-  from "./pages/sales/SalesHistory";
-
-import PaymentSummary
-  from "./pages/sales/PaymentSummary";
+import DailySales from "./pages/sales/DailySales";
+import SalesHistory from "./pages/sales/SalesHistory";
+import PaymentSummary from "./pages/sales/PaymentSummary";
 
 /* =====================================================
    EXPENSES
 ===================================================== */
 
-import AddExpense
-  from "./pages/expenses/AddExpense";
-
-import ExpenseHistory
-  from "./pages/expenses/ExpenseHistory";
+import AddExpense from "./pages/expenses/AddExpense";
+import ExpenseHistory from "./pages/expenses/ExpenseHistory";
 
 /* =====================================================
    LEDGER
 ===================================================== */
 
-import Customers
-  from "./pages/ledger/Customers";
-
-import CustomerLedger
-  from "./pages/ledger/CustomerLedger";
-
-import Payments
-  from "./pages/ledger/Payments";
-
-import PendingCredit
-  from "./pages/ledger/PendingCredit";
+import Customers from "./pages/ledger/Customers";
+import CustomerLedger from "./pages/ledger/CustomerLedger";
+import Payments from "./pages/ledger/Payments";
+import PendingCredit from "./pages/ledger/PendingCredit";
 
 /* =====================================================
    REPORTS
 ===================================================== */
 
-import DailyReport
-  from "./pages/reports/DailyReports.jsx";
-
-import WeeklyReport
-  from "./pages/reports/WeeklyReport";
-
-import MonthlyReport
-  from "./pages/reports/MonthlyReports.jsx";
-
-import CustomReport
-  from "./pages/reports/CustomerReport";
-
-import DailyClosing
-  from "./pages/reports/DailyClosing";
+import DailyReport from "./pages/reports/DailyReports.jsx";
+import WeeklyReport from "./pages/reports/WeeklyReport";
+import MonthlyReport from "./pages/reports/MonthlyReports.jsx";
+import CustomReport from "./pages/reports/CustomerReport";
 
 /* =====================================================
    SETTINGS
 ===================================================== */
 
-import PumpSettings
-  from "./pages/settings/PumpSettings";
+import PumpSettings from "./pages/settings/PumpSettings";
+import FuelSettings from "./pages/settings/FuelSettings";
+import UserManagement from "./pages/settings/UserManagement";
 
-import FuelSettings
-  from "./pages/settings/FuelSettings";
+/* =====================================================
+   RECOVERY
+===================================================== */
 
-import UserManagement
-  from "./pages/settings/UserManagement";
+import DeletedItems from "./pages/recovery/DeletedItems";
 
 /* =====================================================
    APP
@@ -174,7 +122,7 @@ function App() {
   return (
     <>
       {/* =================================================
-          TOAST
+          GLOBAL TOAST
       ================================================= */}
 
       <Toaster
@@ -192,30 +140,22 @@ function App() {
 
         <Route
           path="/login"
-          element={
-            <Login />
-          }
+          element={<Login />}
         />
 
         <Route
           path="/register"
-          element={
-            <Register />
-          }
+          element={<Register />}
         />
 
         <Route
           path="/forgot-password"
-          element={
-            <ForgotPassword />
-          }
+          element={<ForgotPassword />}
         />
 
         <Route
           path="/reset-password/:requestId"
-          element={
-            <ResetPassword />
-          }
+          element={<ResetPassword />}
         />
 
 
@@ -231,27 +171,23 @@ function App() {
           }
         >
 
-          {/* ===============================================
+          {/* =================================================
               DASHBOARD
-          =============================================== */}
+          ================================================= */}
 
           <Route
             path="/dashboard"
-            element={
-              <Dashboard />
-            }
+            element={<Dashboard />}
           />
 
 
-          {/* ===============================================
+          {/* =================================================
               FUEL
-          =============================================== */}
+          ================================================= */}
 
           <Route
             path="/fuel"
-            element={
-              <FuelStock />
-            }
+            element={<FuelStock />}
           />
 
           <Route
@@ -266,16 +202,12 @@ function App() {
 
           <Route
             path="/fuel/purchase"
-            element={
-              <AddFuelPurchase />
-            }
+            element={<AddFuelPurchase />}
           />
 
           <Route
             path="/fuel/purchases"
-            element={
-              <FuelPurchaseHistory />
-            }
+            element={<FuelPurchaseHistory />}
           />
 
           <Route
@@ -290,21 +222,17 @@ function App() {
 
           <Route
             path="/fuel/price"
-            element={
-              <FuelPrice />
-            }
+            element={<FuelPrice />}
           />
 
 
-          {/* ===============================================
+          {/* =================================================
               NOZZLES
-          =============================================== */}
+          ================================================= */}
 
           <Route
             path="/nozzle"
-            element={
-              <NozzleList />
-            }
+            element={<NozzleList />}
           />
 
           <Route
@@ -319,16 +247,12 @@ function App() {
 
           <Route
             path="/nozzle/readings/add"
-            element={
-              <AddReading />
-            }
+            element={<AddReading />}
           />
 
           <Route
             path="/nozzle/readings"
-            element={
-              <ReadingHistory />
-            }
+            element={<ReadingHistory />}
           />
 
           <Route
@@ -372,15 +296,13 @@ function App() {
           />
 
 
-          {/* ===============================================
+          {/* =================================================
               SALES
-          =============================================== */}
+          ================================================= */}
 
           <Route
             path="/sales"
-            element={
-              <DailySales />
-            }
+            element={<DailySales />}
           />
 
           <Route
@@ -395,16 +317,12 @@ function App() {
 
           <Route
             path="/sales/history"
-            element={
-              <SalesHistory />
-            }
+            element={<SalesHistory />}
           />
 
           <Route
             path="/sales/payments"
-            element={
-              <PaymentSummary />
-            }
+            element={<PaymentSummary />}
           />
 
           <Route
@@ -418,15 +336,13 @@ function App() {
           />
 
 
-          {/* ===============================================
+          {/* =================================================
               EXPENSES
-          =============================================== */}
+          ================================================= */}
 
           <Route
             path="/expenses"
-            element={
-              <AddExpense />
-            }
+            element={<AddExpense />}
           />
 
           <Route
@@ -441,71 +357,38 @@ function App() {
 
           <Route
             path="/expenses/history"
-            element={
-              <ExpenseHistory />
-            }
+            element={<ExpenseHistory />}
           />
 
 
-          {/* ===============================================
+          {/* =================================================
               LEDGER
-          =============================================== */}
+          ================================================= */}
 
           <Route
             path="/ledger"
-            element={
-              <Customers />
-            }
+            element={<Customers />}
           />
 
           <Route
             path="/ledger/customers"
-            element={
-              <Customers />
-            }
+            element={<Customers />}
           />
-
-          {/* ===============================================
-              CUSTOMER LEDGER
-
-              IMPORTANT:
-              CustomerLedger uses useParams():
-
-              const { customerId } = useParams();
-
-              Therefore the route MUST contain
-              :customerId.
-          =============================================== */}
 
           <Route
             path="/ledger/customer/:customerId"
-            element={
-              <CustomerLedger />
-            }
+            element={<CustomerLedger />}
           />
 
-          {/* ===============================================
-              BACKWARD COMPATIBILITY
-
-              Keeps /ledger/customer available for
-              Add Customer / existing navigation.
-
-              CustomerLedger can handle the missing ID
-              and show "Customer not found".
-          =============================================== */}
-
+          {/* Backward-compatible route */}
           <Route
             path="/ledger/customer"
-            element={
-              <CustomerLedger />
-            }
+            element={<CustomerLedger />}
           />
 
           <Route
             path="/ledger/payment"
-            element={
-              <Payments />
-            }
+            element={<Payments />}
           />
 
           <Route
@@ -520,9 +403,7 @@ function App() {
 
           <Route
             path="/ledger/pending"
-            element={
-              <PendingCredit />
-            }
+            element={<PendingCredit />}
           />
 
           <Route
@@ -536,15 +417,13 @@ function App() {
           />
 
 
-          {/* ===============================================
+          {/* =================================================
               REPORTS
-          =============================================== */}
+          ================================================= */}
 
           <Route
             path="/reports"
-            element={
-              <DailyReport />
-            }
+            element={<DailyReport />}
           />
 
           <Route
@@ -559,42 +438,29 @@ function App() {
 
           <Route
             path="/reports/weekly"
-            element={
-              <WeeklyReport />
-            }
+            element={<WeeklyReport />}
           />
 
           <Route
             path="/reports/monthly"
-            element={
-              <MonthlyReport />
-            }
+            element={<MonthlyReport />}
           />
 
           <Route
             path="/reports/custom"
-            element={
-              <CustomReport />
-            }
+            element={<CustomReport />}
           />
 
-          <Route
-            path="/reports/closing"
-            element={
-              <DailyClosing />
-            }
-          />
+          
 
 
-          {/* ===============================================
+          {/* =================================================
               SETTINGS
-          =============================================== */}
+          ================================================= */}
 
           <Route
             path="/settings"
-            element={
-              <PumpSettings />
-            }
+            element={<PumpSettings />}
           />
 
           <Route
@@ -609,16 +475,18 @@ function App() {
 
           <Route
             path="/settings/fuel"
-            element={
-              <FuelSettings />
-            }
+            element={<FuelSettings />}
           />
 
           <Route
             path="/settings/users"
-            element={
-              <UserManagement />
-            }
+            element={<UserManagement />}
+          />
+
+          {/* Recovery / Deleted Items */}
+          <Route
+            path="/settings/recovery"
+            element={<DeletedItems />}
           />
 
         </Route>
@@ -636,63 +504,34 @@ function App() {
           }
         >
 
-          {/* ===============================================
-              SUPER ADMIN DASHBOARD
-          =============================================== */}
-
+          {/* Dashboard */}
           <Route
             path="/superadmin"
-            element={
-              <SuperAdminDashboard />
-            }
+            element={<SuperAdminDashboard />}
           />
 
-
-          {/* ===============================================
-              REGISTRATION REQUESTS
-          =============================================== */}
-
+          {/* Registration Requests */}
           <Route
             path="/superadmin/requests"
-            element={
-              <SuperAdminRequests />
-            }
+            element={<SuperAdminRequests />}
           />
 
-
-          {/* ===============================================
-              PASSWORD RESET REQUESTS
-          =============================================== */}
-
+          {/* Password Reset Requests */}
           <Route
             path="/superadmin/password-requests"
-            element={
-              <SuperAdminPasswordRequests />
-            }
+            element={<SuperAdminPasswordRequests />}
           />
 
-
-          {/* ===============================================
-              CLIENT MANAGEMENT
-          =============================================== */}
-
+          {/* Clients */}
           <Route
             path="/superadmin/clients"
-            element={
-              <Clients />
-            }
+            element={<Clients />}
           />
 
-
-          {/* ===============================================
-              USER MANAGEMENT
-          =============================================== */}
-
+          {/* Users */}
           <Route
             path="/superadmin/users"
-            element={
-              <SuperAdminUsers />
-            }
+            element={<SuperAdminUsers />}
           />
 
         </Route>
@@ -714,7 +553,7 @@ function App() {
 
 
         {/* =================================================
-            UNKNOWN ROUTE
+            UNKNOWN ROUTES
         ================================================= */}
 
         <Route
