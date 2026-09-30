@@ -2419,6 +2419,15 @@ const ReadingHistory = () => {
 
                 didDrawPage:
                   (data) => {
+                    if (
+                      chunkIndex !==
+                        tableChunks.length - 1 ||
+                      data.pageNumber !==
+                        doc.internal.getNumberOfPages()
+                    ) {
+                      return;
+                    }
+
                 const footerY =
                   pageHeight - 14;
 
