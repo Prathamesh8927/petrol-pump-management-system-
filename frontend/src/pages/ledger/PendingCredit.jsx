@@ -1,11 +1,11 @@
 import {
+  useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
-import {
-  useNavigate,
-} from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 import toast from "react-hot-toast";
 
@@ -14,130 +14,167 @@ import {
 } from "../../services/ledgerService";
 
 const PendingCredit = () => {
-  const navigate =
-    useNavigate();
+  const navigate = useNavigate();
 
-  const [
-    customers,
-    setCustomers,
-  ] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [totalPending, setTotalPending] =
+    useState(0);
+  const [loading, setLoading] = useState(true);
 
-  const [
-    totalPending,
-    setTotalPending,
-  ] = useState(0);
+  const mountedRef = useRef(true);
+  const loadingRef = useRef(false);
 
-  const [
-    loading,
-    setLoading,
-  ] = useState(true);
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
-  const money = (
-    value
-  ) =>
-    Number(
-      value || 0
-    ).toLocaleString(
-      "en-IN",
-      {
-        minimumFractionDigits:
-          2,
-        maximumFractionDigits:
-          2,
+  const money = (value) => {
+    const amount = Number(value ?? 0);
+
+    return (
+      Number.isFinite(amount) ? amount : 0
+    ).toLocaleString("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
+  const loadPending = useCallback(
+    async ({ silent = false } = {}) => {
+      if (loadingRef.current) {
+        return;
       }
-    );
 
-  const loadPending =
-    async () => {
-      try {
+      loadingRef.current = true;
+
+      if (!silent && mountedRef.current) {
         setLoading(true);
+      }
 
+      try {
         const data =
           await getPendingCredit();
 
-        setCustomers(
-          data.customers ||
-            []
+        const customerList =
+          Array.isArray(data?.customers)
+            ? data.customers
+            : [];
+
+        const total = Number(
+          data?.totalPending ?? 0
         );
 
-        setTotalPending(
-          Number(
-            data.totalPending ||
-              0
-          )
-        );
+        if (mountedRef.current) {
+          setCustomers(customerList);
+
+          setTotalPending(
+            Number.isFinite(total)
+              ? total
+              : 0
+          );
+        }
       } catch (error) {
-        toast.error(
-          "Unable to load pending credit"
-        );
+        if (mountedRef.current) {
+          toast.error(
+            error?.response?.data?.message ||
+              error?.message ||
+              "Unable to load pending credit."
+          );
+        }
       } finally {
-        setLoading(false);
+        loadingRef.current = false;
+
+        if (!silent && mountedRef.current) {
+          setLoading(false);
+        }
       }
-    };
+    },
+    []
+  );
 
   useEffect(() => {
     loadPending();
-  }, []);
+
+    const handleVisibility = () => {
+      if (
+        document.visibilityState ===
+        "visible"
+      ) {
+        loadPending({ silent: true });
+      }
+    };
+
+    const handleFocus = () => {
+      loadPending({ silent: true });
+    };
+
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibility
+    );
+
+    window.addEventListener(
+      "focus",
+      handleFocus
+    );
+
+    return () => {
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibility
+      );
+
+      window.removeEventListener(
+        "focus",
+        handleFocus
+      );
+    };
+  }, [loadPending]);
 
   return (
     <div className="page-container">
-
       <div className="page-header">
-
         <div>
-
-          <h1>
-            Pending Credit
-          </h1>
+          <h1>Pending Credit</h1>
 
           <p>
             Customers with outstanding
             ledger balance.
           </p>
-
         </div>
 
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => loadPending()}
+          disabled={loading}
+        >
+          {loading ? "Refreshing..." : "Refresh"}
+        </button>
       </div>
 
       <div className="stats-grid">
-
         <div className="stat-card">
+          <h4>Pending Customers</h4>
 
-          <h4>
-            Pending Customers
-          </h4>
-
-          <h2>
-            {customers.length}
-          </h2>
-
+          <h2>{customers.length}</h2>
         </div>
 
         <div className="stat-card">
-
-          <h4>
-            Total Pending
-          </h4>
+          <h4>Total Pending</h4>
 
           <h2>
-            ₹{" "}
-            {money(
-              totalPending
-            )}
+            ₹ {money(totalPending)}
           </h2>
-
         </div>
-
       </div>
 
       <div className="content-panel">
-
         <div className="table-container">
-
           <table>
-
             <thead>
-
               <tr>
                 <th>#</th>
                 <th>Name</th>
@@ -146,123 +183,98 @@ const PendingCredit = () => {
                 <th>Pending</th>
                 <th>Action</th>
               </tr>
-
             </thead>
 
             <tbody>
-
               {loading ? (
-
                 <tr>
-
                   <td
                     colSpan="6"
                     className="empty-table"
                   >
                     Loading...
                   </td>
-
                 </tr>
-
-              ) : customers.length ===
-                0 ? (
-
+              ) : customers.length === 0 ? (
                 <tr>
-
                   <td
                     colSpan="6"
                     className="empty-table"
                   >
                     No pending credit.
                   </td>
-
                 </tr>
-
               ) : (
-
                 customers.map(
-                  (
-                    customer,
-                    index
-                  ) => (
+                  (customer, index) => {
+                    const pending =
+                      Number(
+                        customer?.currentBalance ??
+                          customer?.totalPending ??
+                          0
+                      );
 
-                    <tr
-                      key={
-                        customer._id
-                      }
-                    >
+                    return (
+                      <tr
+                        key={customer._id}
+                      >
+                        <td>
+                          {index + 1}
+                        </td>
 
-                      <td>
-                        {index + 1}
-                      </td>
+                        <td>
+                          {customer.name ||
+                            "-"}
+                        </td>
 
-                      <td>
-                        {
-                          customer.name
-                        }
-                      </td>
+                        <td>
+                          {customer.phone ||
+                            "-"}
+                        </td>
 
-                      <td>
-                        {
-                          customer.phone ||
-                          "-"
-                        }
-                      </td>
+                        <td>
+                          {customer.vehicleNumber ||
+                            "-"}
+                        </td>
 
-                      <td>
-                        {
-                          customer.vehicleNumber ||
-                          "-"
-                        }
-                      </td>
+                        <td>
+                          <strong
+                            style={{
+                              color:
+                                "#dc2626",
+                            }}
+                          >
+                            ₹{" "}
+                            {money(
+                              pending
+                            )}
+                          </strong>
+                        </td>
 
-                      <td>
-
-                        <strong
-                          style={{
-                            color:
-                              "#dc2626",
-                          }}
-                        >
-                          ₹{" "}
-                          {money(
-                            customer.currentBalance
-                          )}
-                        </strong>
-
-                      </td>
-
-                      <td>
-
-                        <button
-                          type="button"
-                          className="action-view"
-                          onClick={() =>
-                            navigate(
-                              `/ledger/customer?id=${customer._id}`
-                            )
-                          }
-                        >
-                          View Ledger
-                        </button>
-
-                      </td>
-
-                    </tr>
-
-                  )
+                        <td>
+                          <button
+                            type="button"
+                            className="action-view"
+                            onClick={() =>
+                              navigate(
+                                `/ledger/customer?id=${encodeURIComponent(
+                                  customer._id
+                                )}`
+                              )
+                            }
+                          >
+                            View Ledger
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  }
                 )
-
               )}
-
             </tbody>
-
           </table>
-
         </div>
-
       </div>
-
     </div>
   );
 };

@@ -22,6 +22,7 @@ import dashboardRoutes from "./routes/dashboardRoutes.js";
 import dailyClosingRoutes from "./routes/dailyClosingRoutes.js";
 import auditRoutes from "./routes/auditRoutes.js";
 import passwordResetRoutes from "./routes/passwordResetRoutes.js";
+import recoveryRoutes from "./routes/recoveryRoutes.js";
 
 /* =====================================================
    LOAD ENVIRONMENT VARIABLES
@@ -33,21 +34,42 @@ dotenv.config();
    ENVIRONMENT
 ===================================================== */
 
-const NODE_ENV = process.env.NODE_ENV || "development";
+const NODE_ENV =
+  String(
+    process.env.NODE_ENV || "development"
+  )
+    .trim()
+    .toLowerCase();
 
-const PORT = Number(process.env.PORT) || 8080;
+const PORT =
+  Number(process.env.PORT) || 8080;
 
-const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_SECRET =
+  process.env.JWT_SECRET;
 
 /* =====================================================
-   SECURITY CONFIGURATION
+   ENVIRONMENT VALIDATION
 ===================================================== */
 
-if (!JWT_SECRET || JWT_SECRET.trim().length < 32) {
-  console.error("====================================================");
-  console.error("FATAL ERROR: JWT_SECRET is missing or too weak.");
-  console.error("JWT_SECRET must contain at least 32 characters.");
-  console.error("====================================================");
+if (
+  typeof JWT_SECRET !== "string" ||
+  JWT_SECRET.trim().length < 32
+) {
+  console.error(
+    "===================================================="
+  );
+
+  console.error(
+    "FATAL ERROR: JWT_SECRET is missing or too weak."
+  );
+
+  console.error(
+    "JWT_SECRET must contain at least 32 characters."
+  );
+
+  console.error(
+    "===================================================="
+  );
 
   process.exit(1);
 }
@@ -56,64 +78,76 @@ if (!JWT_SECRET || JWT_SECRET.trim().length < 32) {
    CORS CONFIGURATION
 ===================================================== */
 
+const normalizeOrigin = (origin) => {
+  if (
+    typeof origin !== "string"
+  ) {
+    return "";
+  }
+
+  return origin
+    .trim()
+    .replace(/\/+$/, "");
+};
+
 /*
  * Local development origins.
- *
- * IMPORTANT:
- * Never put frontend JavaScript code inside this array.
  */
-
 const developmentOrigins = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
 ];
 
 /*
- * Production origins are supplied from Render environment
- * variable:
+ * Production origins are supplied through:
  *
  * CLIENT_URL=https://shivshambho.in,https://www.shivshambho.in
- *
- * We also remove trailing "/" so:
- *
- * https://example.com/
- *
- * becomes:
- *
- * https://example.com
  */
-
-const environmentOrigins = process.env.CLIENT_URL
-  ? process.env.CLIENT_URL
-      .split(",")
-      .map((origin) => origin.trim().replace(/\/+$/, ""))
-      .filter(Boolean)
-  : [];
+const environmentOrigins =
+  process.env.CLIENT_URL
+    ? process.env.CLIENT_URL
+        .split(",")
+        .map(normalizeOrigin)
+        .filter(Boolean)
+    : [];
 
 /*
- * Production must have CLIENT_URL configured.
+ * Production must have CLIENT_URL.
  */
-
 if (
   NODE_ENV === "production" &&
   environmentOrigins.length === 0
 ) {
-  console.error("====================================================");
-  console.error("FATAL ERROR: CLIENT_URL is missing in production.");
+  console.error(
+    "===================================================="
+  );
+
+  console.error(
+    "FATAL ERROR: CLIENT_URL is missing in production."
+  );
+
   console.error(
     "Set CLIENT_URL to your production frontend URL(s)."
   );
+
   console.error(
     "Example: https://shivshambho.in,https://www.shivshambho.in"
   );
-  console.error("====================================================");
+
+  console.error(
+    "===================================================="
+  );
 
   process.exit(1);
 }
 
 const allowedOrigins =
   NODE_ENV === "production"
-    ? [...new Set(environmentOrigins)]
+    ? [
+        ...new Set(
+          environmentOrigins
+        ),
+      ]
     : [
         ...new Set([
           ...developmentOrigins,
@@ -121,7 +155,10 @@ const allowedOrigins =
         ]),
       ];
 
-console.log("CORS ALLOWED ORIGINS:", allowedOrigins);
+console.log(
+  "CORS ALLOWED ORIGINS:",
+  allowedOrigins
+);
 
 /* =====================================================
    APP
@@ -133,17 +170,32 @@ const app = express();
    TRUST PROXY
 ===================================================== */
 
-const trustProxyValue = process.env.TRUST_PROXY;
+const trustProxyValue =
+  process.env.TRUST_PROXY;
 
-if (trustProxyValue === "true") {
+if (
+  trustProxyValue === "true"
+) {
   app.set("trust proxy", true);
-} else if (trustProxyValue === "false") {
+} else if (
+  trustProxyValue === "false"
+) {
   app.set("trust proxy", false);
-} else if (trustProxyValue !== undefined) {
-  const parsedTrustProxy = Number(trustProxyValue);
+} else if (
+  trustProxyValue !== undefined
+) {
+  const parsedTrustProxy =
+    Number(trustProxyValue);
 
-  if (Number.isFinite(parsedTrustProxy)) {
-    app.set("trust proxy", parsedTrustProxy);
+  if (
+    Number.isFinite(
+      parsedTrustProxy
+    )
+  ) {
+    app.set(
+      "trust proxy",
+      parsedTrustProxy
+    );
   } else {
     console.warn(
       "Invalid TRUST_PROXY value. Using environment default."
@@ -151,13 +203,17 @@ if (trustProxyValue === "true") {
 
     app.set(
       "trust proxy",
-      NODE_ENV === "production" ? 1 : 0
+      NODE_ENV === "production"
+        ? 1
+        : 0
     );
   }
 } else {
   app.set(
     "trust proxy",
-    NODE_ENV === "production" ? 1 : 0
+    NODE_ENV === "production"
+      ? 1
+      : 0
   );
 }
 
@@ -167,24 +223,35 @@ if (trustProxyValue === "true") {
 
 app.use(
   cors({
-    origin: (origin, callback) => {
+    origin: (
+      origin,
+      callback
+    ) => {
       /*
        * Requests without Origin:
        * - Postman
        * - server-to-server
        * - health checks
        */
-
       if (!origin) {
-        return callback(null, true);
+        return callback(
+          null,
+          true
+        );
       }
 
-      const normalizedOrigin = origin
-        .trim()
-        .replace(/\/+$/, "");
+      const normalizedOrigin =
+        normalizeOrigin(origin);
 
-      if (allowedOrigins.includes(normalizedOrigin)) {
-        return callback(null, true);
+      if (
+        allowedOrigins.includes(
+          normalizedOrigin
+        )
+      ) {
+        return callback(
+          null,
+          true
+        );
       }
 
       console.warn(
@@ -193,7 +260,9 @@ app.use(
       );
 
       return callback(
-        new Error("CORS origin not allowed")
+        new Error(
+          "CORS origin not allowed"
+        )
       );
     },
 
@@ -238,314 +307,524 @@ app.use(
    REQUEST LOGGER
 ===================================================== */
 
-app.use((req, res, next) => {
-  console.log(
-    `${new Date().toISOString()} ${req.method} ${req.originalUrl}`
-  );
+app.use(
+  (req, res, next) => {
+    console.log(
+      `${new Date().toISOString()} ${req.method} ${req.originalUrl}`
+    );
 
-  next();
-});
+    next();
+  }
+);
 
 /* =====================================================
    BASIC ROUTE
 ===================================================== */
 
-app.get("/", (req, res) => {
-  return res.status(200).json({
-    success: true,
-    message: "Petrol Pump Management API is running",
-    environment: NODE_ENV,
-  });
-});
+app.get(
+  "/",
+  (req, res) => {
+    return res.status(200).json({
+      success: true,
+      message:
+        "Petrol Pump Management API is running",
+      environment: NODE_ENV,
+    });
+  }
+);
 
 /* =====================================================
    HEALTH CHECK
 ===================================================== */
 
-app.get("/api/health", (req, res) => {
-  const dbState = mongoose.connection.readyState;
+app.get(
+  "/api/health",
+  (req, res) => {
+    const dbState =
+      mongoose.connection.readyState;
 
-  const databaseConnected = dbState === 1;
+    const databaseConnected =
+      dbState === 1;
 
-  const status = databaseConnected
-    ? "healthy"
-    : "degraded";
+    const status =
+      databaseConnected
+        ? "healthy"
+        : "degraded";
 
-  return res.status(databaseConnected ? 200 : 503).json({
-    success: databaseConnected,
-    status,
-    server: "running",
-    database: databaseConnected
-      ? "connected"
-      : "disconnected",
-    environment: NODE_ENV,
-    uptime: Math.floor(process.uptime()),
-    timestamp: new Date().toISOString(),
-  });
-});
+    return res
+      .status(
+        databaseConnected
+          ? 200
+          : 503
+      )
+      .json({
+        success:
+          databaseConnected,
+
+        status,
+
+        server:
+          "running",
+
+        database:
+          databaseConnected
+            ? "connected"
+            : "disconnected",
+
+        uptime:
+          Math.floor(
+            process.uptime()
+          ),
+
+        timestamp:
+          new Date().toISOString(),
+      });
+  }
+);
 
 /* =====================================================
    AUTH
 ===================================================== */
 
-app.use("/api/auth", authRoutes);
+app.use(
+  "/api/auth",
+  authRoutes
+);
 
 /* =====================================================
    FUEL
 ===================================================== */
 
-app.use("/api/fuel", fuelRoutes);
+app.use(
+  "/api/fuel",
+  fuelRoutes
+);
 
 /* =====================================================
    SALES
 ===================================================== */
 
-app.use("/api/sales", salesRoutes);
+app.use(
+  "/api/sales",
+  salesRoutes
+);
 
 /* =====================================================
    SUPER ADMIN
 ===================================================== */
 
-app.use("/api/superadmin", superAdminRoutes);
+app.use(
+  "/api/superadmin",
+  superAdminRoutes
+);
 
 /* =====================================================
    NOZZLES
 ===================================================== */
 
-app.use("/api/nozzles", nozzleRoutes);
+app.use(
+  "/api/nozzles",
+  nozzleRoutes
+);
 
 /*
- * Backward compatibility
+ * Backward compatibility.
  */
-
-app.use("/api/nozzle", nozzleRoutes);
+app.use(
+  "/api/nozzle",
+  nozzleRoutes
+);
 
 /* =====================================================
    EXPENSES
 ===================================================== */
 
-app.use("/api/expenses", expenseRoutes);
+app.use(
+  "/api/expenses",
+  expenseRoutes
+);
 
 /* =====================================================
    LEDGER
 ===================================================== */
 
-app.use("/api/ledger", ledgerRoutes);
+app.use(
+  "/api/ledger",
+  ledgerRoutes
+);
 
 /* =====================================================
    REPORTS
 ===================================================== */
 
-app.use("/api/reports", reportRoutes);
+app.use(
+  "/api/reports",
+  reportRoutes
+);
 
 /* =====================================================
    SETTINGS
 ===================================================== */
 
-app.use("/api/settings", settingsRoutes);
+app.use(
+  "/api/settings",
+  settingsRoutes
+);
 
 /* =====================================================
    DASHBOARD
 ===================================================== */
 
-app.use("/api/dashboard", dashboardRoutes);
+app.use(
+  "/api/dashboard",
+  dashboardRoutes
+);
 
 /* =====================================================
    DAILY CLOSING
 ===================================================== */
 
-app.use("/api/daily-closing", dailyClosingRoutes);
+app.use(
+  "/api/daily-closing",
+  dailyClosingRoutes
+);
 
 /* =====================================================
    AUDIT
 ===================================================== */
 
-app.use("/api/audit", auditRoutes);
+app.use(
+  "/api/audit",
+  auditRoutes
+);
 
 /* =====================================================
    PASSWORD RESET
 ===================================================== */
 
-app.use("/api/password-reset", passwordResetRoutes);
+app.use(
+  "/api/password-reset",
+  passwordResetRoutes
+);
+
+/* =====================================================
+   DELETED DATA RECOVERY
+===================================================== */
+
+app.use(
+  "/api/recovery",
+  recoveryRoutes
+);
 
 /* =====================================================
    404 HANDLER
 ===================================================== */
 
-app.use((req, res) => {
-  return res.status(404).json({
-    success: false,
-    message: `Route not found: ${req.method} ${req.originalUrl}`,
-  });
-});
+app.use(
+  (req, res) => {
+    return res.status(404).json({
+      success: false,
+      message:
+        `Route not found: ${req.method} ${req.originalUrl}`,
+    });
+  }
+);
 
 /* =====================================================
    GLOBAL ERROR HANDLER
 ===================================================== */
 
-app.use((error, req, res, next) => {
-  console.error("SERVER ERROR:", error);
+app.use(
+  (
+    error,
+    req,
+    res,
+    next
+  ) => {
+    console.error(
+      "SERVER ERROR:",
+      error
+    );
 
-  /* -----------------------------------------------
-     CORS ERROR
-  ------------------------------------------------ */
+    /* -----------------------------------------------
+       CORS ERROR
+    ------------------------------------------------ */
 
-  if (error.message === "CORS origin not allowed") {
-    return res.status(403).json({
-      success: false,
-      message: "Request origin is not allowed.",
-    });
-  }
+    if (
+      error.message ===
+      "CORS origin not allowed"
+    ) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Request origin is not allowed.",
+      });
+    }
 
-  /* -----------------------------------------------
-     JSON BODY ERROR
-  ------------------------------------------------ */
+    /* -----------------------------------------------
+       JSON BODY ERROR
+    ------------------------------------------------ */
 
-  if (error.type === "entity.parse.failed") {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid JSON request.",
-    });
-  }
+    if (
+      error.type ===
+      "entity.parse.failed"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid JSON request.",
+      });
+    }
 
-  /* -----------------------------------------------
-     PAYLOAD TOO LARGE
-  ------------------------------------------------ */
+    /* -----------------------------------------------
+       PAYLOAD TOO LARGE
+    ------------------------------------------------ */
 
-  if (error.type === "entity.too.large") {
-    return res.status(413).json({
-      success: false,
-      message: "Request payload is too large.",
-    });
-  }
+    if (
+      error.type ===
+      "entity.too.large"
+    ) {
+      return res.status(413).json({
+        success: false,
+        message:
+          "Request payload is too large.",
+      });
+    }
 
-  /* -----------------------------------------------
-     MONGOOSE VALIDATION ERROR
-  ------------------------------------------------ */
+    /* -----------------------------------------------
+       MONGOOSE VALIDATION ERROR
+    ------------------------------------------------ */
 
-  if (error.name === "ValidationError") {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid request data.",
-    });
-  }
+    if (
+      error.name ===
+      "ValidationError"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid request data.",
+      });
+    }
 
-  /* -----------------------------------------------
-     MONGOOSE CAST ERROR
-  ------------------------------------------------ */
+    /* -----------------------------------------------
+       MONGOOSE CAST ERROR
+    ------------------------------------------------ */
 
-  if (error.name === "CastError") {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid request data.",
-    });
-  }
+    if (
+      error.name ===
+      "CastError"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid request data.",
+      });
+    }
 
-  /* -----------------------------------------------
-     DUPLICATE KEY ERROR
-  ------------------------------------------------ */
+    /* -----------------------------------------------
+       DUPLICATE KEY ERROR
+    ------------------------------------------------ */
 
-  if (error.code === 11000) {
-    return res.status(409).json({
+    if (
+      error.code === 11000
+    ) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "A record with the provided information already exists.",
+      });
+    }
+
+    /* -----------------------------------------------
+       GENERAL ERROR
+    ------------------------------------------------ */
+
+    return res.status(500).json({
       success: false,
       message:
-        "A record with the provided information already exists.",
+        "Internal server error",
     });
   }
+);
 
-  /* -----------------------------------------------
-     GENERAL ERROR
-  ------------------------------------------------ */
+/* =====================================================
+   HTTP SERVER
+===================================================== */
 
-  return res.status(500).json({
-    success: false,
-    message: "Internal server error",
-  });
-});
+let server = null;
+let isShuttingDown = false;
 
 /* =====================================================
    START SERVER
 ===================================================== */
 
-const startServer = async () => {
-  try {
-    await connectDB();
+const startServer =
+  async () => {
+    try {
+      await connectDB();
 
-    app.listen(PORT, () => {
-      console.log("====================================");
-      console.log(
-        `MyPump Backend running on port ${PORT}`
+      server =
+        app.listen(
+          PORT,
+          () => {
+            console.log(
+              "===================================="
+            );
+
+            console.log(
+              `MyPump Backend running on port ${PORT}`
+            );
+
+            console.log(
+              `Environment: ${NODE_ENV}`
+            );
+
+            console.log(
+              "MongoDB: CONNECTED"
+            );
+
+            console.log(
+              "JWT security: ENABLED"
+            );
+
+            console.log(
+              "CORS: CONFIGURED"
+            );
+
+            console.log(
+              "Health: /api/health"
+            );
+
+            console.log(
+              "Recovery: /api/recovery"
+            );
+
+            console.log(
+              "===================================="
+            );
+          }
+        );
+
+      /*
+       * Prevent idle HTTP connections from
+       * remaining open indefinitely during shutdown.
+       */
+      server.keepAliveTimeout =
+        65000;
+
+      server.headersTimeout =
+        66000;
+    } catch (error) {
+      console.error(
+        "Database connection failed:",
+        error
       );
-      console.log(`Environment: ${NODE_ENV}`);
-      console.log("MongoDB: CONNECTED");
-      console.log("JWT security: ENABLED");
-      console.log("CORS: CONFIGURED");
-      console.log("Health: /api/health");
-      console.log("====================================");
-    });
-  } catch (error) {
-    console.error(
-      "Database connection failed:",
-      error
-    );
 
-    process.exit(1);
-  }
-};
+      process.exit(1);
+    }
+  };
 
 /* =====================================================
    PROCESS ERROR HANDLING
 ===================================================== */
 
-process.on("unhandledRejection", (reason) => {
-  console.error(
-    "UNHANDLED REJECTION:",
-    reason
-  );
-});
-
-process.on("uncaughtException", (error) => {
-  console.error(
-    "UNCAUGHT EXCEPTION:",
-    error
-  );
-
-  process.exit(1);
-});
-
-/* =====================================================
-   GRACEFUL SHUTDOWN
-===================================================== */
-
-const gracefulShutdown = async (signal) => {
-  console.log(
-    `${signal} received. Shutting down gracefully...`
-  );
-
-  try {
-    await mongoose.connection.close();
-
-    console.log(
-      "MongoDB connection closed."
-    );
-
-    process.exit(0);
-  } catch (error) {
+process.on(
+  "unhandledRejection",
+  (reason) => {
     console.error(
-      "Error during shutdown:",
+      "UNHANDLED REJECTION:",
+      reason
+    );
+  }
+);
+
+process.on(
+  "uncaughtException",
+  (error) => {
+    console.error(
+      "UNCAUGHT EXCEPTION:",
       error
     );
 
     process.exit(1);
   }
-};
-
-process.on("SIGTERM", () =>
-  gracefulShutdown("SIGTERM")
 );
 
-process.on("SIGINT", () =>
-  gracefulShutdown("SIGINT")
+/* =====================================================
+   GRACEFUL SHUTDOWN
+===================================================== */
+
+const gracefulShutdown =
+  async (signal) => {
+    if (isShuttingDown) {
+      return;
+    }
+
+    isShuttingDown = true;
+
+    console.log(
+      `${signal} received. Shutting down gracefully...`
+    );
+
+    try {
+      /*
+       * Stop accepting new HTTP requests first.
+       */
+      if (server) {
+        await new Promise(
+          (resolve) => {
+            server.close(
+              () => {
+                console.log(
+                  "HTTP server closed."
+                );
+
+                resolve();
+              }
+            );
+          }
+        );
+      }
+
+      /*
+       * Close MongoDB connection.
+       */
+      if (
+        mongoose.connection
+          .readyState !== 0
+      ) {
+        await mongoose.connection.close();
+
+        console.log(
+          "MongoDB connection closed."
+        );
+      }
+
+      process.exit(0);
+    } catch (error) {
+      console.error(
+        "Error during shutdown:",
+        error
+      );
+
+      process.exit(1);
+    }
+  };
+
+process.on(
+  "SIGTERM",
+  () =>
+    gracefulShutdown(
+      "SIGTERM"
+    )
+);
+
+process.on(
+  "SIGINT",
+  () =>
+    gracefulShutdown(
+      "SIGINT"
+    )
 );
 
 /* =====================================================

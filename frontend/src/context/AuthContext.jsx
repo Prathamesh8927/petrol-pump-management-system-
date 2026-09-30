@@ -23,26 +23,84 @@ export const AuthProvider = ({
   ===================================================== */
 
   useEffect(() => {
+    let isMounted = true;
+
     const loadUser = async () => {
-      try {
-        /*
-         * sessionStorage is intentionally used here.
-         *
-         * Each browser tab/window gets its own authentication
-         * session, allowing multiple accounts to work at the
-         * same time.
-         */
+      /*
+       * Authentication is intentionally stored
+       * in sessionStorage.
+       *
+       * Each browser tab/window has its own
+       * authentication session.
+       */
 
-        const token =
-          sessionStorage.getItem("token");
+      const token =
+        sessionStorage.getItem(
+          "token"
+        );
 
-        if (!token) {
+      if (!token) {
+        if (isMounted) {
           setUser(null);
-          return;
+          setLoading(false);
         }
 
+        return;
+      }
+
+      /*
+       * Restore cached user immediately.
+       *
+       * This improves page-refresh UX while
+       * /auth/me validates the session below.
+       */
+
+      try {
+        const cachedUser =
+          sessionStorage.getItem(
+            "user"
+          );
+
+        if (cachedUser) {
+          const parsedUser =
+            JSON.parse(
+              cachedUser
+            );
+
+          if (
+            parsedUser &&
+            typeof parsedUser ===
+              "object"
+          ) {
+            if (isMounted) {
+              setUser(
+                parsedUser
+              );
+            }
+          }
+        }
+      } catch (error) {
+        console.error(
+          "CACHED USER ERROR:",
+          error.message
+        );
+
+        sessionStorage.removeItem(
+          "user"
+        );
+      }
+
+      /*
+       * Validate the token and retrieve
+       * authoritative user information
+       * from the backend.
+       */
+
+      try {
         const response =
-          await api.get("/auth/me");
+          await api.get(
+            "/auth/me"
+          );
 
         const currentUser =
           response.data?.user ||
@@ -50,21 +108,40 @@ export const AuthProvider = ({
 
         if (!currentUser) {
           throw new Error(
-            "User not found"
+            "User information was not returned"
           );
         }
 
-        setUser(currentUser);
+        if (!isMounted) {
+          return;
+        }
+
+        setUser(
+          currentUser
+        );
 
         sessionStorage.setItem(
           "user",
-          JSON.stringify(currentUser)
+          JSON.stringify(
+            currentUser
+          )
         );
       } catch (error) {
         console.error(
           "AUTH LOAD ERROR:",
-          error
+          error.response?.data
+            ?.message ||
+            error.message ||
+            error
         );
+
+        /*
+         * Invalid/expired token,
+         * inactive account, or unavailable
+         * authenticated session.
+         *
+         * Clear only this tab's session.
+         */
 
         sessionStorage.removeItem(
           "token"
@@ -74,13 +151,21 @@ export const AuthProvider = ({
           "user"
         );
 
-        setUser(null);
+        if (isMounted) {
+          setUser(null);
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
     loadUser();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   /* =====================================================
@@ -92,27 +177,50 @@ export const AuthProvider = ({
     password
   ) => {
     try {
-      console.log(
-        "LOGIN REQUEST:",
-        email
-      );
+      const normalizedEmail =
+        String(email || "")
+          .trim()
+          .toLowerCase();
+
+      if (!normalizedEmail) {
+        throw new Error(
+          "Email is required"
+        );
+      }
+
+      if (
+        normalizedEmail.length >
+        254
+      ) {
+        throw new Error(
+          "Email address is too long"
+        );
+      }
+
+      if (!password) {
+        throw new Error(
+          "Password is required"
+        );
+      }
+
+      if (
+        String(password).length >
+        128
+      ) {
+        throw new Error(
+          "Password is too long"
+        );
+      }
 
       const response =
         await api.post(
           "/auth/login",
           {
-            email: String(email)
-              .trim()
-              .toLowerCase(),
-
+            email:
+              normalizedEmail,
             password,
           }
         );
-
-      console.log(
-        "LOGIN RESPONSE:",
-        response.data
-      );
 
       if (
         response.data?.success ===
@@ -143,8 +251,8 @@ export const AuthProvider = ({
       }
 
       /*
-       * IMPORTANT:
-       * Store authentication only in this tab.
+       * Store authentication only
+       * in the current browser tab.
        */
 
       sessionStorage.setItem(
@@ -154,10 +262,14 @@ export const AuthProvider = ({
 
       sessionStorage.setItem(
         "user",
-        JSON.stringify(loggedInUser)
+        JSON.stringify(
+          loggedInUser
+        )
       );
 
-      setUser(loggedInUser);
+      setUser(
+        loggedInUser
+      );
 
       return {
         success: true,
@@ -167,23 +279,15 @@ export const AuthProvider = ({
     } catch (error) {
       console.error(
         "LOGIN ERROR:",
-        error
-      );
-
-      console.error(
-        "LOGIN STATUS:",
-        error.response?.status
-      );
-
-      console.error(
-        "LOGIN SERVER RESPONSE:",
         error.response?.data
+          ?.message ||
+          error.message ||
+          error
       );
 
       /*
-       * Clear only THIS TAB'S session.
-       *
-       * Other tabs/accounts remain logged in.
+       * Clear only this tab's
+       * authentication session.
        */
 
       sessionStorage.removeItem(
@@ -202,7 +306,9 @@ export const AuthProvider = ({
         error.message ||
         "Login failed";
 
-      throw new Error(message);
+      throw new Error(
+        message
+      );
     }
   };
 
@@ -212,8 +318,8 @@ export const AuthProvider = ({
 
   const logout = () => {
     /*
-     * Remove authentication only from
-     * the current browser tab.
+     * AuthContext is the single owner
+     * of authentication state.
      */
 
     sessionStorage.removeItem(
@@ -222,6 +328,15 @@ export const AuthProvider = ({
 
     sessionStorage.removeItem(
       "user"
+    );
+
+    /*
+     * Password-reset request is also
+     * session-specific.
+     */
+
+    sessionStorage.removeItem(
+      "passwordResetRequestId"
     );
 
     setUser(null);
@@ -238,7 +353,6 @@ export const AuthProvider = ({
         loading,
         login,
         logout,
-
         isAuthenticated:
           Boolean(user),
       }}

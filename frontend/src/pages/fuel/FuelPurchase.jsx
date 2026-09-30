@@ -16,15 +16,45 @@ import {
 
 import ProfessionalSearch from "../../components/ProfessionalSearch";
 
-import api from "../../services/api";
-
 import {
   addFuelPurchase,
+  getFuelPurchases,
 } from "../../services/fuelService";
 
+/* =====================================================
+   HELPERS
+===================================================== */
+
+const safeString = (value) => {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return "";
+  }
+
+  return String(value).trim();
+};
+
+/* =====================================================
+   SAME SUPPLIER LOGIC AS FUEL PURCHASE HISTORY
+===================================================== */
+
+const getSupplierName = (purchase) => {
+  return safeString(
+    purchase?.supplierName ||
+      purchase?.supplier ||
+      purchase?.vendorName ||
+      "-"
+  );
+};
+
+/* =====================================================
+   COMPONENT
+===================================================== */
+
 const FuelPurchase = () => {
-  const navigate =
-    useNavigate();
+  const navigate = useNavigate();
 
   /* =====================================================
      FORM
@@ -67,12 +97,15 @@ const FuelPurchase = () => {
   ] = useState(false);
 
   /* =====================================================
-     SUPPLIERS
+     PREVIOUS PURCHASES
+
+     Uses the SAME getFuelPurchases()
+     logic as FuelPurchaseHistory.
   ===================================================== */
 
   const [
-    previousSuppliers,
-    setPreviousSuppliers,
+    purchases,
+    setPurchases,
   ] = useState([]);
 
   const [
@@ -81,84 +114,103 @@ const FuelPurchase = () => {
   ] = useState(false);
 
   /* =====================================================
-     LOAD PREVIOUS SUPPLIERS
+     LOAD PURCHASE HISTORY
+
+     SAME LOGIC AS FUEL PURCHASE HISTORY
   ===================================================== */
 
-  const loadPreviousSuppliers =
-    async () => {
-      try {
-        const response =
-          await api.get(
-            "/fuel/purchases"
-          );
+  const loadPurchases = async () => {
+    try {
+      const data =
+        await getFuelPurchases();
 
-        const data =
-          response.data;
+      const purchaseList =
+        Array.isArray(
+          data?.purchases
+        )
+          ? data.purchases
+          : [];
 
-        const purchases =
-          Array.isArray(data)
-            ? data
-            : data?.purchases ||
-              data?.data ||
-              data?.history ||
-              [];
+      setPurchases(
+        purchaseList
+      );
+    } catch (error) {
+      console.error(
+        "LOAD PURCHASE HISTORY ERROR:",
+        error
+      );
 
-        const suppliers =
-          new Map();
+      setPurchases([]);
+    }
+  };
 
-        purchases.forEach(
-          (purchase) => {
-            const supplier =
-              String(
-                purchase?.supplierName ||
-                  purchase?.supplier ||
-                  ""
-              ).trim();
-
-            if (!supplier) {
-              return;
-            }
-
-            const key =
-              supplier
-                .toLowerCase();
-
-            if (
-              !suppliers.has(
-                key
-              )
-            ) {
-              suppliers.set(
-                key,
-                supplier
-              );
-            }
-          }
-        );
-
-        setPreviousSuppliers(
-          Array.from(
-            suppliers.values()
-          )
-        );
-      } catch (error) {
-        console.error(
-          "LOAD SUPPLIER HISTORY ERROR:",
-          error
-        );
-
-        setPreviousSuppliers(
-          []
-        );
-      }
-    };
+  /* =====================================================
+     INITIAL LOAD
+  ===================================================== */
 
   useEffect(() => {
-    loadPreviousSuppliers();
+    loadPurchases();
   }, []);
 
   /* =====================================================
+     SUPPLIER LIST
+
+     Derived directly from the SAME purchase
+     history used by FuelPurchaseHistory.
+
+     Duplicate suppliers are removed case-insensitively
+     while preserving the original supplier name.
+  ===================================================== */
+
+  const previousSuppliers =
+    useMemo(() => {
+      const suppliers =
+        new Map();
+
+      purchases.forEach(
+        (purchase) => {
+          const supplier =
+            getSupplierName(
+              purchase
+            );
+
+          if (
+            !supplier ||
+            supplier === "-"
+          ) {
+            return;
+          }
+
+          const key =
+            supplier
+              .trim()
+              .toLowerCase();
+
+          if (
+            !suppliers.has(
+              key
+            )
+          ) {
+            suppliers.set(
+              key,
+              supplier.trim()
+            );
+          }
+        }
+      );
+
+      return Array.from(
+        suppliers.values()
+      );
+    }, [
+      purchases,
+    ]);
+
+  /* =====================================================
      SUPPLIER SUGGESTIONS
+
+     Same supplier-name matching style used in
+     FuelPurchaseHistory.
   ===================================================== */
 
   const supplierSuggestions =
@@ -180,9 +232,14 @@ const FuelPurchase = () => {
           (supplier) =>
             supplier
               .toLowerCase()
-              .includes(value)
+              .includes(
+                value
+              )
         )
-        .slice(0, 8);
+        .slice(
+          0,
+          8
+        );
     }, [
       form.supplierName,
       previousSuppliers,
@@ -197,7 +254,9 @@ const FuelPurchase = () => {
     purchasePrice
   ) => {
     const qty =
-      Number(quantity);
+      Number(
+        quantity
+      );
 
     const rate =
       Number(
@@ -205,8 +264,12 @@ const FuelPurchase = () => {
       );
 
     if (
-      !Number.isFinite(qty) ||
-      !Number.isFinite(rate) ||
+      !Number.isFinite(
+        qty
+      ) ||
+      !Number.isFinite(
+        rate
+      ) ||
       qty <= 0 ||
       rate <= 0
     ) {
@@ -223,46 +286,46 @@ const FuelPurchase = () => {
      INPUT CHANGE
   ===================================================== */
 
-  const handleChange =
-    (event) => {
-      const {
-        name,
-        value,
-      } = event.target;
+  const handleChange = (
+    event
+  ) => {
+    const {
+      name,
+      value,
+    } = event.target;
 
-      setForm(
-        (previous) => {
-          const updated = {
-            ...previous,
+    setForm(
+      (previous) => {
+        const updated = {
+          ...previous,
+          [name]:
+            value,
+        };
 
-            [name]:
-              value,
-          };
+        if (
+          name ===
+            "quantity" ||
+          name ===
+            "purchasePrice"
+        ) {
+          updated.totalAmount =
+            calculateTotal(
+              name ===
+                "quantity"
+                ? value
+                : previous.quantity,
 
-          if (
-            name ===
-              "quantity" ||
-            name ===
-              "purchasePrice"
-          ) {
-            updated.totalAmount =
-              calculateTotal(
-                name ===
-                  "quantity"
-                  ? value
-                  : previous.quantity,
-
-                name ===
-                  "purchasePrice"
-                  ? value
-                  : previous.purchasePrice
-              );
-          }
-
-          return updated;
+              name ===
+                "purchasePrice"
+                ? value
+                : previous.purchasePrice
+            );
         }
-      );
-    };
+
+        return updated;
+      }
+    );
+  };
 
   /* =====================================================
      SUBMIT
@@ -271,6 +334,9 @@ const FuelPurchase = () => {
   const handleSubmit =
     async (event) => {
       event.preventDefault();
+
+      const supplierName =
+        form.supplierName.trim();
 
       const quantity =
         Number(
@@ -282,9 +348,11 @@ const FuelPurchase = () => {
           form.purchasePrice
         );
 
-      if (
-        !form.supplierName.trim()
-      ) {
+      /* -----------------------------------------------
+         VALIDATION
+      ----------------------------------------------- */
+
+      if (!supplierName) {
         toast.error(
           "Supplier name is required"
         );
@@ -342,24 +410,29 @@ const FuelPurchase = () => {
         );
 
       try {
-        setSaving(true);
+        setSaving(
+          true
+        );
+
+        /* ---------------------------------------------
+           ADD PURCHASE
+        --------------------------------------------- */
 
         await addFuelPurchase({
           fuelType:
             form.fuelType,
 
           supplierName:
-            form.supplierName.trim(),
+            supplierName,
 
           quantity,
 
           purchasePrice,
 
           /*
-            Compatibility with old
-            controller versions.
-          */
-
+           * Compatibility with existing backend
+           * controller versions.
+           */
           pricePerLitre:
             purchasePrice,
 
@@ -379,35 +452,22 @@ const FuelPurchase = () => {
           "Fuel purchase added successfully"
         );
 
-        /*
-          Keep newly entered supplier
-          available for later searches.
-        */
+        /* ---------------------------------------------
+           IMPORTANT
 
-        setPreviousSuppliers(
-          (previous) => {
-            const supplier =
-              form.supplierName.trim();
+           Reload using the SAME purchase-history
+           service after saving.
 
-            const exists =
-              previous.some(
-                (item) =>
-                  item
-                    .toLowerCase() ===
-                  supplier
-                    .toLowerCase()
-              );
+           This keeps FuelPurchase and
+           FuelPurchaseHistory using one source
+           of truth.
+        --------------------------------------------- */
 
-            if (exists) {
-              return previous;
-            }
+        await loadPurchases();
 
-            return [
-              ...previous,
-              supplier,
-            ];
-          }
-        );
+        /* ---------------------------------------------
+           RESET FORM
+        --------------------------------------------- */
 
         setForm({
           fuelType:
@@ -440,26 +500,36 @@ const FuelPurchase = () => {
         setShowSupplierSuggestions(
           false
         );
-      } catch (error) {
+      } catch (
+        error
+      ) {
         console.error(
           "FUEL PURCHASE ERROR:",
           error
         );
 
         toast.error(
-          error.response?.data
+          error?.response?.data
             ?.message ||
             "Unable to add fuel purchase"
         );
       } finally {
-        setSaving(false);
+        setSaving(
+          false
+        );
       }
     };
+
+  /* =====================================================
+     RENDER
+  ===================================================== */
 
   return (
     <div className="page-container">
 
-      {/* HEADER */}
+      {/* =================================================
+          HEADER
+      ================================================= */}
 
       <div className="page-header">
 
@@ -490,7 +560,9 @@ const FuelPurchase = () => {
 
       </div>
 
-      {/* FORM */}
+      {/* =================================================
+          FORM
+      ================================================= */}
 
       <div
         className="content-panel"
@@ -506,7 +578,9 @@ const FuelPurchase = () => {
           }
         >
 
-          {/* FUEL TYPE + DATE */}
+          {/* =================================================
+              FUEL TYPE + DATE
+          ================================================= */}
 
           <div className="form-row">
 
@@ -560,7 +634,10 @@ const FuelPurchase = () => {
           </div>
 
           {/* =================================================
-              PROFESSIONAL SUPPLIER SEARCH
+              SUPPLIER SEARCH
+
+              Uses the exact same supplier data source
+              as FuelPurchaseHistory.
           ================================================= */}
 
           <div className="form-group">
@@ -671,7 +748,9 @@ const FuelPurchase = () => {
 
           </div>
 
-          {/* QUANTITY + PRICE */}
+          {/* =================================================
+              QUANTITY + PURCHASE PRICE
+          ================================================= */}
 
           <div className="form-row">
 
@@ -721,7 +800,9 @@ const FuelPurchase = () => {
 
           </div>
 
-          {/* TOTAL + INVOICE */}
+          {/* =================================================
+              TOTAL + INVOICE
+          ================================================= */}
 
           <div className="form-row">
 
@@ -763,7 +844,9 @@ const FuelPurchase = () => {
 
           </div>
 
-          {/* TOTAL PREVIEW */}
+          {/* =================================================
+              TOTAL PREVIEW
+          ================================================= */}
 
           {Number(
             form.quantity ||
@@ -819,7 +902,9 @@ const FuelPurchase = () => {
 
             )}
 
-          {/* NOTE */}
+          {/* =================================================
+              NOTE
+          ================================================= */}
 
           <div className="form-group">
 
@@ -841,7 +926,9 @@ const FuelPurchase = () => {
 
           </div>
 
-          {/* SUBMIT */}
+          {/* =================================================
+              SUBMIT
+          ================================================= */}
 
           <button
             type="submit"

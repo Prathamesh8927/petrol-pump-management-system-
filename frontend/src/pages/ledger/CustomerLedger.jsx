@@ -1,6 +1,8 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -26,7 +28,7 @@ import {
   getLedgerCustomers,
   getCustomerLedgerHistory,
   addCustomerPurchase,
-  addLedgerPayment,
+  addCustomerPayment,
   updateLedgerCustomer,
 } from "../../services/ledgerService";
 
@@ -35,10 +37,78 @@ import {
 } from "../../utils/ledgerExport";
 
 /* =========================================================
+   CONSTANTS
+========================================================= */
+
+const EMPTY_SUMMARY = {
+  totalPurchased: 0,
+  totalPaid: 0,
+  totalPending: 0,
+  purchaseCount: 0,
+};
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+const getToday = () => {
+  const date = new Date();
+
+  return date.toLocaleDateString(
+    "en-CA"
+  );
+};
+
+const isValidDate = (value) => {
+  if (
+    typeof value !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(value)
+  ) {
+    return false;
+  }
+
+  const date = new Date(
+    `${value}T00:00:00`
+  );
+
+  return (
+    !Number.isNaN(date.getTime()) &&
+    date.toISOString().slice(0, 10) === value
+  );
+};
+
+const safeNumber = (value) => {
+  const number = Number(value);
+
+  return Number.isFinite(number)
+    ? number
+    : 0;
+};
+
+const money = (value) =>
+  safeNumber(value).toLocaleString(
+    "en-IN",
+    {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }
+  );
+
+const getErrorMessage = (
+  error,
+  fallback
+) =>
+  error?.response?.data?.message ||
+  error?.message ||
+  fallback;
+
+/* =========================================================
    LOGO RESOLVER
 ========================================================= */
 
-const resolveLogoUrl = (settings = {}) => {
+const resolveLogoUrl = (
+  settings = {}
+) => {
   const candidates = [
     settings?.logoUrl,
     settings?.logoURL,
@@ -63,6 +133,10 @@ const resolveLogoUrl = (settings = {}) => {
     : null;
 };
 
+/* =========================================================
+   COMPONENT
+========================================================= */
+
 const CustomerLedger = () => {
   const navigate = useNavigate();
 
@@ -73,11 +147,17 @@ const CustomerLedger = () => {
     searchParams.get("id");
 
   const editMode =
-    searchParams.get("edit") ===
-    "true";
+    searchParams.get("edit") === "true";
 
   const isExistingCustomer =
     Boolean(customerId);
+
+  const mountedRef = useRef(true);
+
+  const loadingLedgerRef = useRef(false);
+  const loadingCustomersRef =
+    useRef(false);
+  const submittingRef = useRef(false);
 
   /* =====================================================
      PREVIOUS CUSTOMERS
@@ -130,12 +210,9 @@ const CustomerLedger = () => {
   const [
     summary,
     setSummary,
-  ] = useState({
-    totalPurchased: 0,
-    totalPaid: 0,
-    totalPending: 0,
-    purchaseCount: 0,
-  });
+  ] = useState(
+    EMPTY_SUMMARY
+  );
 
   /* =====================================================
      PUMP SETTINGS
@@ -157,12 +234,7 @@ const CustomerLedger = () => {
     fuelType: "petrol",
     totalAmount: "",
     paidAmount: "0",
-
-    entryDate:
-      new Date().toLocaleDateString(
-        "en-CA"
-      ),
-
+    entryDate: getToday(),
     note: "",
   });
 
@@ -175,12 +247,7 @@ const CustomerLedger = () => {
     setPaymentForm,
   ] = useState({
     amount: "",
-
-    entryDate:
-      new Date().toLocaleDateString(
-        "en-CA"
-      ),
-
+    entryDate: getToday(),
     note: "",
   });
 
@@ -205,27 +272,17 @@ const CustomerLedger = () => {
     isExistingCustomer
   );
 
-  /* =====================================================
-     MONEY
-  ===================================================== */
-
-  const money = (value) =>
-    Number(
-      value || 0
-    ).toLocaleString(
-      "en-IN",
-      {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      }
-    );
+  const [
+    saving,
+    setSaving,
+  ] = useState(false);
 
   /* =====================================================
      LOAD PUMP SETTINGS
   ===================================================== */
 
   const loadPumpSettings =
-    async () => {
+    useCallback(async () => {
       try {
         const response =
           await api.get(
@@ -239,9 +296,7 @@ const CustomerLedger = () => {
           {};
 
         const logoUrl =
-          resolveLogoUrl(
-            settings
-          );
+          resolveLogoUrl(settings);
 
         const normalizedSettings = {
           ...settings,
@@ -294,10 +349,6 @@ const CustomerLedger = () => {
             settings?.email ||
             "",
 
-          /*
-           * Preserve every original setting and
-           * normalize the logo into predictable fields.
-           */
           logoUrl:
             logoUrl || null,
 
@@ -307,32 +358,40 @@ const CustomerLedger = () => {
             null,
         };
 
-        setPumpSettings(
-          normalizedSettings
-        );
+        if (mountedRef.current) {
+          setPumpSettings(
+            normalizedSettings
+          );
+        }
       } catch (error) {
-        console.error(
-          "LOAD PUMP SETTINGS ERROR:",
-          error
-        );
-
-        setPumpSettings(null);
+        if (mountedRef.current) {
+          setPumpSettings(null);
+        }
       }
-    };
-
-  useEffect(() => {
-    loadPumpSettings();
-  }, []);
+    }, []);
 
   /* =====================================================
      LOAD PREVIOUS CUSTOMERS
   ===================================================== */
 
   const loadPreviousCustomers =
-    async () => {
+    useCallback(async () => {
+      if (
+        loadingCustomersRef.current
+      ) {
+        return;
+      }
+
+      loadingCustomersRef.current =
+        true;
+
       try {
         const data =
           await getLedgerCustomers();
+
+        if (!mountedRef.current) {
+          return;
+        }
 
         setPreviousCustomers(
           Array.isArray(
@@ -342,16 +401,211 @@ const CustomerLedger = () => {
             : []
         );
       } catch (error) {
-        console.error(
-          "CUSTOMER SUGGESTION ERROR:",
-          error
-        );
+        if (mountedRef.current) {
+          setPreviousCustomers([]);
+        }
+      } finally {
+        loadingCustomersRef.current =
+          false;
       }
-    };
+    }, []);
+
+  /* =====================================================
+     LOAD CUSTOMER LEDGER
+  ===================================================== */
+
+  const loadLedger =
+    useCallback(async () => {
+      if (!customerId) {
+        return;
+      }
+
+      if (loadingLedgerRef.current) {
+        return;
+      }
+
+      loadingLedgerRef.current =
+        true;
+
+      if (mountedRef.current) {
+        setLoading(true);
+      }
+
+      try {
+        const data =
+          await getCustomerLedgerHistory(
+            customerId
+          );
+
+        if (!mountedRef.current) {
+          return;
+        }
+
+        const loadedCustomer =
+          data?.customer || null;
+
+        const loadedEntries =
+          Array.isArray(
+            data?.entries
+          )
+            ? data.entries
+            : [];
+
+        const loadedSummary =
+          data?.summary || {};
+
+        setCustomer(
+          loadedCustomer
+        );
+
+        setEntries(
+          loadedEntries
+        );
+
+        setSummary({
+          totalPurchased:
+            safeNumber(
+              loadedSummary.totalPurchased
+            ),
+
+          totalPaid:
+            safeNumber(
+              loadedSummary.totalPaid
+            ),
+
+          totalPending:
+            safeNumber(
+              loadedSummary.totalPending
+            ),
+
+          purchaseCount:
+            safeNumber(
+              loadedSummary.purchaseCount
+            ),
+        });
+
+        setCustomerForm({
+          name:
+            loadedCustomer?.name ||
+            "",
+
+          phone:
+            loadedCustomer?.phone ||
+            "",
+
+          vehicleNumber:
+            loadedCustomer?.vehicleNumber ||
+            "",
+
+          address:
+            loadedCustomer?.address ||
+            "",
+
+          note:
+            loadedCustomer?.note ||
+            "",
+        });
+      } catch (error) {
+        if (mountedRef.current) {
+          toast.error(
+            getErrorMessage(
+              error,
+              "Unable to load customer ledger"
+            )
+          );
+        }
+      } finally {
+        loadingLedgerRef.current =
+          false;
+
+        if (mountedRef.current) {
+          setLoading(false);
+        }
+      }
+    }, [customerId]);
+
+  /* =====================================================
+     INITIAL LOAD
+  ===================================================== */
 
   useEffect(() => {
+    mountedRef.current = true;
+
+    loadPumpSettings();
     loadPreviousCustomers();
-  }, []);
+
+    if (customerId) {
+      loadLedger();
+    }
+
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [
+    customerId,
+    loadLedger,
+    loadPreviousCustomers,
+    loadPumpSettings,
+  ]);
+
+  /* =====================================================
+     REFRESH WHEN PAGE BECOMES ACTIVE
+  ===================================================== */
+
+  useEffect(() => {
+    const handleVisibility =
+      () => {
+        if (
+          document.visibilityState ===
+          "visible"
+        ) {
+          loadPreviousCustomers();
+
+          if (customerId) {
+            loadLedger();
+          }
+
+          loadPumpSettings();
+        }
+      };
+
+    const handleFocus = () => {
+      loadPreviousCustomers();
+
+      if (customerId) {
+        loadLedger();
+      }
+
+      loadPumpSettings();
+    };
+
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibility
+    );
+
+    window.addEventListener(
+      "focus",
+      handleFocus
+    );
+
+    return () => {
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibility
+      );
+
+      window.removeEventListener(
+        "focus",
+        handleFocus
+      );
+    };
+  }, [
+    customerId,
+    loadLedger,
+    loadPreviousCustomers,
+    loadPumpSettings,
+  ]);
 
   /* =====================================================
      CUSTOMER SUGGESTIONS
@@ -388,113 +642,11 @@ const CustomerLedger = () => {
     ]);
 
   /* =====================================================
-     LOAD CUSTOMER LEDGER
-  ===================================================== */
-
-  const loadLedger =
-    async () => {
-      if (!customerId) {
-        return;
-      }
-
-      try {
-        setLoading(true);
-
-        const data =
-          await getCustomerLedgerHistory(
-            customerId
-          );
-
-        setCustomer(
-          data?.customer || null
-        );
-
-        setEntries(
-          Array.isArray(
-            data?.entries
-          )
-            ? data.entries
-            : []
-        );
-
-        setSummary({
-          totalPurchased:
-            Number(
-              data?.summary
-                ?.totalPurchased ||
-                0
-            ),
-
-          totalPaid:
-            Number(
-              data?.summary
-                ?.totalPaid ||
-                0
-            ),
-
-          totalPending:
-            Number(
-              data?.summary
-                ?.totalPending ||
-                0
-            ),
-
-          purchaseCount:
-            Number(
-              data?.summary
-                ?.purchaseCount ||
-                0
-            ),
-        });
-
-        setCustomerForm({
-          name:
-            data?.customer
-              ?.name || "",
-
-          phone:
-            data?.customer
-              ?.phone || "",
-
-          vehicleNumber:
-            data?.customer
-              ?.vehicleNumber ||
-            "",
-
-          address:
-            data?.customer
-              ?.address || "",
-
-          note:
-            data?.customer
-              ?.note || "",
-        });
-      } catch (error) {
-        console.error(
-          "LOAD CUSTOMER LEDGER ERROR:",
-          error
-        );
-
-        toast.error(
-          error?.response?.data
-            ?.message ||
-            "Unable to load customer ledger"
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
-
-  useEffect(() => {
-    loadLedger();
-  }, [customerId]);
-
-  /* =====================================================
      EXPORT LEDGER PDF
   ===================================================== */
 
   const handleExportPDF =
-    async () => {
+    useCallback(async () => {
       if (!customer) {
         toast.error(
           "Customer ledger is not loaded"
@@ -511,26 +663,18 @@ const CustomerLedger = () => {
         return;
       }
 
+      if (saving) {
+        return;
+      }
+
       try {
+        setSaving(true);
+
         const logoUrl =
           resolveLogoUrl(
             pumpSettings
           );
 
-        /*
-         * Normalize pump profile before
-         * sending it to ledgerExport.js.
-         *
-         * This ensures customer PDF receives:
-         * - pump name
-         * - owner
-         * - company
-         * - GSTIN
-         * - address
-         * - city/state/pincode
-         * - phone/email
-         * - profile logo
-         */
         const pump = {
           ...pumpSettings,
 
@@ -635,31 +779,36 @@ const CustomerLedger = () => {
             customer?.billFrom ||
             "",
 
-          /*
-           * Explicit logo argument.
-           * ledgerExport.js uses this first.
-           */
           logoUrl:
             logoUrl || null,
         });
 
-        toast.success(
-          "Ledger PDF exported successfully"
-        );
+        if (mountedRef.current) {
+          toast.success(
+            "Ledger PDF exported successfully"
+          );
+        }
       } catch (error) {
-        console.error(
-          "EXPORT LEDGER PDF ERROR:",
-          error
-        );
-
-        toast.error(
-          error?.response?.data
-            ?.message ||
-            error?.message ||
-            "Unable to export ledger PDF"
-        );
+        if (mountedRef.current) {
+          toast.error(
+            getErrorMessage(
+              error,
+              "Unable to export ledger PDF"
+            )
+          );
+        }
+      } finally {
+        if (mountedRef.current) {
+          setSaving(false);
+        }
       }
-    };
+    }, [
+      customer,
+      entries,
+      pumpSettings,
+      saving,
+      summary,
+    ]);
 
   /* =====================================================
      CREATE CUSTOMER
@@ -669,9 +818,9 @@ const CustomerLedger = () => {
     async (event) => {
       event.preventDefault();
 
-      /* -----------------------------------------------
-         CLEAN VALUES
-      ------------------------------------------------ */
+      if (submittingRef.current) {
+        return;
+      }
 
       const name =
         customerForm.name.trim();
@@ -680,17 +829,15 @@ const CustomerLedger = () => {
         customerForm.phone.trim();
 
       const vehicleNumber =
-        customerForm.vehicleNumber.trim();
+        customerForm.vehicleNumber
+          .trim()
+          .toUpperCase();
 
       const address =
         customerForm.address.trim();
 
       const note =
         customerForm.note.trim();
-
-      /* -----------------------------------------------
-         NAME VALIDATION
-      ------------------------------------------------ */
 
       if (!name) {
         toast.error(
@@ -700,15 +847,17 @@ const CustomerLedger = () => {
         return;
       }
 
-      /* -----------------------------------------------
-         PHONE VALIDATION
-      ------------------------------------------------ */
+      if (name.length > 100) {
+        toast.error(
+          "Customer name must be 100 characters or less"
+        );
+
+        return;
+      }
 
       if (
         phone &&
-        !/^[0-9]{10}$/.test(
-          phone
-        )
+        !/^[0-9]{10}$/.test(phone)
       ) {
         toast.error(
           "Enter a valid 10-digit mobile number"
@@ -717,23 +866,41 @@ const CustomerLedger = () => {
         return;
       }
 
-      /* -----------------------------------------------
-         SELECTED EXISTING CUSTOMER
-      ------------------------------------------------ */
-
-      if (
-        selectedExistingCustomer?._id
-      ) {
-        navigate(
-          `/ledger/customer?id=${selectedExistingCustomer._id}`
+      if (vehicleNumber.length > 30) {
+        toast.error(
+          "Vehicle number must be 30 characters or less"
         );
 
         return;
       }
 
-      /* -----------------------------------------------
-         DUPLICATE CHECK
-      ------------------------------------------------ */
+      if (address.length > 250) {
+        toast.error(
+          "Address must be 250 characters or less"
+        );
+
+        return;
+      }
+
+      if (note.length > 500) {
+        toast.error(
+          "Note must be 500 characters or less"
+        );
+
+        return;
+      }
+
+      if (
+        selectedExistingCustomer?._id
+      ) {
+        navigate(
+          `/ledger/customer?id=${encodeURIComponent(
+            selectedExistingCustomer._id
+          )}`
+        );
+
+        return;
+      }
 
       const normalizedName =
         name.toLowerCase();
@@ -759,9 +926,7 @@ const CustomerLedger = () => {
 
             const samePhone =
               Boolean(phone) &&
-              Boolean(
-                existingPhone
-              ) &&
+              Boolean(existingPhone) &&
               phone ===
                 existingPhone;
 
@@ -780,18 +945,20 @@ const CustomerLedger = () => {
 
         if (openExisting) {
           navigate(
-            `/ledger/customer?id=${duplicate._id}`
+            `/ledger/customer?id=${encodeURIComponent(
+              duplicate._id
+            )}`
           );
         }
 
         return;
       }
 
-      /* -----------------------------------------------
-         CREATE CUSTOMER
-      ------------------------------------------------ */
+      submittingRef.current = true;
 
       try {
+        setSaving(true);
+
         const payload = {
           name,
           phone,
@@ -820,10 +987,6 @@ const CustomerLedger = () => {
           data?.customerId ||
           data?.data?.customerId;
 
-        /* ---------------------------------------------
-           RESPONSE WITHOUT ID
-        --------------------------------------------- */
-
         if (!createdCustomerId) {
           await loadPreviousCustomers();
 
@@ -832,11 +995,8 @@ const CustomerLedger = () => {
           try {
             refreshedData =
               await getLedgerCustomers();
-          } catch (refreshError) {
-            console.error(
-              "REFRESH CUSTOMERS AFTER CREATE ERROR:",
-              refreshError
-            );
+          } catch {
+            refreshedData = null;
           }
 
           const refreshedCustomers =
@@ -880,7 +1040,9 @@ const CustomerLedger = () => {
             );
 
             navigate(
-              `/ledger/customer?id=${createdFromList._id}`,
+              `/ledger/customer?id=${encodeURIComponent(
+                createdFromList._id
+              )}`,
               {
                 replace: true,
               }
@@ -910,17 +1072,14 @@ const CustomerLedger = () => {
         await loadPreviousCustomers();
 
         navigate(
-          `/ledger/customer?id=${createdCustomerId}`,
+          `/ledger/customer?id=${encodeURIComponent(
+            createdCustomerId
+          )}`,
           {
             replace: true,
           }
         );
       } catch (error) {
-        console.error(
-          "CREATE CUSTOMER ERROR:",
-          error
-        );
-
         const existing =
           error?.response?.data
             ?.customer;
@@ -935,18 +1094,26 @@ const CustomerLedger = () => {
           );
 
           navigate(
-            `/ledger/customer?id=${existing._id}`
+            `/ledger/customer?id=${encodeURIComponent(
+              existing._id
+            )}`
           );
 
           return;
         }
 
         toast.error(
-          error?.response?.data
-            ?.message ||
-            error?.message ||
+          getErrorMessage(
+            error,
             "Unable to add customer"
+          )
         );
+      } finally {
+        submittingRef.current = false;
+
+        if (mountedRef.current) {
+          setSaving(false);
+        }
       }
     };
 
@@ -958,10 +1125,95 @@ const CustomerLedger = () => {
     async (event) => {
       event.preventDefault();
 
+      if (
+        submittingRef.current ||
+        !customerId
+      ) {
+        return;
+      }
+
+      const name =
+        customerForm.name.trim();
+
+      const phone =
+        customerForm.phone.trim();
+
+      const vehicleNumber =
+        customerForm.vehicleNumber
+          .trim()
+          .toUpperCase();
+
+      const address =
+        customerForm.address.trim();
+
+      const note =
+        customerForm.note.trim();
+
+      if (!name) {
+        toast.error(
+          "Customer name is required"
+        );
+
+        return;
+      }
+
+      if (name.length > 100) {
+        toast.error(
+          "Customer name must be 100 characters or less"
+        );
+
+        return;
+      }
+
+      if (
+        phone &&
+        !/^[0-9]{10}$/.test(phone)
+      ) {
+        toast.error(
+          "Enter a valid 10-digit mobile number"
+        );
+
+        return;
+      }
+
+      if (vehicleNumber.length > 30) {
+        toast.error(
+          "Vehicle number must be 30 characters or less"
+        );
+
+        return;
+      }
+
+      if (address.length > 250) {
+        toast.error(
+          "Address must be 250 characters or less"
+        );
+
+        return;
+      }
+
+      if (note.length > 500) {
+        toast.error(
+          "Note must be 500 characters or less"
+        );
+
+        return;
+      }
+
+      submittingRef.current = true;
+
       try {
+        setSaving(true);
+
         await updateLedgerCustomer(
           customerId,
-          customerForm
+          {
+            name,
+            phone,
+            vehicleNumber,
+            address,
+            note,
+          }
         );
 
         toast.success(
@@ -971,7 +1223,9 @@ const CustomerLedger = () => {
         await loadPreviousCustomers();
 
         navigate(
-          `/ledger/customer?id=${customerId}`,
+          `/ledger/customer?id=${encodeURIComponent(
+            customerId
+          )}`,
           {
             replace: true,
           }
@@ -980,10 +1234,17 @@ const CustomerLedger = () => {
         await loadLedger();
       } catch (error) {
         toast.error(
-          error?.response?.data
-            ?.message ||
+          getErrorMessage(
+            error,
             "Unable to update customer"
+          )
         );
+      } finally {
+        submittingRef.current = false;
+
+        if (mountedRef.current) {
+          setSaving(false);
+        }
       }
     };
 
@@ -995,6 +1256,13 @@ const CustomerLedger = () => {
     async (event) => {
       event.preventDefault();
 
+      if (
+        submittingRef.current ||
+        !customerId
+      ) {
+        return;
+      }
+
       const total =
         Number(
           purchaseForm.totalAmount
@@ -1002,8 +1270,7 @@ const CustomerLedger = () => {
 
       const paid =
         Number(
-          purchaseForm.paidAmount ||
-            0
+          purchaseForm.paidAmount || 0
         );
 
       if (
@@ -1029,10 +1296,61 @@ const CustomerLedger = () => {
         return;
       }
 
+      if (
+        !isValidDate(
+          purchaseForm.entryDate
+        )
+      ) {
+        toast.error(
+          "Select a valid purchase date"
+        );
+
+        return;
+      }
+
+      if (
+        !["petrol", "diesel"].includes(
+          purchaseForm.fuelType
+        )
+      ) {
+        toast.error(
+          "Select a valid fuel type"
+        );
+
+        return;
+      }
+
+      if (
+        purchaseForm.note.length > 500
+      ) {
+        toast.error(
+          "Note must be 500 characters or less"
+        );
+
+        return;
+      }
+
+      submittingRef.current = true;
+
       try {
+        setSaving(true);
+
         await addCustomerPurchase(
           customerId,
-          purchaseForm
+          {
+            fuelType:
+              purchaseForm.fuelType,
+
+            totalAmount: total,
+
+            paidAmount: paid,
+
+            entryDate:
+              purchaseForm.entryDate,
+
+            note:
+              purchaseForm.note.trim(),
+          }
         );
 
         toast.success(
@@ -1043,26 +1361,27 @@ const CustomerLedger = () => {
           fuelType: "petrol",
           totalAmount: "",
           paidAmount: "0",
-
-          entryDate:
-            new Date().toLocaleDateString(
-              "en-CA"
-            ),
-
+          entryDate: getToday(),
           note: "",
         });
 
         setShowPurchase(false);
 
         await loadLedger();
-
         await loadPreviousCustomers();
       } catch (error) {
         toast.error(
-          error?.response?.data
-            ?.message ||
+          getErrorMessage(
+            error,
             "Unable to add purchase"
+          )
         );
+      } finally {
+        submittingRef.current = false;
+
+        if (mountedRef.current) {
+          setSaving(false);
+        }
       }
     };
 
@@ -1073,6 +1392,13 @@ const CustomerLedger = () => {
   const handleAddPayment =
     async (event) => {
       event.preventDefault();
+
+      if (
+        submittingRef.current ||
+        !customerId
+      ) {
+        return;
+      }
 
       const amount =
         Number(
@@ -1091,10 +1417,21 @@ const CustomerLedger = () => {
       }
 
       if (
+        !isValidDate(
+          paymentForm.entryDate
+        )
+      ) {
+        toast.error(
+          "Select a valid payment date"
+        );
+
+        return;
+      }
+
+      if (
         amount >
-        Number(
-          summary.totalPending ||
-            0
+        safeNumber(
+          summary.totalPending
         )
       ) {
         toast.error(
@@ -1104,18 +1441,39 @@ const CustomerLedger = () => {
         return;
       }
 
+      if (
+        paymentForm.note.length > 500
+      ) {
+        toast.error(
+          "Note must be 500 characters or less"
+        );
+
+        return;
+      }
+
+      submittingRef.current = true;
+
       try {
-        await addLedgerPayment({
+        setSaving(true);
+
+        /*
+         * Backend ledger payment uses paymentAmount.
+         *
+         * addCustomerPayment(customerId, data)
+         * automatically injects customerId.
+         */
+        await addCustomerPayment(
           customerId,
+          {
+            paymentAmount: amount,
 
-          amount,
+            entryDate:
+              paymentForm.entryDate,
 
-          entryDate:
-            paymentForm.entryDate,
-
-          note:
-            paymentForm.note,
-        });
+            note:
+              paymentForm.note.trim(),
+          }
+        );
 
         toast.success(
           "Payment added successfully"
@@ -1123,26 +1481,27 @@ const CustomerLedger = () => {
 
         setPaymentForm({
           amount: "",
-
-          entryDate:
-            new Date().toLocaleDateString(
-              "en-CA"
-            ),
-
+          entryDate: getToday(),
           note: "",
         });
 
         setShowPayment(false);
 
         await loadLedger();
-
         await loadPreviousCustomers();
       } catch (error) {
         toast.error(
-          error?.response?.data
-            ?.message ||
+          getErrorMessage(
+            error,
             "Unable to add payment"
+          )
         );
+      } finally {
+        submittingRef.current = false;
+
+        if (mountedRef.current) {
+          setSaving(false);
+        }
       }
     };
 
@@ -1153,8 +1512,6 @@ const CustomerLedger = () => {
   if (!isExistingCustomer) {
     return (
       <div className="page-container">
-
-        {/* PAGE HEADER */}
 
         <div className="page-header">
 
@@ -1176,14 +1533,13 @@ const CustomerLedger = () => {
             onClick={() =>
               navigate("/ledger")
             }
+            disabled={saving}
           >
             <ArrowLeft size={17} />
             Back
           </button>
 
         </div>
-
-        {/* CUSTOMER FORM */}
 
         <div
           style={{
@@ -1218,9 +1574,8 @@ const CustomerLedger = () => {
                   maxWidth: "none",
                   margin: 0,
                 }}
+                noValidate
               >
-
-                {/* CUSTOMER NAME */}
 
                 <div className="form-group">
 
@@ -1230,13 +1585,10 @@ const CustomerLedger = () => {
 
                   <ProfessionalSearch
                     type="customer"
-
                     value={
                       customerForm.name
                     }
-
                     placeholder="Enter customer name..."
-
                     onChange={(value) => {
                       setCustomerForm(
                         (previous) => ({
@@ -1255,23 +1607,19 @@ const CustomerLedger = () => {
                         )
                       );
                     }}
-
                     showSuggestions={
                       showNameSuggestions &&
                       Boolean(
                         customerForm.name.trim()
                       )
                     }
-
                     suggestions={
                       customerSuggestions
                     }
-
                     getTitle={(item) =>
                       item?.name ||
                       "Unnamed Customer"
                     }
-
                     getSubtitle={(item) =>
                       [
                         item?.phone,
@@ -1280,7 +1628,6 @@ const CustomerLedger = () => {
                         .filter(Boolean)
                         .join(" • ")
                     }
-
                     onFocus={() => {
                       if (
                         customerForm.name.trim()
@@ -1290,7 +1637,6 @@ const CustomerLedger = () => {
                         );
                       }
                     }}
-
                     onBlur={() => {
                       setTimeout(
                         () =>
@@ -1300,7 +1646,6 @@ const CustomerLedger = () => {
                         150
                       );
                     }}
-
                     onClear={() => {
                       setCustomerForm(
                         (previous) => ({
@@ -1317,28 +1662,23 @@ const CustomerLedger = () => {
                         false
                       );
                     }}
-
                     onSelect={(item) => {
                       setCustomerForm({
                         name:
-                          item?.name ||
-                          "",
+                          item?.name || "",
 
                         phone:
-                          item?.phone ||
-                          "",
+                          item?.phone || "",
 
                         vehicleNumber:
                           item?.vehicleNumber ||
                           "",
 
                         address:
-                          item?.address ||
-                          "",
+                          item?.address || "",
 
                         note:
-                          item?.note ||
-                          "",
+                          item?.note || "",
                       });
 
                       setSelectedExistingCustomer(
@@ -1353,10 +1693,7 @@ const CustomerLedger = () => {
 
                 </div>
 
-                {/* SELECTED EXISTING CUSTOMER */}
-
                 {selectedExistingCustomer && (
-
                   <div
                     style={{
                       marginBottom: "16px",
@@ -1365,26 +1702,22 @@ const CustomerLedger = () => {
                       border:
                         "1px solid #bbf7d0",
                       borderRadius: "9px",
-                      background: "#f0fdf4",
+                      background:
+                        "#f0fdf4",
                       color: "#166534",
                       fontSize: "13px",
                     }}
                   >
                     Existing customer selected:{" "}
-
                     <strong>
                       {
                         selectedExistingCustomer.name
                       }
                     </strong>
-
                     . Continue to open the
                     existing ledger.
                   </div>
-
                 )}
-
-                {/* PHONE + VEHICLE */}
 
                 <div className="form-row">
 
@@ -1396,6 +1729,8 @@ const CustomerLedger = () => {
 
                     <input
                       type="text"
+                      inputMode="numeric"
+                      maxLength={10}
                       value={
                         customerForm.phone
                       }
@@ -1404,7 +1739,10 @@ const CustomerLedger = () => {
                           (previous) => ({
                             ...previous,
                             phone:
-                              e.target.value,
+                              e.target.value.replace(
+                                /\D/g,
+                                ""
+                              ),
                           })
                         )
                       }
@@ -1420,6 +1758,7 @@ const CustomerLedger = () => {
 
                     <input
                       type="text"
+                      maxLength={30}
                       value={
                         customerForm.vehicleNumber
                       }
@@ -1428,7 +1767,7 @@ const CustomerLedger = () => {
                           (previous) => ({
                             ...previous,
                             vehicleNumber:
-                              e.target.value,
+                              e.target.value.toUpperCase(),
                           })
                         )
                       }
@@ -1438,8 +1777,6 @@ const CustomerLedger = () => {
 
                 </div>
 
-                {/* ADDRESS */}
-
                 <div className="form-group">
 
                   <label>
@@ -1448,6 +1785,7 @@ const CustomerLedger = () => {
 
                   <input
                     type="text"
+                    maxLength={250}
                     value={
                       customerForm.address
                     }
@@ -1464,8 +1802,6 @@ const CustomerLedger = () => {
 
                 </div>
 
-                {/* NOTE */}
-
                 <div className="form-group">
 
                   <label>
@@ -1474,6 +1810,7 @@ const CustomerLedger = () => {
 
                   <textarea
                     rows="3"
+                    maxLength={500}
                     value={
                       customerForm.note
                     }
@@ -1490,13 +1827,14 @@ const CustomerLedger = () => {
 
                 </div>
 
-                {/* SUBMIT */}
-
                 <button
                   type="submit"
                   className="primary-button"
+                  disabled={saving}
                 >
-                  {selectedExistingCustomer
+                  {saving
+                    ? "Saving..."
+                    : selectedExistingCustomer
                     ? "Open Existing Ledger"
                     : "Add Customer"}
                 </button>
@@ -1526,13 +1864,49 @@ const CustomerLedger = () => {
   }
 
   /* =====================================================
+     CUSTOMER NOT FOUND
+  ===================================================== */
+
+  if (!customer) {
+    return (
+      <div className="page-container">
+
+        <div className="page-header">
+
+          <div>
+            <h1>
+              Customer Not Found
+            </h1>
+
+            <p>
+              The requested ledger customer
+              could not be loaded.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() =>
+              navigate("/ledger")
+            }
+          >
+            <ArrowLeft size={16} />
+            Back
+          </button>
+
+        </div>
+
+      </div>
+    );
+  }
+
+  /* =====================================================
      EXISTING CUSTOMER
   ===================================================== */
 
   return (
     <div className="page-container">
-
-      {/* HEADER */}
 
       <div className="page-header">
 
@@ -1565,7 +1939,6 @@ const CustomerLedger = () => {
         </div>
 
         {!editMode && (
-
           <div
             style={{
               display: "flex",
@@ -1579,11 +1952,13 @@ const CustomerLedger = () => {
               className="primary-button"
               onClick={() => {
                 setShowPurchase(
-                  !showPurchase
+                  (previous) =>
+                    !previous
                 );
 
                 setShowPayment(false);
               }}
+              disabled={saving}
             >
               <Plus size={17} />
               Add Purchase
@@ -1593,12 +1968,15 @@ const CustomerLedger = () => {
               type="button"
               className="secondary-button"
               disabled={
-                summary.totalPending <=
-                0
+                saving ||
+                safeNumber(
+                  summary.totalPending
+                ) <= 0
               }
               onClick={() => {
                 setShowPayment(
-                  !showPayment
+                  (previous) =>
+                    !previous
                 );
 
                 setShowPurchase(false);
@@ -1611,16 +1989,20 @@ const CustomerLedger = () => {
             <button
               type="button"
               className="secondary-button"
-              disabled={!pumpSettings}
+              disabled={
+                saving ||
+                !pumpSettings
+              }
               onClick={
                 handleExportPDF
               }
             >
-              Export PDF
+              {saving
+                ? "Processing..."
+                : "Export PDF"}
             </button>
 
           </div>
-
         )}
 
       </div>
@@ -1630,7 +2012,6 @@ const CustomerLedger = () => {
       ================================================= */}
 
       {editMode && (
-
         <div className="content-panel">
 
           <div className="content-panel-body">
@@ -1643,6 +2024,7 @@ const CustomerLedger = () => {
               onSubmit={
                 handleUpdateCustomer
               }
+              noValidate
             >
 
               <div className="form-row">
@@ -1657,6 +2039,7 @@ const CustomerLedger = () => {
                     value={
                       customerForm.name
                     }
+                    maxLength={100}
                     onChange={(e) =>
                       setCustomerForm(
                         (previous) => ({
@@ -1677,6 +2060,8 @@ const CustomerLedger = () => {
                   </label>
 
                   <input
+                    inputMode="numeric"
+                    maxLength={10}
                     value={
                       customerForm.phone
                     }
@@ -1685,7 +2070,10 @@ const CustomerLedger = () => {
                         (previous) => ({
                           ...previous,
                           phone:
-                            e.target.value,
+                            e.target.value.replace(
+                              /\D/g,
+                              ""
+                            ),
                         })
                       )
                     }
@@ -1704,6 +2092,7 @@ const CustomerLedger = () => {
                   </label>
 
                   <input
+                    maxLength={30}
                     value={
                       customerForm.vehicleNumber
                     }
@@ -1712,7 +2101,7 @@ const CustomerLedger = () => {
                         (previous) => ({
                           ...previous,
                           vehicleNumber:
-                            e.target.value,
+                            e.target.value.toUpperCase(),
                         })
                       )
                     }
@@ -1727,6 +2116,7 @@ const CustomerLedger = () => {
                   </label>
 
                   <input
+                    maxLength={250}
                     value={
                       customerForm.address
                     }
@@ -1745,11 +2135,39 @@ const CustomerLedger = () => {
 
               </div>
 
+              <div className="form-group">
+
+                <label>
+                  Note
+                </label>
+
+                <textarea
+                  rows="3"
+                  maxLength={500}
+                  value={
+                    customerForm.note
+                  }
+                  onChange={(e) =>
+                    setCustomerForm(
+                      (previous) => ({
+                        ...previous,
+                        note:
+                          e.target.value,
+                      })
+                    )
+                  }
+                />
+
+              </div>
+
               <button
                 type="submit"
                 className="primary-button"
+                disabled={saving}
               >
-                Save Changes
+                {saving
+                  ? "Saving..."
+                  : "Save Changes"}
               </button>
 
             </form>
@@ -1757,7 +2175,6 @@ const CustomerLedger = () => {
           </div>
 
         </div>
-
       )}
 
       {!editMode && (
@@ -1835,7 +2252,6 @@ const CustomerLedger = () => {
           ================================================= */}
 
           {showPurchase && (
-
             <div className="content-panel">
 
               <div className="content-panel-body">
@@ -1851,7 +2267,6 @@ const CustomerLedger = () => {
                   }}
                 >
                   Customer:{" "}
-
                   <strong>
                     {customer?.name}
                   </strong>
@@ -1861,6 +2276,7 @@ const CustomerLedger = () => {
                   onSubmit={
                     handleAddPurchase
                   }
+                  noValidate
                 >
 
                   <div className="form-row">
@@ -1885,7 +2301,6 @@ const CustomerLedger = () => {
                           )
                         }
                       >
-
                         <option value="petrol">
                           Petrol
                         </option>
@@ -1893,7 +2308,6 @@ const CustomerLedger = () => {
                         <option value="diesel">
                           Diesel
                         </option>
-
                       </select>
 
                     </div>
@@ -1984,7 +2398,6 @@ const CustomerLedger = () => {
                     purchaseForm.totalAmount ||
                       0
                   ) > 0 && (
-
                     <div
                       style={{
                         marginBottom:
@@ -2000,7 +2413,6 @@ const CustomerLedger = () => {
                       }}
                     >
                       Pending for this purchase:{" "}
-
                       <strong>
                         ₹{" "}
                         {money(
@@ -2018,7 +2430,6 @@ const CustomerLedger = () => {
                         )}
                       </strong>
                     </div>
-
                   )}
 
                   <div className="form-group">
@@ -2029,6 +2440,7 @@ const CustomerLedger = () => {
 
                     <textarea
                       rows="3"
+                      maxLength={500}
                       value={
                         purchaseForm.note
                       }
@@ -2048,8 +2460,11 @@ const CustomerLedger = () => {
                   <button
                     type="submit"
                     className="primary-button"
+                    disabled={saving}
                   >
-                    Save Purchase
+                    {saving
+                      ? "Saving..."
+                      : "Save Purchase"}
                   </button>
 
                 </form>
@@ -2057,7 +2472,6 @@ const CustomerLedger = () => {
               </div>
 
             </div>
-
           )}
 
           {/* =================================================
@@ -2065,7 +2479,6 @@ const CustomerLedger = () => {
           ================================================= */}
 
           {showPayment && (
-
             <div className="content-panel">
 
               <div className="content-panel-body">
@@ -2081,7 +2494,6 @@ const CustomerLedger = () => {
                   }}
                 >
                   Current Pending:{" "}
-
                   <strong>
                     ₹{" "}
                     {money(
@@ -2094,6 +2506,7 @@ const CustomerLedger = () => {
                   onSubmit={
                     handleAddPayment
                   }
+                  noValidate
                 >
 
                   <div className="form-row">
@@ -2161,6 +2574,7 @@ const CustomerLedger = () => {
 
                     <textarea
                       rows="3"
+                      maxLength={500}
                       value={
                         paymentForm.note
                       }
@@ -2180,8 +2594,11 @@ const CustomerLedger = () => {
                   <button
                     type="submit"
                     className="primary-button"
+                    disabled={saving}
                   >
-                    Save Payment
+                    {saving
+                      ? "Saving..."
+                      : "Save Payment"}
                   </button>
 
                 </form>
@@ -2189,7 +2606,6 @@ const CustomerLedger = () => {
               </div>
 
             </div>
-
           )}
 
           {/* =================================================
@@ -2267,29 +2683,24 @@ const CustomerLedger = () => {
 
                   {entries.length ===
                   0 ? (
-
                     <tr>
-
                       <td
                         colSpan="9"
                         className="empty-table"
                       >
                         No transactions found.
                       </td>
-
                     </tr>
-
                   ) : (
-
                     entries.map(
                       (
                         entry,
                         index
                       ) => (
-
                         <tr
                           key={
-                            entry._id
+                            entry?._id ||
+                            `${entry?.entryDate}-${index}`
                           }
                         >
 
@@ -2299,14 +2710,14 @@ const CustomerLedger = () => {
 
                           <td>
                             {
-                              entry.entryDate ||
+                              entry?.entryDate ||
                               "-"
                             }
                           </td>
 
                           <td>
                             {
-                              entry.entryType ===
+                              entry?.entryType ===
                               "purchase"
                                 ? "Purchase"
                                 : "Payment"
@@ -2315,10 +2726,10 @@ const CustomerLedger = () => {
 
                           <td>
                             {
-                              entry.entryType ===
+                              entry?.entryType ===
                               "purchase"
                                 ? String(
-                                    entry.fuelType ||
+                                    entry?.fuelType ||
                                       ""
                                   ).toLowerCase() ===
                                   "petrol"
@@ -2330,10 +2741,10 @@ const CustomerLedger = () => {
 
                           <td>
                             {
-                              entry.entryType ===
+                              entry?.entryType ===
                               "purchase"
                                 ? `₹ ${money(
-                                    entry.totalAmount
+                                    entry?.totalAmount
                                   )}`
                                 : "-"
                             }
@@ -2341,10 +2752,10 @@ const CustomerLedger = () => {
 
                           <td>
                             {
-                              entry.entryType ===
+                              entry?.entryType ===
                               "purchase"
                                 ? `₹ ${money(
-                                    entry.paidAmount
+                                    entry?.paidAmount
                                   )}`
                                 : "-"
                             }
@@ -2352,10 +2763,10 @@ const CustomerLedger = () => {
 
                           <td>
                             {
-                              entry.entryType ===
+                              entry?.entryType ===
                               "purchase"
                                 ? `₹ ${money(
-                                    entry.pendingAmount
+                                    entry?.pendingAmount
                                   )}`
                                 : "-"
                             }
@@ -2363,10 +2774,10 @@ const CustomerLedger = () => {
 
                           <td>
                             {
-                              entry.entryType ===
+                              entry?.entryType ===
                               "payment"
                                 ? `₹ ${money(
-                                    entry.paymentAmount
+                                    entry?.paymentAmount
                                   )}`
                                 : "-"
                             }
@@ -2374,16 +2785,14 @@ const CustomerLedger = () => {
 
                           <td>
                             {
-                              entry.note ||
+                              entry?.note ||
                               "-"
                             }
                           </td>
 
                         </tr>
-
                       )
                     )
-
                   )}
 
                 </tbody>
@@ -2395,6 +2804,7 @@ const CustomerLedger = () => {
           </div>
 
         </>
+
       )}
 
     </div>

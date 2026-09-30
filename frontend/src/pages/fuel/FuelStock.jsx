@@ -20,9 +20,13 @@ import {
   deleteFuelStock,
 } from "../../services/fuelService";
 
+const EMPTY_STOCK = [];
+
+const EMPTY_EDIT_STOCK = null;
+
 const FuelStock = () => {
   const [stock, setStock] =
-    useState([]);
+    useState(EMPTY_STOCK);
 
   const [loading, setLoading] =
     useState(true);
@@ -30,11 +34,16 @@ const FuelStock = () => {
   const [
     editingStock,
     setEditingStock,
-  ] = useState(null);
+  ] = useState(EMPTY_EDIT_STOCK);
 
   const [
     editLoading,
     setEditLoading,
+  ] = useState(false);
+
+  const [
+    deleteLoading,
+    setDeleteLoading,
   ] = useState(false);
 
   /* =====================================
@@ -49,15 +58,19 @@ const FuelStock = () => {
         const data =
           await getFuelStock();
 
-        /*
-          Supports both old and new
-          backend response names.
-        */
+        const nextStock =
+          Array.isArray(
+            data?.stock
+          )
+            ? data.stock
+            : Array.isArray(
+                data?.stocks
+              )
+            ? data.stocks
+            : [];
 
         setStock(
-          data.stock ||
-            data.stocks ||
-            []
+          nextStock
         );
       } catch (error) {
         console.error(
@@ -70,13 +83,71 @@ const FuelStock = () => {
             ?.message ||
             "Unable to load fuel stock"
         );
+
+        setStock([]);
       } finally {
         setLoading(false);
       }
     };
 
   useEffect(() => {
-    loadFuelStock();
+    let mounted = true;
+
+    const loadInitialStock =
+      async () => {
+        try {
+          setLoading(true);
+
+          const data =
+            await getFuelStock();
+
+          if (!mounted) {
+            return;
+          }
+
+          const nextStock =
+            Array.isArray(
+              data?.stock
+            )
+              ? data.stock
+              : Array.isArray(
+                  data?.stocks
+                )
+              ? data.stocks
+              : [];
+
+          setStock(
+            nextStock
+          );
+        } catch (error) {
+          if (!mounted) {
+            return;
+          }
+
+          console.error(
+            "FUEL STOCK ERROR:",
+            error
+          );
+
+          toast.error(
+            error.response?.data
+              ?.message ||
+              "Unable to load fuel stock"
+          );
+
+          setStock([]);
+        } finally {
+          if (mounted) {
+            setLoading(false);
+          }
+        }
+      };
+
+    loadInitialStock();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   /* =====================================
@@ -86,14 +157,14 @@ const FuelStock = () => {
   const petrol =
     stock.find(
       (item) =>
-        item.fuelType ===
+        item?.fuelType ===
         "petrol"
     ) || {};
 
   const diesel =
     stock.find(
       (item) =>
-        item.fuelType ===
+        item?.fuelType ===
         "diesel"
     ) || {};
 
@@ -104,9 +175,40 @@ const FuelStock = () => {
   const formatLitres = (
     value
   ) => {
-    return Number(
-      value || 0
-    ).toFixed(2);
+    const number =
+      Number(value);
+
+    if (
+      !Number.isFinite(
+        number
+      )
+    ) {
+      return "0.00";
+    }
+
+    return number.toFixed(2);
+  };
+
+  /* =====================================
+     NORMALIZE NUMBER
+  ===================================== */
+
+  const parseStockNumber = (
+    value
+  ) => {
+    const number =
+      Number(value);
+
+    if (
+      !Number.isFinite(
+        number
+      ) ||
+      number < 0
+    ) {
+      return null;
+    }
+
+    return number;
   };
 
   /* =====================================
@@ -116,11 +218,18 @@ const FuelStock = () => {
   const handleEdit = (
     fuel
   ) => {
-    if (!fuel?._id) {
+    if (
+      !fuel?._id ||
+      !fuel?.fuelType
+    ) {
       toast.error(
         "No stock available to edit"
       );
 
+      return;
+    }
+
+    if (editLoading) {
       return;
     }
 
@@ -131,20 +240,28 @@ const FuelStock = () => {
         fuel.fuelType,
 
       openingStock:
-        fuel.openingStock ||
-        0,
+        Number(
+          fuel.openingStock ??
+            0
+        ),
 
       purchased:
-        fuel.purchased ||
-        0,
+        Number(
+          fuel.purchased ??
+            0
+        ),
 
       sold:
-        fuel.sold ||
-        0,
+        Number(
+          fuel.sold ??
+            0
+        ),
 
       currentStock:
-        fuel.currentStock ||
-        0,
+        Number(
+          fuel.currentStock ??
+            0
+        ),
 
       lastSupplier:
         fuel.lastSupplier ||
@@ -158,16 +275,15 @@ const FuelStock = () => {
   ===================================== */
 
   const handleEditChange =
-    (e) => {
+    (event) => {
       const {
         name,
         value,
-      } = e.target;
+      } = event.target;
 
       setEditingStock(
         (previous) => ({
           ...previous,
-
           [name]:
             value,
         })
@@ -179,8 +295,62 @@ const FuelStock = () => {
   ===================================== */
 
   const handleUpdate =
-    async (e) => {
-      e.preventDefault();
+    async (event) => {
+      event.preventDefault();
+
+      if (
+        !editingStock ||
+        editLoading
+      ) {
+        return;
+      }
+
+      const openingStock =
+        parseStockNumber(
+          editingStock.openingStock
+        );
+
+      const purchased =
+        parseStockNumber(
+          editingStock.purchased
+        );
+
+      const sold =
+        parseStockNumber(
+          editingStock.sold
+        );
+
+      const currentStock =
+        parseStockNumber(
+          editingStock.currentStock
+        );
+
+      if (
+        openingStock ===
+          null ||
+        purchased ===
+          null ||
+        sold ===
+          null ||
+        currentStock ===
+          null
+      ) {
+        toast.error(
+          "Please enter valid non-negative stock values."
+        );
+
+        return;
+      }
+
+      if (
+        !editingStock.fuelType
+      ) {
+        toast.error(
+          "Invalid fuel type."
+        );
+
+        return;
+      }
 
       try {
         setEditLoading(
@@ -190,38 +360,30 @@ const FuelStock = () => {
         await updateFuelStock(
           editingStock.fuelType,
           {
-            openingStock:
-              Number(
-                editingStock.openingStock
-              ),
+            openingStock,
 
-            purchased:
-              Number(
-                editingStock.purchased
-              ),
+            purchased,
 
-            sold:
-              Number(
-                editingStock.sold
-              ),
+            sold,
 
-            currentStock:
-              Number(
-                editingStock.currentStock
-              ),
+            currentStock,
 
             lastSupplier:
-              editingStock.lastSupplier,
+              String(
+                editingStock.lastSupplier ||
+                  ""
+              ).trim(),
           }
         );
 
+        const fuelName =
+          editingStock.fuelType ===
+          "petrol"
+            ? "Petrol"
+            : "Diesel";
+
         toast.success(
-          `${
-            editingStock.fuelType ===
-            "petrol"
-              ? "Petrol"
-              : "Diesel"
-          } stock updated successfully`
+          `${fuelName} stock updated successfully`
         );
 
         setEditingStock(
@@ -255,6 +417,25 @@ const FuelStock = () => {
     async (
       fuelType
     ) => {
+      if (
+        deleteLoading
+      ) {
+        return;
+      }
+
+      if (
+        fuelType !==
+          "petrol" &&
+        fuelType !==
+          "diesel"
+      ) {
+        toast.error(
+          "Invalid fuel type."
+        );
+
+        return;
+      }
+
       const fuelName =
         fuelType ===
         "petrol"
@@ -263,7 +444,7 @@ const FuelStock = () => {
 
       const confirmed =
         window.confirm(
-          `Are you sure you want to delete ${fuelName} stock?`
+          `Are you sure you want to delete ${fuelName} stock? This data can be recovered from the recovery system according to the configured retention period.`
         );
 
       if (!confirmed) {
@@ -271,6 +452,10 @@ const FuelStock = () => {
       }
 
       try {
+        setDeleteLoading(
+          true
+        );
+
         await deleteFuelStock(
           fuelType
         );
@@ -290,6 +475,10 @@ const FuelStock = () => {
           error.response?.data
             ?.message ||
             "Unable to delete stock"
+        );
+      } finally {
+        setDeleteLoading(
+          false
         );
       }
     };
@@ -353,7 +542,11 @@ const FuelStock = () => {
           onClick={
             loadFuelStock
           }
-          disabled={loading}
+          disabled={
+            loading ||
+            editLoading ||
+            deleteLoading
+          }
         >
           <RefreshCw
             size={16}
@@ -554,7 +747,9 @@ const FuelStock = () => {
                             )
                           }
                           disabled={
-                            !data._id
+                            !data._id ||
+                            editLoading ||
+                            deleteLoading
                           }
                         >
                           <Pencil
@@ -572,7 +767,9 @@ const FuelStock = () => {
                             )
                           }
                           disabled={
-                            !data._id
+                            !data._id ||
+                            editLoading ||
+                            deleteLoading
                           }
                         >
                           <Trash2
@@ -603,9 +800,25 @@ const FuelStock = () => {
 
       {editingStock && (
 
-        <div className="modal-backdrop">
+        <div
+          className="modal-backdrop"
+          onClick={() => {
+            if (
+              !editLoading
+            ) {
+              setEditingStock(
+                null
+              );
+            }
+          }}
+        >
 
-          <div className="stock-edit-modal">
+          <div
+            className="stock-edit-modal"
+            onClick={(event) =>
+              event.stopPropagation()
+            }
+          >
 
             <div className="stock-edit-modal-header">
 
@@ -630,10 +843,17 @@ const FuelStock = () => {
               <button
                 type="button"
                 className="modal-close-button"
-                onClick={() =>
-                  setEditingStock(
-                    null
-                  )
+                onClick={() => {
+                  if (
+                    !editLoading
+                  ) {
+                    setEditingStock(
+                      null
+                    );
+                  }
+                }}
+                disabled={
+                  editLoading
                 }
               >
                 <X
@@ -653,11 +873,14 @@ const FuelStock = () => {
 
               <div className="form-group">
 
-                <label>
+                <label
+                  htmlFor="fuel-stock-supplier"
+                >
                   Supplier Name
                 </label>
 
                 <input
+                  id="fuel-stock-supplier"
                   type="text"
                   name="lastSupplier"
                   value={
@@ -667,6 +890,10 @@ const FuelStock = () => {
                     handleEditChange
                   }
                   placeholder="Supplier name"
+                  maxLength={200}
+                  disabled={
+                    editLoading
+                  }
                 />
 
               </div>
@@ -677,11 +904,14 @@ const FuelStock = () => {
 
                 <div className="form-group">
 
-                  <label>
+                  <label
+                    htmlFor="fuel-stock-opening"
+                  >
                     Opening Stock
                   </label>
 
                   <input
+                    id="fuel-stock-opening"
                     type="number"
                     name="openingStock"
                     min="0"
@@ -692,6 +922,9 @@ const FuelStock = () => {
                     onChange={
                       handleEditChange
                     }
+                    disabled={
+                      editLoading
+                    }
                     required
                   />
 
@@ -699,11 +932,14 @@ const FuelStock = () => {
 
                 <div className="form-group">
 
-                  <label>
+                  <label
+                    htmlFor="fuel-stock-purchased"
+                  >
                     Purchased
                   </label>
 
                   <input
+                    id="fuel-stock-purchased"
                     type="number"
                     name="purchased"
                     min="0"
@@ -713,6 +949,9 @@ const FuelStock = () => {
                     }
                     onChange={
                       handleEditChange
+                    }
+                    disabled={
+                      editLoading
                     }
                     required
                   />
@@ -727,11 +966,14 @@ const FuelStock = () => {
 
                 <div className="form-group">
 
-                  <label>
+                  <label
+                    htmlFor="fuel-stock-sold"
+                  >
                     Sold
                   </label>
 
                   <input
+                    id="fuel-stock-sold"
                     type="number"
                     name="sold"
                     min="0"
@@ -742,6 +984,9 @@ const FuelStock = () => {
                     onChange={
                       handleEditChange
                     }
+                    disabled={
+                      editLoading
+                    }
                     required
                   />
 
@@ -749,11 +994,14 @@ const FuelStock = () => {
 
                 <div className="form-group">
 
-                  <label>
+                  <label
+                    htmlFor="fuel-stock-current"
+                  >
                     Available Stock
                   </label>
 
                   <input
+                    id="fuel-stock-current"
                     type="number"
                     name="currentStock"
                     min="0"
@@ -763,6 +1011,9 @@ const FuelStock = () => {
                     }
                     onChange={
                       handleEditChange
+                    }
+                    disabled={
+                      editLoading
                     }
                     required
                   />
@@ -782,6 +1033,9 @@ const FuelStock = () => {
                     setEditingStock(
                       null
                     )
+                  }
+                  disabled={
+                    editLoading
                   }
                 >
                   Cancel

@@ -1,5 +1,7 @@
 import {
+  useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -12,6 +14,7 @@ import {
   Users,
   Wallet,
   X,
+  RefreshCw,
 } from "lucide-react";
 
 import {
@@ -22,356 +25,600 @@ import {
   paySalary,
 } from "../../services/expenseService";
 
+const getToday = () => {
+  const date = new Date();
+
+  const year = date.getFullYear();
+  const month = String(
+    date.getMonth() + 1
+  ).padStart(2, "0");
+  const day = String(
+    date.getDate()
+  ).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+};
+
+const isValidDate = (value) => {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+
+  const [year, month, day] =
+    value.split("-").map(Number);
+
+  const date = new Date(
+    year,
+    month - 1,
+    day
+  );
+
+  return (
+    date.getFullYear() === year &&
+    date.getMonth() === month - 1 &&
+    date.getDate() === day
+  );
+};
+
+const isPositiveAmount = (value) => {
+  const amount = Number(value);
+
+  return (
+    Number.isFinite(amount) &&
+    amount > 0
+  );
+};
+
+const isValidPhone = (value) => {
+  if (!value?.trim()) {
+    return true;
+  }
+
+  return /^[0-9+\-\s()]{7,20}$/.test(
+    value.trim()
+  );
+};
+
+const formatMoney = (value) => {
+  const amount = Number(value);
+
+  if (!Number.isFinite(amount)) {
+    return "₹0";
+  }
+
+  return `₹${amount.toLocaleString("en-IN", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })}`;
+};
+
 const AddExpense = () => {
-  const today =
-    new Date().toLocaleDateString(
-      "en-CA"
-    );
+  const today = getToday();
+
+  const mountedRef = useRef(true);
+  const loadingEmployeesRef = useRef(false);
+
+  const [activeSection, setActiveSection] =
+    useState("expense");
+
+  const [expenseForm, setExpenseForm] =
+    useState({
+      title: "",
+      category: "miscellaneous",
+      amount: "",
+      paymentMethod: "cash",
+      expenseDate: today,
+      note: "",
+    });
+
+  const [expenseLoading, setExpenseLoading] =
+    useState(false);
+
+  const [employees, setEmployees] =
+    useState([]);
+
+  const [employeeLoading, setEmployeeLoading] =
+    useState(false);
+
+  const [employeesLoading, setEmployeesLoading] =
+    useState(false);
 
   const [
-    activeSection,
-    setActiveSection,
-  ] = useState("expense");
-
-  /* =====================================
-     EXPENSE FORM
-  ===================================== */
+    deletingEmployeeId,
+    setDeletingEmployeeId,
+  ] = useState(null);
 
   const [
-    expenseForm,
-    setExpenseForm,
-  ] = useState({
-    title: "",
-    category: "miscellaneous",
-    amount: "",
-    paymentMethod: "cash",
-    expenseDate: today,
-    note: "",
-  });
-
-  const [
-    expenseLoading,
-    setExpenseLoading,
-  ] = useState(false);
-
-  /* =====================================
-     EMPLOYEE
-  ===================================== */
-
-  const [
-    employees,
-    setEmployees,
-  ] = useState([]);
-
-  const [
-    employeeLoading,
-    setEmployeeLoading,
-  ] = useState(false);
+    payingEmployeeId,
+    setPayingEmployeeId,
+  ] = useState(null);
 
   const [
     showEmployeeModal,
     setShowEmployeeModal,
   ] = useState(false);
 
-  const [
-    employeeForm,
-    setEmployeeForm,
-  ] = useState({
-    name: "",
-    phone: "",
-    designation: "",
-    salary: "",
-    joiningDate: today,
-  });
+  const [employeeForm, setEmployeeForm] =
+    useState({
+      name: "",
+      phone: "",
+      designation: "",
+      salary: "",
+      joiningDate: today,
+    });
 
-  /* =====================================
-     LOAD EMPLOYEES
-  ===================================== */
-
-  const loadEmployees =
-    async () => {
-      try {
-        const data =
-          await getEmployees();
-
-        setEmployees(
-          data.employees || []
-        );
-      } catch (error) {
-        console.error(
-          "LOAD EMPLOYEE ERROR:",
-          error
-        );
-
-        toast.error(
-          error.response?.data
-            ?.message ||
-            "Unable to load employees"
-        );
-      }
-    };
-
-  useEffect(() => {
-    loadEmployees();
+  const resetExpenseForm = useCallback(() => {
+    setExpenseForm({
+      title: "",
+      category: "miscellaneous",
+      amount: "",
+      paymentMethod: "cash",
+      expenseDate: getToday(),
+      note: "",
+    });
   }, []);
 
-  /* =====================================
-     EXPENSE INPUT
-  ===================================== */
+  const resetEmployeeForm = useCallback(() => {
+    setEmployeeForm({
+      name: "",
+      phone: "",
+      designation: "",
+      salary: "",
+      joiningDate: getToday(),
+    });
+  }, []);
 
-  const handleExpenseChange =
-    (e) => {
-      const {
-        name,
-        value,
-      } = e.target;
+  const loadEmployees = useCallback(
+    async ({ silent = false } = {}) => {
+      if (loadingEmployeesRef.current) {
+        return;
+      }
 
-      setExpenseForm(
-        (prev) => ({
-          ...prev,
-          [name]: value,
-        })
-      );
-    };
+      loadingEmployeesRef.current = true;
 
-  /* =====================================
-     ADD EXPENSE
-  ===================================== */
-
-  const handleExpenseSubmit =
-    async (e) => {
-      e.preventDefault();
+      if (!silent && mountedRef.current) {
+        setEmployeesLoading(true);
+      }
 
       try {
-        setExpenseLoading(true);
+        const data = await getEmployees();
 
-        await addExpense({
-          ...expenseForm,
+        if (!mountedRef.current) {
+          return;
+        }
 
-          amount: Number(
-            expenseForm.amount
-          ),
-        });
-
-        toast.success(
-          "Expense added successfully"
+        setEmployees(
+          Array.isArray(data?.employees)
+            ? data.employees
+            : []
         );
-
-        setExpenseForm({
-          title: "",
-          category:
-            "miscellaneous",
-          amount: "",
-          paymentMethod:
-            "cash",
-          expenseDate:
-            today,
-          note: "",
-        });
       } catch (error) {
-        console.error(
-          "ADD EXPENSE ERROR:",
-          error
-        );
+        if (!mountedRef.current) {
+          return;
+        }
 
         toast.error(
-          error.response?.data
-            ?.message ||
-            "Unable to add expense"
+          error.response?.data?.message ||
+            "Unable to load employees"
         );
       } finally {
+        loadingEmployeesRef.current = false;
+
+        if (mountedRef.current) {
+          setEmployeesLoading(false);
+        }
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    loadEmployees();
+
+    const handleVisibilityChange = () => {
+      if (
+        document.visibilityState === "visible"
+      ) {
+        loadEmployees({ silent: true });
+      }
+    };
+
+    const handleFocus = () => {
+      loadEmployees({ silent: true });
+    };
+
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange
+    );
+
+    window.addEventListener(
+      "focus",
+      handleFocus
+    );
+
+    return () => {
+      mountedRef.current = false;
+
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange
+      );
+
+      window.removeEventListener(
+        "focus",
+        handleFocus
+      );
+    };
+  }, [loadEmployees]);
+
+  const handleExpenseChange = (event) => {
+    const { name, value } = event.target;
+
+    setExpenseForm((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+  };
+
+  const handleExpenseSubmit = async (
+    event
+  ) => {
+    event.preventDefault();
+
+    const title =
+      expenseForm.title.trim();
+
+    const note =
+      expenseForm.note.trim();
+
+    const amount = Number(
+      expenseForm.amount
+    );
+
+    if (!title) {
+      toast.error(
+        "Expense title is required."
+      );
+      return;
+    }
+
+    if (title.length > 150) {
+      toast.error(
+        "Expense title must be 150 characters or less."
+      );
+      return;
+    }
+
+    if (!isPositiveAmount(amount)) {
+      toast.error(
+        "Enter a valid expense amount."
+      );
+      return;
+    }
+
+    if (!isValidDate(expenseForm.expenseDate)) {
+      toast.error(
+        "Enter a valid expense date."
+      );
+      return;
+    }
+
+    if (note.length > 500) {
+      toast.error(
+        "Note must be 500 characters or less."
+      );
+      return;
+    }
+
+    try {
+      setExpenseLoading(true);
+
+      await addExpense({
+        ...expenseForm,
+        title,
+        note,
+        amount,
+      });
+
+      if (!mountedRef.current) {
+        return;
+      }
+
+      toast.success(
+        "Expense added successfully."
+      );
+
+      resetExpenseForm();
+    } catch (error) {
+      if (!mountedRef.current) {
+        return;
+      }
+
+      toast.error(
+        error.response?.data?.message ||
+          "Unable to add expense."
+      );
+    } finally {
+      if (mountedRef.current) {
         setExpenseLoading(false);
       }
-    };
+    }
+  };
 
-  /* =====================================
-     EMPLOYEE INPUT
-  ===================================== */
+  const handleEmployeeChange = (event) => {
+    const { name, value } = event.target;
 
-  const handleEmployeeChange =
-    (e) => {
-      const {
-        name,
-        value,
-      } = e.target;
+    setEmployeeForm((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+  };
 
-      setEmployeeForm(
-        (prev) => ({
-          ...prev,
-          [name]: value,
-        })
+  const handleAddEmployee = async (
+    event
+  ) => {
+    event.preventDefault();
+
+    const name =
+      employeeForm.name.trim();
+
+    const phone =
+      employeeForm.phone.trim();
+
+    const designation =
+      employeeForm.designation.trim();
+
+    const salary = Number(
+      employeeForm.salary
+    );
+
+    if (!name) {
+      toast.error(
+        "Employee name is required."
       );
-    };
+      return;
+    }
 
-  /* =====================================
-     ADD EMPLOYEE
-  ===================================== */
+    if (name.length > 100) {
+      toast.error(
+        "Employee name must be 100 characters or less."
+      );
+      return;
+    }
 
-  const handleAddEmployee =
-    async (e) => {
-      e.preventDefault();
+    if (!isValidPhone(phone)) {
+      toast.error(
+        "Enter a valid employee phone number."
+      );
+      return;
+    }
 
-      try {
-        setEmployeeLoading(true);
+    if (designation.length > 100) {
+      toast.error(
+        "Designation must be 100 characters or less."
+      );
+      return;
+    }
 
-        await addEmployee({
-          ...employeeForm,
+    if (
+      !Number.isFinite(salary) ||
+      salary < 0
+    ) {
+      toast.error(
+        "Enter a valid salary."
+      );
+      return;
+    }
 
-          salary: Number(
-            employeeForm.salary
-          ),
-        });
+    if (
+      !isValidDate(
+        employeeForm.joiningDate
+      )
+    ) {
+      toast.error(
+        "Enter a valid joining date."
+      );
+      return;
+    }
 
-        toast.success(
-          "Employee added successfully"
-        );
+    try {
+      setEmployeeLoading(true);
 
-        setEmployeeForm({
-          name: "",
-          phone: "",
-          designation: "",
-          salary: "",
-          joiningDate: today,
-        });
+      await addEmployee({
+        name,
+        phone,
+        designation,
+        salary,
+        joiningDate:
+          employeeForm.joiningDate,
+      });
 
-        setShowEmployeeModal(
-          false
-        );
+      if (!mountedRef.current) {
+        return;
+      }
 
-        await loadEmployees();
-      } catch (error) {
-        console.error(
-          "ADD EMPLOYEE ERROR:",
-          error
-        );
+      toast.success(
+        "Employee added successfully."
+      );
 
-        toast.error(
-          error.response?.data
-            ?.message ||
-            "Unable to add employee"
-        );
-      } finally {
+      resetEmployeeForm();
+      setShowEmployeeModal(false);
+
+      await loadEmployees();
+    } catch (error) {
+      if (!mountedRef.current) {
+        return;
+      }
+
+      toast.error(
+        error.response?.data?.message ||
+          "Unable to add employee."
+      );
+    } finally {
+      if (mountedRef.current) {
         setEmployeeLoading(false);
       }
-    };
+    }
+  };
 
-  /* =====================================
-     DELETE EMPLOYEE
-  ===================================== */
+  const handleDeleteEmployee = async (
+    id
+  ) => {
+    if (!id || deletingEmployeeId) {
+      return;
+    }
 
-  const handleDeleteEmployee =
-    async (id) => {
-      const confirmed =
-        window.confirm(
-          "Delete this employee?"
-        );
+    const confirmed = window.confirm(
+      "Delete this employee? The employee can be recovered during the configured recovery period."
+    );
 
-      if (!confirmed) {
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setDeletingEmployeeId(id);
+
+      await deleteEmployee(id);
+
+      if (!mountedRef.current) {
         return;
       }
 
-      try {
-        await deleteEmployee(id);
+      toast.success(
+        "Employee deleted and moved to recovery storage."
+      );
 
-        toast.success(
-          "Employee deleted"
-        );
-
-        await loadEmployees();
-      } catch (error) {
-        toast.error(
-          error.response?.data
-            ?.message ||
-            "Unable to delete employee"
-        );
-      }
-    };
-
-  /* =====================================
-     PAY SALARY
-  ===================================== */
-
-  const handlePaySalary =
-    async (employee) => {
-      const confirmed =
-        window.confirm(
-          `Pay ₹${Number(
-            employee.salary || 0
-          ).toLocaleString(
-            "en-IN"
-          )} salary to ${employee.name}?`
-        );
-
-      if (!confirmed) {
+      await loadEmployees();
+    } catch (error) {
+      if (!mountedRef.current) {
         return;
       }
 
-      try {
-        await paySalary(
-          employee._id,
-          {
-            paymentDate: today,
-            paymentMethod:
-              "cash",
-            amount:
-              employee.salary,
-          }
-        );
-
-        toast.success(
-          `Salary paid to ${employee.name}`
-        );
-      } catch (error) {
-        toast.error(
-          error.response?.data
-            ?.message ||
-            "Unable to pay salary"
-        );
+      toast.error(
+        error.response?.data?.message ||
+          "Unable to delete employee."
+      );
+    } finally {
+      if (mountedRef.current) {
+        setDeletingEmployeeId(null);
       }
-    };
+    }
+  };
+
+  const handlePaySalary = async (
+    employee
+  ) => {
+    if (
+      !employee?._id ||
+      payingEmployeeId
+    ) {
+      return;
+    }
+
+    const amount = Number(
+      employee.salary
+    );
+
+    if (
+      !Number.isFinite(amount) ||
+      amount <= 0
+    ) {
+      toast.error(
+        "Employee salary is not valid."
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Pay ${formatMoney(
+        amount
+      )} salary to ${employee.name}?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setPayingEmployeeId(
+        employee._id
+      );
+
+      await paySalary(
+        employee._id,
+        {
+          paymentDate: getToday(),
+          paymentMethod: "cash",
+          amount,
+        }
+      );
+
+      if (!mountedRef.current) {
+        return;
+      }
+
+      toast.success(
+        `Salary paid to ${employee.name}.`
+      );
+    } catch (error) {
+      if (!mountedRef.current) {
+        return;
+      }
+
+      toast.error(
+        error.response?.data?.message ||
+          "Unable to pay salary."
+      );
+    } finally {
+      if (mountedRef.current) {
+        setPayingEmployeeId(null);
+      }
+    }
+  };
+
+  const closeEmployeeModal = () => {
+    if (employeeLoading) {
+      return;
+    }
+
+    resetEmployeeForm();
+    setShowEmployeeModal(false);
+  };
 
   return (
     <div className="page-container">
-
-      {/* HEADER */}
-
       <div className="page-header">
-
         <div>
-          <h1>
-            Expenses
-          </h1>
+          <h1>Expenses</h1>
 
           <p>
-            Manage pump expenses
-            and employees.
+            Manage pump expenses and
+            employees.
           </p>
         </div>
-
       </div>
-
-      {/* TOP TABS */}
 
       <div
         style={{
           display: "flex",
           gap: "10px",
           marginBottom: "20px",
+          flexWrap: "wrap",
         }}
       >
-
         <button
           type="button"
           className={
-            activeSection ===
-            "expense"
+            activeSection === "expense"
               ? "primary-button"
               : "secondary-button"
           }
           onClick={() =>
-            setActiveSection(
-              "expense"
-            )
+            setActiveSection("expense")
           }
         >
           <Wallet size={17} />
@@ -381,56 +628,41 @@ const AddExpense = () => {
         <button
           type="button"
           className={
-            activeSection ===
-            "employees"
+            activeSection === "employees"
               ? "primary-button"
               : "secondary-button"
           }
           onClick={() =>
-            setActiveSection(
-              "employees"
-            )
+            setActiveSection("employees")
           }
         >
           <Users size={17} />
           Employees
         </button>
-
       </div>
 
-      {/* =====================================
-          ADD EXPENSE SECTION
-      ===================================== */}
-
-      {activeSection ===
-        "expense" && (
-
+      {activeSection === "expense" && (
         <div className="content-panel">
-
           <div className="content-panel-header">
-            <h2>
-              Add New Expense
-            </h2>
+            <h2>Add New Expense</h2>
           </div>
 
           <div className="content-panel-body">
-
             <form
               className="clean-form"
               onSubmit={
                 handleExpenseSubmit
               }
+              noValidate
             >
-
               <div className="form-row">
-
                 <div className="form-group">
-
-                  <label>
+                  <label htmlFor="expense-title">
                     Expense Title
                   </label>
 
                   <input
+                    id="expense-title"
                     type="text"
                     name="title"
                     value={
@@ -440,18 +672,18 @@ const AddExpense = () => {
                       handleExpenseChange
                     }
                     placeholder="Example: Electricity Bill"
+                    maxLength={150}
                     required
                   />
-
                 </div>
 
                 <div className="form-group">
-
-                  <label>
+                  <label htmlFor="expense-category">
                     Category
                   </label>
 
                   <select
+                    id="expense-category"
                     name="category"
                     value={
                       expenseForm.category
@@ -461,7 +693,6 @@ const AddExpense = () => {
                     }
                     required
                   >
-
                     <option value="salary">
                       Salary
                     </option>
@@ -493,22 +724,18 @@ const AddExpense = () => {
                     <option value="miscellaneous">
                       Miscellaneous
                     </option>
-
                   </select>
-
                 </div>
-
               </div>
 
               <div className="form-row">
-
                 <div className="form-group">
-
-                  <label>
+                  <label htmlFor="expense-amount">
                     Amount
                   </label>
 
                   <input
+                    id="expense-amount"
                     type="number"
                     min="0.01"
                     step="0.01"
@@ -521,16 +748,15 @@ const AddExpense = () => {
                     }
                     required
                   />
-
                 </div>
 
                 <div className="form-group">
-
-                  <label>
+                  <label htmlFor="expense-payment">
                     Payment Method
                   </label>
 
                   <select
+                    id="expense-payment"
                     name="paymentMethod"
                     value={
                       expenseForm.paymentMethod
@@ -538,8 +764,8 @@ const AddExpense = () => {
                     onChange={
                       handleExpenseChange
                     }
+                    required
                   >
-
                     <option value="cash">
                       Cash
                     </option>
@@ -555,22 +781,18 @@ const AddExpense = () => {
                     <option value="card">
                       Card
                     </option>
-
                   </select>
-
                 </div>
-
               </div>
 
               <div className="form-row">
-
                 <div className="form-group">
-
-                  <label>
+                  <label htmlFor="expense-date">
                     Expense Date
                   </label>
 
                   <input
+                    id="expense-date"
                     type="date"
                     name="expenseDate"
                     value={
@@ -581,16 +803,15 @@ const AddExpense = () => {
                     }
                     required
                   />
-
                 </div>
 
                 <div className="form-group">
-
-                  <label>
+                  <label htmlFor="expense-note">
                     Note
                   </label>
 
                   <input
+                    id="expense-note"
                     type="text"
                     name="note"
                     value={
@@ -600,18 +821,15 @@ const AddExpense = () => {
                       handleExpenseChange
                     }
                     placeholder="Optional"
+                    maxLength={500}
                   />
-
                 </div>
-
               </div>
 
               <button
                 type="submit"
                 className="primary-button"
-                disabled={
-                  expenseLoading
-                }
+                disabled={expenseLoading}
               >
                 <Plus size={17} />
 
@@ -619,98 +837,109 @@ const AddExpense = () => {
                   ? "Saving..."
                   : "Add Expense"}
               </button>
-
             </form>
-
           </div>
-
         </div>
-
       )}
 
-      {/* =====================================
-          EMPLOYEE SECTION
-      ===================================== */}
-
-      {activeSection ===
-        "employees" && (
-
+      {activeSection === "employees" && (
         <div className="content-panel">
-
           <div className="content-panel-header">
-
             <div>
-              <h2>
-                Employees
-              </h2>
+              <h2>Employees</h2>
 
               <p>
-                Manage employees
-                and salary details.
+                Manage employees and
+                salary details.
               </p>
             </div>
 
-            <button
-              type="button"
-              className="primary-button"
-              onClick={() =>
-                setShowEmployeeModal(
-                  true
-                )
-              }
+            <div
+              style={{
+                display: "flex",
+                gap: "8px",
+                flexWrap: "wrap",
+              }}
             >
-              <Plus size={17} />
-              Add Employee
-            </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() =>
+                  loadEmployees()
+                }
+                disabled={
+                  employeesLoading
+                }
+              >
+                <RefreshCw
+                  size={16}
+                />
 
+                Refresh
+              </button>
+
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() =>
+                  setShowEmployeeModal(
+                    true
+                  )
+                }
+                disabled={
+                  employeeLoading
+                }
+              >
+                <Plus size={17} />
+                Add Employee
+              </button>
+            </div>
           </div>
 
           <div className="table-container">
-
             <table>
-
               <thead>
                 <tr>
                   <th>Name</th>
-                  <th>
-                    Designation
-                  </th>
+                  <th>Designation</th>
                   <th>Phone</th>
                   <th>Salary</th>
-                  <th>
-                    Joining Date
-                  </th>
+                  <th>Joining Date</th>
                   <th>Status</th>
                   <th>Action</th>
                 </tr>
               </thead>
 
               <tbody>
-
-                {employees.length ===
-                0 ? (
-
+                {employeesLoading &&
+                employees.length === 0 ? (
                   <tr>
                     <td
                       colSpan="7"
                       className="empty-table"
                     >
-                      No employees
-                      added yet.
+                      Loading employees...
                     </td>
                   </tr>
-
+                ) : employees.length ===
+                  0 ? (
+                  <tr>
+                    <td
+                      colSpan="7"
+                      className="empty-table"
+                    >
+                      No employees added
+                      yet.
+                    </td>
+                  </tr>
                 ) : (
-
                   employees.map(
                     (employee) => (
-
                       <tr
                         key={
                           employee._id
                         }
                       >
-
                         <td>
                           <strong>
                             {
@@ -730,39 +959,50 @@ const AddExpense = () => {
                         </td>
 
                         <td>
-                          ₹
-                          {Number(
-                            employee.salary ||
-                              0
-                          ).toLocaleString(
-                            "en-IN"
+                          {formatMoney(
+                            employee.salary
                           )}
                         </td>
 
                         <td>
-                          {
-                            employee.joiningDate
-                          }
+                          {employee.joiningDate
+                            ? new Date(
+                                employee.joiningDate
+                              ).toLocaleDateString(
+                                "en-IN"
+                              )
+                            : "-"}
                         </td>
 
                         <td>
                           <span
-                            className={`status-badge ${employee.status}`}
+                            className={`status-badge ${
+                              employee.status ||
+                              "active"
+                            }`}
                           >
                             {
-                              employee.status
+                              employee.status ||
+                              "active"
                             }
                           </span>
                         </td>
 
                         <td>
-
                           <div className="row-actions">
-
                             <button
                               type="button"
                               className="action-view"
                               title="Pay Salary"
+                              aria-label={`Pay salary to ${
+                                employee.name
+                              }`}
+                              disabled={
+                                payingEmployeeId ===
+                                  employee._id ||
+                                deletingEmployeeId ===
+                                  employee._id
+                              }
                               onClick={() =>
                                 handlePaySalary(
                                   employee
@@ -777,7 +1017,16 @@ const AddExpense = () => {
                             <button
                               type="button"
                               className="action-delete"
-                              title="Delete"
+                              title="Delete employee"
+                              aria-label={`Delete ${
+                                employee.name
+                              }`}
+                              disabled={
+                                deletingEmployeeId ===
+                                  employee._id ||
+                                payingEmployeeId ===
+                                  employee._id
+                              }
                               onClick={() =>
                                 handleDeleteEmployee(
                                   employee._id
@@ -788,80 +1037,73 @@ const AddExpense = () => {
                                 size={16}
                               />
                             </button>
-
                           </div>
-
                         </td>
-
                       </tr>
-
                     )
                   )
-
                 )}
-
               </tbody>
-
             </table>
-
           </div>
-
         </div>
-
       )}
 
-      {/* =====================================
-          ADD EMPLOYEE MODAL
-      ===================================== */}
-
       {showEmployeeModal && (
-
-        <div className="modal-backdrop">
-
-          <div className="stock-edit-modal">
-
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (
+              event.target ===
+              event.currentTarget
+            ) {
+              closeEmployeeModal();
+            }
+          }}
+        >
+          <div
+            className="stock-edit-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-employee-title"
+          >
             <div className="stock-edit-modal-header">
-
               <div>
-                <h2>
+                <h2 id="add-employee-title">
                   Add Employee
                 </h2>
 
                 <p>
-                  Add new pump
-                  employee.
+                  Add new pump employee.
                 </p>
               </div>
 
               <button
                 type="button"
                 className="modal-close-button"
-                onClick={() =>
-                  setShowEmployeeModal(
-                    false
-                  )
+                onClick={
+                  closeEmployeeModal
                 }
+                disabled={employeeLoading}
+                aria-label="Close"
               >
                 <X size={20} />
               </button>
-
             </div>
 
             <form
-              onSubmit={
-                handleAddEmployee
-              }
+              onSubmit={handleAddEmployee}
+              noValidate
             >
-
               <div className="form-row">
-
                 <div className="form-group">
-
-                  <label>
+                  <label htmlFor="employee-name">
                     Employee Name
                   </label>
 
                   <input
+                    id="employee-name"
                     type="text"
                     name="name"
                     value={
@@ -870,19 +1112,19 @@ const AddExpense = () => {
                     onChange={
                       handleEmployeeChange
                     }
+                    maxLength={100}
                     required
                   />
-
                 </div>
 
                 <div className="form-group">
-
-                  <label>
+                  <label htmlFor="employee-phone">
                     Phone
                   </label>
 
                   <input
-                    type="text"
+                    id="employee-phone"
+                    type="tel"
                     name="phone"
                     value={
                       employeeForm.phone
@@ -890,21 +1132,19 @@ const AddExpense = () => {
                     onChange={
                       handleEmployeeChange
                     }
+                    maxLength={20}
                   />
-
                 </div>
-
               </div>
 
               <div className="form-row">
-
                 <div className="form-group">
-
-                  <label>
+                  <label htmlFor="employee-designation">
                     Designation
                   </label>
 
                   <input
+                    id="employee-designation"
                     type="text"
                     name="designation"
                     value={
@@ -914,17 +1154,17 @@ const AddExpense = () => {
                       handleEmployeeChange
                     }
                     placeholder="Staff / Manager"
+                    maxLength={100}
                   />
-
                 </div>
 
                 <div className="form-group">
-
-                  <label>
+                  <label htmlFor="employee-salary">
                     Monthly Salary
                   </label>
 
                   <input
+                    id="employee-salary"
                     type="number"
                     min="0"
                     step="0.01"
@@ -937,18 +1177,16 @@ const AddExpense = () => {
                     }
                     required
                   />
-
                 </div>
-
               </div>
 
               <div className="form-group">
-
-                <label>
+                <label htmlFor="employee-joining-date">
                   Joining Date
                 </label>
 
                 <input
+                  id="employee-joining-date"
                   type="date"
                   name="joiningDate"
                   value={
@@ -959,18 +1197,17 @@ const AddExpense = () => {
                   }
                   required
                 />
-
               </div>
 
               <div className="modal-actions">
-
                 <button
                   type="button"
                   className="secondary-button"
-                  onClick={() =>
-                    setShowEmployeeModal(
-                      false
-                    )
+                  onClick={
+                    closeEmployeeModal
+                  }
+                  disabled={
+                    employeeLoading
                   }
                 >
                   Cancel
@@ -987,17 +1224,11 @@ const AddExpense = () => {
                     ? "Adding..."
                     : "Add Employee"}
                 </button>
-
               </div>
-
             </form>
-
           </div>
-
         </div>
-
       )}
-
     </div>
   );
 };

@@ -1,181 +1,286 @@
 import mongoose from "mongoose";
 
-const clientSchema =
-  new mongoose.Schema(
-    {
-      /* =================================================
-         LINKED PUMP
-      ================================================= */
+/* =====================================================
+   CLIENT SCHEMA
+===================================================== */
 
-      pumpId: {
-        type:
-          mongoose.Schema.Types.ObjectId,
+const clientSchema = new mongoose.Schema(
+  {
+    /* =================================================
+       LINKED PUMP
 
-        ref: "Pump",
+       One Client record represents one Pump.
 
-        required: true,
+       immutable prevents accidental reassignment of an
+       existing client to another pump.
+    ================================================= */
 
-        unique: true,
+    pumpId: {
+      type: mongoose.Schema.Types.ObjectId,
 
-        index: true,
-      },
+      ref: "Pump",
 
-      /* =================================================
-         OWNER USER
-      ================================================= */
+      required: true,
 
-      ownerUserId: {
-        type:
-          mongoose.Schema.Types.ObjectId,
+      unique: true,
 
-        ref: "User",
+      index: true,
 
-        required: true,
+      immutable: true,
+    },
 
-        unique: true,
+    /* =================================================
+       OWNER USER
 
-        index: true,
-      },
+       One Client has exactly one owner account.
 
-      /* =================================================
-         CLIENT INFORMATION
-      ================================================= */
+       immutable prevents accidental ownership transfer
+       through a normal Client update.
+    ================================================= */
 
-      pumpName: {
-        type: String,
+    ownerUserId: {
+      type: mongoose.Schema.Types.ObjectId,
 
-        required: true,
+      ref: "User",
 
-        trim: true,
-      },
+      required: true,
 
-      ownerName: {
-        type: String,
+      unique: true,
 
-        required: true,
+      index: true,
 
-        trim: true,
-      },
+      immutable: true,
+    },
 
-      email: {
-        type: String,
+    /* =================================================
+       CLIENT INFORMATION
+    ================================================= */
 
-        required: true,
+    pumpName: {
+      type: String,
 
-        lowercase: true,
+      required: true,
 
-        trim: true,
+      trim: true,
 
-        unique: true,
-      },
+      minlength: 1,
 
-      phone: {
-        type: String,
+      maxlength: 200,
+    },
 
-        default: "",
+    ownerName: {
+      type: String,
 
-        trim: true,
-      },
+      required: true,
 
-      address: {
-        type: String,
+      trim: true,
 
-        default: "",
+      minlength: 1,
 
-        trim: true,
-      },
+      maxlength: 100,
+    },
 
-      /* =================================================
-         CLIENT CODE
-      ================================================= */
+    email: {
+      type: String,
 
-      pumpCode: {
-        type: String,
+      required: true,
 
-        required: true,
+      lowercase: true,
 
-        unique: true,
+      trim: true,
 
-        index: true,
-      },
+      maxlength: 254,
 
-      /* =================================================
-         PLAN
-      ================================================= */
+      unique: true,
+    },
 
-      plan: {
-        type: String,
+    phone: {
+      type: String,
 
-        enum: [
-          "basic",
-          "standard",
-          "premium",
-        ],
+      default: "",
 
-        default:
-          "standard",
-      },
+      trim: true,
 
-      /* =================================================
-         STATUS
-      ================================================= */
+      maxlength: 30,
+    },
 
-      status: {
-        type: String,
+    address: {
+      type: String,
 
-        enum: [
-          "active",
-          "inactive",
-          "expired",
-        ],
+      default: "",
 
-        default:
-          "active",
+      trim: true,
 
-        index: true,
-      },
+      maxlength: 500,
+    },
 
-      /* =================================================
-         SUBSCRIPTION
-      ================================================= */
+    /* =================================================
+       CLIENT CODE
 
-      subscriptionStart: {
-        type: Date,
+       Unique business-facing identifier.
+    ================================================= */
 
-        default: null,
-      },
+    pumpCode: {
+      type: String,
 
-      subscriptionEnd: {
-        type: Date,
+      required: true,
 
-        default: null,
-      },
+      unique: true,
 
-      notes: {
-        type: String,
+      index: true,
 
-        default: "",
+      trim: true,
 
-        trim: true,
-      },
+      uppercase: true,
 
-      /* =================================================
-         CREATED BY
-      ================================================= */
+      minlength: 1,
 
-      createdBy: {
-        type:
-          mongoose.Schema.Types.ObjectId,
+      maxlength: 50,
+    },
 
-        ref: "User",
+    /* =================================================
+       PLAN
+    ================================================= */
 
-        default: null,
+    plan: {
+      type: String,
+
+      enum: [
+        "basic",
+        "standard",
+        "premium",
+      ],
+
+      default: "standard",
+
+      lowercase: true,
+
+      trim: true,
+
+      index: true,
+    },
+
+    /* =================================================
+       STATUS
+    ================================================= */
+
+    status: {
+      type: String,
+
+      enum: [
+        "active",
+        "inactive",
+        "expired",
+      ],
+
+      default: "active",
+
+      lowercase: true,
+
+      trim: true,
+
+      index: true,
+    },
+
+    /* =================================================
+       SUBSCRIPTION
+    ================================================= */
+
+    subscriptionStart: {
+      type: Date,
+
+      default: null,
+    },
+
+    subscriptionEnd: {
+      type: Date,
+
+      default: null,
+
+      validate: {
+        validator: function (value) {
+          if (!value) {
+            return true;
+          }
+
+          if (!this.subscriptionStart) {
+            return true;
+          }
+
+          return (
+            value >=
+            this.subscriptionStart
+          );
+        },
+
+        message:
+          "Subscription end date cannot be before subscription start date",
       },
     },
-    {
-      timestamps: true,
-    }
-  );
+
+    notes: {
+      type: String,
+
+      default: "",
+
+      trim: true,
+
+      maxlength: 2000,
+    },
+
+    /* =================================================
+       CREATED BY
+
+       Usually the Super Admin who created/approved the
+       client. Indexed for audit/admin queries.
+    ================================================= */
+
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+
+      ref: "User",
+
+      default: null,
+
+      index: true,
+    },
+  },
+
+  {
+    timestamps: true,
+
+    /*
+     * Prevent accidental storage of fields that are not
+     * defined in the schema.
+     */
+    strict: true,
+  }
+);
+
+/* =====================================================
+   ADDITIONAL INDEXES
+===================================================== */
+
+/*
+ * Useful for Super Admin client listings and
+ * subscription/status-related queries.
+ *
+ * pumpId, ownerUserId, email and pumpCode already have
+ * unique indexes created from their schema options.
+ */
+clientSchema.index({
+  status: 1,
+  createdAt: -1,
+});
+
+clientSchema.index({
+  subscriptionEnd: 1,
+  status: 1,
+});
+
+/* =====================================================
+   MODEL
+===================================================== */
 
 const Client =
   mongoose.models.Client ||

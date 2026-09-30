@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useContext,
   useEffect,
   useState,
@@ -36,6 +37,61 @@ import {
 } from "../../services/settingsService";
 
 /* =====================================================
+   EMPTY SUMMARY
+===================================================== */
+
+const EMPTY_SUMMARY = {
+  todaySales: 0,
+
+  creditSales: 0,
+
+  cashSales: 0,
+  upiSales: 0,
+  cardSales: 0,
+
+  totalExpenses: 0,
+
+  pendingCredit: 0,
+
+  petrolStock: 0,
+  dieselStock: 0,
+  totalFuelStock: 0,
+
+  petrolSold: 0,
+  dieselSold: 0,
+  totalFuelSold: 0,
+
+  netCollection: 0,
+
+  saleCount: 0,
+};
+
+/* =====================================================
+   EMPTY PUMP SETTINGS
+===================================================== */
+
+const EMPTY_PUMP_SETTINGS = {
+  pumpName: "",
+  ownerName: "",
+
+  phone: "",
+  email: "",
+
+  companyName: "",
+  dealerCode: "",
+  gstin: "",
+
+  address: "",
+  city: "",
+  state: "",
+  pincode: "",
+
+  lowStockAlert: 1000,
+
+  enableLowStockAlert: true,
+};
+
+/* =====================================================
    DASHBOARD
 ===================================================== */
 
@@ -56,31 +112,9 @@ const Dashboard = () => {
   const [
     summary,
     setSummary,
-  ] = useState({
-    todaySales: 0,
-
-    creditSales: 0,
-
-    cashSales: 0,
-    upiSales: 0,
-    cardSales: 0,
-
-    totalExpenses: 0,
-
-    pendingCredit: 0,
-
-    petrolStock: 0,
-    dieselStock: 0,
-    totalFuelStock: 0,
-
-    petrolSold: 0,
-    dieselSold: 0,
-    totalFuelSold: 0,
-
-    netCollection: 0,
-
-    saleCount: 0,
-  });
+  ] = useState(
+    EMPTY_SUMMARY
+  );
 
   const [
     dashboardLoading,
@@ -91,30 +125,12 @@ const Dashboard = () => {
      SETTINGS
   ===================================================== */
 
-const [
+  const [
     pumpSettings,
     setPumpSettings,
-  ] = useState({
-    pumpName: "",
-    ownerName: "",
-
-    phone: "",
-    email: "",
-
-    companyName: "",
-    dealerCode: "",
-    gstin: "",
-
-    address: "",
-    city: "",
-    state: "",
-    pincode: "",
-
-    lowStockAlert: 1000,
-
-    enableLowStockAlert:
-      true,
-  });
+  ] = useState(
+    EMPTY_PUMP_SETTINGS
+  );
 
   const [
     settingsLoading,
@@ -133,10 +149,10 @@ const [
   /* =====================================================
      LOCAL DATE
 
-     Avoid UTC date shifting.
+     Uses browser local date and avoids UTC date shifting.
   ===================================================== */
 
-  const getToday = () => {
+  const getToday = useCallback(() => {
     const now =
       new Date();
 
@@ -147,7 +163,7 @@ const [
       String(
         now.getMonth() + 1
       ).padStart(
-        2  ,
+        2,
         "0"
       );
 
@@ -160,385 +176,435 @@ const [
       );
 
     return `${year}-${month}-${day}`;
-  };
-
-  /* =====================================================
-     RESET SUMMARY
-  ===================================================== */
-
-  const emptySummary = {
-    todaySales: 0,
-
-    creditSales: 0,
-
-    cashSales: 0,
-    upiSales: 0,
-    cardSales: 0,
-
-    totalExpenses: 0,
-
-    pendingCredit: 0,
-
-    petrolStock: 0,
-    dieselStock: 0,
-    totalFuelStock: 0,
-
-    petrolSold: 0,
-    dieselSold: 0,
-    totalFuelSold: 0,
-
-    netCollection: 0,
-
-    saleCount: 0,
-  };
+  }, []);
 
   /* =====================================================
      LOAD DASHBOARD
   ===================================================== */
 
   const loadDashboardSummary =
-    async () => {
-      try {
-        setDashboardLoading(
-          true
-        );
+    useCallback(
+      async () => {
+        let active = true;
 
-        const today =
-          getToday();
-
-        const data =
-          await getDashboardSummary(
-            today
+        try {
+          setDashboardLoading(
+            true
           );
 
-        console.log(
-          "DASHBOARD RESPONSE:",
-          data
-        );
+          const today =
+            getToday();
 
-        const dashboardData =
-          data?.summary ||
-          {};
+          const data =
+            await getDashboardSummary(
+              today
+            );
 
-        /*
-          Primary fields correspond
-          to finalized backend.
+          if (!active) {
+            return;
+          }
 
-          Compatibility fallbacks are
-          kept so older API responses
-          don't break the UI.
-        */
+          const dashboardData =
+            data?.summary ||
+            {};
 
-        const todaySales =
-          Number(
-            dashboardData.todaySales ??
-              dashboardData.todaySale ??
-              data?.todaySales ??
-              data?.todaySale ??
-              data?.todaysSale ??
-              0
-          );
+          /*
+            Primary fields correspond
+            to finalized backend.
 
-        const creditSales =
-          Number(
-            dashboardData.creditSales ??
-              dashboardData.payment
-                ?.credit ??
-              data?.creditSales ??
-              data?.creditSale ??
-              0
-          );
+            Compatibility fallbacks are
+            retained for older API responses.
+          */
 
-        const cashSales =
-          Number(
-            dashboardData.cashSales ??
-              dashboardData.payment
-                ?.cash ??
-              data?.cashSales ??
-              data?.cashSale ??
-              0
-          );
-
-        const upiSales =
-          Number(
-            dashboardData.upiSales ??
-              dashboardData.payment
-                ?.upi ??
-              data?.upiSales ??
-              data?.upiSale ??
-              0
-          );
-
-        const cardSales =
-          Number(
-            dashboardData.cardSales ??
-              dashboardData.payment
-                ?.card ??
-              data?.cardSales ??
-              data?.cardSale ??
-              0
-          );
-
-        const totalExpenses =
-          Number(
-            dashboardData.totalExpenses ??
-              dashboardData.todayExpense ??
-              data?.totalExpenses ??
-              data?.todayExpense ??
-              0
-          );
-
-        const pendingCredit =
-          Number(
-            dashboardData.pendingCredit ??
-              data?.pendingCredit ??
-              0
-          );
-
-        const petrolStock =
-          Number(
-            dashboardData.petrolStock ??
-              dashboardData.stock
-                ?.petrol ??
-              data?.petrolStock ??
-              0
-          );
-
-        const dieselStock =
-          Number(
-            dashboardData.dieselStock ??
-              dashboardData.stock
-                ?.diesel ??
-              data?.dieselStock ??
-              0
-          );
-
-        const petrolSold =
-          Number(
-            dashboardData.petrolSold ??
-              dashboardData.fuelSales
-                ?.petrolLitres ??
-              0
-          );
-
-        const dieselSold =
-          Number(
-            dashboardData.dieselSold ??
-              dashboardData.fuelSales
-                ?.dieselLitres ??
-              0
-          );
-
-        const totalFuelStock =
-          Number(
-            dashboardData.totalFuelStock ??
-              (
-                petrolStock +
-                dieselStock
-              )
-          );
-
-        const totalFuelSold =
-          Number(
-            dashboardData.totalFuelSold ??
-              (
-                petrolSold +
-                dieselSold
-              )
-          );
-
-        /*
-          Credit sales are not counted
-          as collected money.
-
-          Net Collection =
-          Cash + UPI + Card - Expenses
-        */
-
-        const calculatedNetCollection =
-          Number(
-            (
-              cashSales +
-              upiSales +
-              cardSales -
-              totalExpenses
-            ).toFixed(2)
-          );
-
-        const netCollection =
-          Number(
-            dashboardData.netCollection ??
-              calculatedNetCollection
-          );
-
-        const saleCount =
-          Number(
-            dashboardData.saleCount ??
-              0
-          );
-
-        setSummary({
-          todaySales,
-
-          creditSales,
-
-          cashSales,
-          upiSales,
-          cardSales,
-
-          totalExpenses,
-
-          pendingCredit,
-
-          petrolStock,
-          dieselStock,
-
-          totalFuelStock:
+          const todaySales =
             Number(
-              totalFuelStock.toFixed(
-                2
-              )
-            ),
+              dashboardData.todaySales ??
+                dashboardData.todaySale ??
+                data?.todaySales ??
+                data?.todaySale ??
+                data?.todaysSale ??
+                0
+            );
 
-          petrolSold,
-
-          dieselSold,
-
-          totalFuelSold:
+          const creditSales =
             Number(
-              totalFuelSold.toFixed(
-                2
-              )
-            ),
+              dashboardData.creditSales ??
+                dashboardData.payment
+                  ?.credit ??
+                data?.creditSales ??
+                data?.creditSale ??
+                0
+            );
 
-          netCollection,
+          const cashSales =
+            Number(
+              dashboardData.cashSales ??
+                dashboardData.payment
+                  ?.cash ??
+                data?.cashSales ??
+                data?.cashSale ??
+                0
+            );
 
-          saleCount,
-        });
-      } catch (error) {
-        console.error(
-          "DASHBOARD SUMMARY ERROR:",
-          error
-        );
+          const upiSales =
+            Number(
+              dashboardData.upiSales ??
+                dashboardData.payment
+                  ?.upi ??
+                data?.upiSales ??
+                data?.upiSale ??
+                0
+            );
 
-        setSummary(
-          emptySummary
-        );
-      } finally {
-        setDashboardLoading(
-          false
-        );
-      }
-    };
+          const cardSales =
+            Number(
+              dashboardData.cardSales ??
+                dashboardData.payment
+                  ?.card ??
+                data?.cardSales ??
+                data?.cardSale ??
+                0
+            );
+
+          const totalExpenses =
+            Number(
+              dashboardData.totalExpenses ??
+                dashboardData.todayExpense ??
+                data?.totalExpenses ??
+                data?.todayExpense ??
+                0
+            );
+
+          const pendingCredit =
+            Number(
+              dashboardData.pendingCredit ??
+                data?.pendingCredit ??
+                0
+            );
+
+          const petrolStock =
+            Number(
+              dashboardData.petrolStock ??
+                dashboardData.stock
+                  ?.petrol ??
+                data?.petrolStock ??
+                0
+            );
+
+          const dieselStock =
+            Number(
+              dashboardData.dieselStock ??
+                dashboardData.stock
+                  ?.diesel ??
+                data?.dieselStock ??
+                0
+            );
+
+          const petrolSold =
+            Number(
+              dashboardData.petrolSold ??
+                dashboardData.fuelSales
+                  ?.petrolLitres ??
+                0
+            );
+
+          const dieselSold =
+            Number(
+              dashboardData.dieselSold ??
+                dashboardData.fuelSales
+                  ?.dieselLitres ??
+                0
+            );
+
+          const totalFuelStock =
+            Number(
+              dashboardData.totalFuelStock ??
+                (
+                  petrolStock +
+                  dieselStock
+                )
+            );
+
+          const totalFuelSold =
+            Number(
+              dashboardData.totalFuelSold ??
+                (
+                  petrolSold +
+                  dieselSold
+                )
+            );
+
+          /*
+            Credit sales are not counted
+            as collected money.
+
+            Net Collection =
+            Cash + UPI + Card - Expenses
+          */
+
+          const calculatedNetCollection =
+            Number(
+              (
+                cashSales +
+                upiSales +
+                cardSales -
+                totalExpenses
+              ).toFixed(2)
+            );
+
+          const netCollection =
+            Number(
+              dashboardData.netCollection ??
+                calculatedNetCollection
+            );
+
+          const saleCount =
+            Number(
+              dashboardData.saleCount ??
+                0
+            );
+
+          setSummary({
+            todaySales,
+
+            creditSales,
+
+            cashSales,
+            upiSales,
+            cardSales,
+
+            totalExpenses,
+
+            pendingCredit,
+
+            petrolStock,
+            dieselStock,
+
+            totalFuelStock:
+              Number(
+                totalFuelStock.toFixed(
+                  2
+                )
+              ),
+
+            petrolSold,
+
+            dieselSold,
+
+            totalFuelSold:
+              Number(
+                totalFuelSold.toFixed(
+                  2
+                )
+              ),
+
+            netCollection,
+
+            saleCount,
+          });
+        } catch (error) {
+          if (!active) {
+            return;
+          }
+
+          console.error(
+            "DASHBOARD SUMMARY ERROR:",
+            error
+          );
+
+          setSummary({
+            ...EMPTY_SUMMARY,
+          });
+        } finally {
+          if (active) {
+            setDashboardLoading(
+              false
+            );
+          }
+        }
+
+        return () => {
+          active = false;
+        };
+      },
+      [
+        getToday,
+      ]
+    );
 
   /* =====================================================
      LOAD SETTINGS
   ===================================================== */
 
- const loadPumpSettings =
-  async () => {
-    try {
-      setSettingsLoading(
-        true
-      );
+  const loadPumpSettings =
+    useCallback(
+      async () => {
+        let active = true;
 
-      const response =
-        await getPumpSettings();
+        try {
+          setSettingsLoading(
+            true
+          );
 
-      console.log(
-        "DASHBOARD PUMP SETTINGS:",
-        response
-      );
+          const response =
+            await getPumpSettings();
 
-      const settings =
-        response?.settings ||
-        response?.pump ||
-        {};
+          if (!active) {
+            return;
+          }
 
-      setPumpSettings({
-        pumpName:
-          settings.pumpName ||
-          "",
+          const settings =
+            response?.settings ||
+            response?.pump ||
+            {};
 
-        ownerName:
-          settings.ownerName ||
-          "",
+          setPumpSettings({
+            pumpName:
+              settings.pumpName ||
+              "",
 
-        phone:
-          settings.phone ||
-          "",
+            ownerName:
+              settings.ownerName ||
+              "",
 
-        email:
-          settings.email ||
-          "",
+            phone:
+              settings.phone ||
+              "",
 
-        companyName:
-          settings.companyName ||
-          "",
+            email:
+              settings.email ||
+              "",
 
-        dealerCode:
-          settings.dealerCode ||
-          "",
+            companyName:
+              settings.companyName ||
+              "",
 
-        gstin:
-          settings.gstin ||
-          "",
+            dealerCode:
+              settings.dealerCode ||
+              "",
 
-        address:
-          settings.address ||
-          "",
+            gstin:
+              settings.gstin ||
+              "",
 
-        city:
-          settings.city ||
-          "",
+            address:
+              settings.address ||
+              "",
 
-        state:
-          settings.state ||
-          "",
+            city:
+              settings.city ||
+              "",
 
-        pincode:
-          settings.pincode ||
-          "",
+            state:
+              settings.state ||
+              "",
 
-        lowStockAlert:
-          Number(
-            settings.lowStockAlert ??
-              1000
-          ),
+            pincode:
+              settings.pincode ||
+              "",
 
-        enableLowStockAlert:
-          settings.enableLowStockAlert ??
-          true,
-      });
-    } catch (error) {
-      console.error(
-        "DASHBOARD SETTINGS ERROR:",
-        error
-      );
-    } finally {
-      setSettingsLoading(
-        false
-      );
-    }
-  };
+            lowStockAlert:
+              Number(
+                settings.lowStockAlert ??
+                  1000
+              ),
+
+            enableLowStockAlert:
+              settings.enableLowStockAlert ??
+              true,
+          });
+        } catch (error) {
+          if (!active) {
+            return;
+          }
+
+          console.error(
+            "DASHBOARD SETTINGS ERROR:",
+            error
+          );
+        } finally {
+          if (active) {
+            setSettingsLoading(
+              false
+            );
+          }
+        }
+
+        return () => {
+          active = false;
+        };
+      },
+      []
+    );
 
   /* =====================================================
      INITIAL LOAD
   ===================================================== */
 
   useEffect(() => {
-    loadDashboardSummary();
-    loadPumpSettings();
-  }, []);
+    let mounted = true;
+
+    const loadInitialData =
+      async () => {
+        if (!mounted) {
+          return;
+        }
+
+        await Promise.allSettled([
+          loadDashboardSummary(),
+          loadPumpSettings(),
+        ]);
+      };
+
+    loadInitialData();
+
+    return () => {
+      mounted = false;
+    };
+  }, [
+    loadDashboardSummary,
+    loadPumpSettings,
+  ]);
 
   /* =====================================================
      REFRESH WHEN USER RETURNS TO TAB
   ===================================================== */
 
   useEffect(() => {
+    let refreshTimeout = null;
+
     const refreshDashboard =
       () => {
-        loadDashboardSummary();
+        /*
+          Do not refresh when the document
+          becomes hidden.
+
+          Refresh only when the user returns.
+        */
+
+        if (
+          document.visibilityState ===
+          "hidden"
+        ) {
+          return;
+        }
+
+        /*
+          Small debounce prevents focus +
+          visibilitychange from triggering
+          duplicate API calls.
+        */
+
+        if (refreshTimeout) {
+          clearTimeout(
+            refreshTimeout
+          );
+        }
+
+        refreshTimeout =
+          setTimeout(() => {
+            loadDashboardSummary();
+          }, 150);
       };
 
     window.addEventListener(
@@ -561,8 +627,16 @@ const [
         "visibilitychange",
         refreshDashboard
       );
+
+      if (refreshTimeout) {
+        clearTimeout(
+          refreshTimeout
+        );
+      }
     };
-  }, []);
+  }, [
+    loadDashboardSummary,
+  ]);
 
   /* =====================================================
      PUMP INFORMATION
@@ -718,7 +792,6 @@ const [
       <div className="dashboard-heading">
 
         <div>
-
           <h1>
             {settingsLoading
               ? "Loading..."
@@ -729,7 +802,6 @@ const [
             Welcome back,{" "}
             {displayOwnerName}
           </p>
-
         </div>
 
         <div
@@ -744,6 +816,20 @@ const [
               "pointer",
           }}
           title="View Pump Information"
+          role="button"
+          tabIndex={0}
+          onKeyDown={(event) => {
+            if (
+              event.key === "Enter" ||
+              event.key === " "
+            ) {
+              event.preventDefault();
+
+              setShowPumpInfo(
+                true
+              );
+            }
+          }}
         >
 
           <Building2
@@ -840,6 +926,22 @@ const [
                     card.path
                   )
                 }
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => {
+                  if (
+                    event.key ===
+                      "Enter" ||
+                    event.key ===
+                      " "
+                  ) {
+                    event.preventDefault();
+
+                    navigate(
+                      card.path
+                    );
+                  }
+                }}
               >
 
                 <div className="dashboard-card-top">
@@ -889,6 +991,20 @@ const [
               "/fuel"
             )
           }
+          role="button"
+          tabIndex={0}
+          onKeyDown={(event) => {
+            if (
+              event.key === "Enter" ||
+              event.key === " "
+            ) {
+              event.preventDefault();
+
+              navigate(
+                "/fuel"
+              );
+            }
+          }}
         >
 
           <Fuel size={30} />
@@ -937,6 +1053,20 @@ const [
               "/fuel"
             )
           }
+          role="button"
+          tabIndex={0}
+          onKeyDown={(event) => {
+            if (
+              event.key === "Enter" ||
+              event.key === " "
+            ) {
+              event.preventDefault();
+
+              navigate(
+                "/fuel"
+              );
+            }
+          }}
         >
 
           <Droplets
@@ -987,6 +1117,20 @@ const [
               "/nozzle/readings"
             )
           }
+          role="button"
+          tabIndex={0}
+          onKeyDown={(event) => {
+            if (
+              event.key === "Enter" ||
+              event.key === " "
+            ) {
+              event.preventDefault();
+
+              navigate(
+                "/nozzle/readings"
+              );
+            }
+          }}
         >
 
           <Gauge size={30} />
@@ -1018,6 +1162,20 @@ const [
               "/ledger/pending"
             )
           }
+          role="button"
+          tabIndex={0}
+          onKeyDown={(event) => {
+            if (
+              event.key === "Enter" ||
+              event.key === " "
+            ) {
+              event.preventDefault();
+
+              navigate(
+                "/ledger/pending"
+              );
+            }
+          }}
         >
 
           <Users size={30} />
@@ -1315,6 +1473,7 @@ const [
         <div className="quick-action-grid">
 
           <button
+            type="button"
             onClick={() =>
               navigate(
                 "/fuel/purchase"
@@ -1327,6 +1486,7 @@ const [
           </button>
 
           <button
+            type="button"
             onClick={() =>
               navigate(
                 "/nozzle/readings/add"
@@ -1339,6 +1499,7 @@ const [
           </button>
 
           <button
+            type="button"
             onClick={() =>
               navigate(
                 "/expenses"
@@ -1351,6 +1512,7 @@ const [
           </button>
 
           <button
+            type="button"
             onClick={() =>
               navigate(
                 "/ledger/payment"
@@ -1365,6 +1527,7 @@ const [
           </button>
 
           <button
+            type="button"
             onClick={() =>
               navigate(
                 "/reports/closing"
@@ -1425,6 +1588,7 @@ const [
                     false
                   )
                 }
+                aria-label="Close pump information"
               >
                 <X size={20} />
               </button>

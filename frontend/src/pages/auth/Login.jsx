@@ -1,5 +1,7 @@
 import {
   useContext,
+  useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -28,7 +30,8 @@ import "./Login.css";
 ===================================================== */
 
 const Login = () => {
-  const navigate = useNavigate();
+  const navigate =
+    useNavigate();
 
   const auth =
     useContext(AuthContext);
@@ -39,7 +42,9 @@ const Login = () => {
     );
   }
 
-  const { login } = auth;
+  const {
+    login,
+  } = auth;
 
   /* =====================================================
      FORM
@@ -65,15 +70,30 @@ const Login = () => {
     useState("ShivShambho");
 
   /* =====================================================
-     SUPER ADMIN ACCOUNT CHECK
-
-     This message will ONLY appear when the
-     Super Admin email is entered.
+     NAVIGATION TIMER
   ===================================================== */
 
-  const isSuperAdminEmail =
-    email.trim().toLowerCase() ===
-    "superadmin@mypump.com";
+  const navigationTimerRef =
+    useRef(null);
+
+  /* =====================================================
+     CLEANUP
+  ===================================================== */
+
+  useEffect(() => {
+    return () => {
+      if (
+        navigationTimerRef.current
+      ) {
+        clearTimeout(
+          navigationTimerRef.current
+        );
+
+        navigationTimerRef.current =
+          null;
+      }
+    };
+  }, []);
 
   /* =====================================================
      LOAD PUMP NAME
@@ -98,12 +118,15 @@ const Login = () => {
         "";
 
       return name
-        ? String(name)
+        ? String(name).trim()
         : "ShivShambho";
     } catch (error) {
       console.error(
         "LOAD LOGIN PUMP NAME ERROR:",
-        error
+        error.response?.data
+          ?.message ||
+          error.message ||
+          "Unable to load pump name."
       );
 
       return "ShivShambho";
@@ -114,190 +137,262 @@ const Login = () => {
      LOGIN
   ===================================================== */
 
-  const handleSubmit = async (
-    event
-  ) => {
-    event.preventDefault();
-
-    const cleanEmail =
-      email.trim().toLowerCase();
-
-    /* -----------------------------------------------
-       VALIDATION
-    ------------------------------------------------ */
-
-    if (!cleanEmail) {
-      toast.error(
-        "Enter your email"
-      );
-      return;
-    }
-
-    if (!password) {
-      toast.error(
-        "Enter your password"
-      );
-      return;
-    }
-
-    try {
-      setLoading(true);
-
-      /* ---------------------------------------------
-         LOGIN
-      --------------------------------------------- */
-
-      const result =
-        await login(
-          cleanEmail,
-          password
-        );
-
-      const loggedInUser =
-        result?.user;
-
-      console.log(
-        "LOGGED IN USER:",
-        loggedInUser
-      );
-
-      if (!loggedInUser) {
-        throw new Error(
-          "User information was not returned"
-        );
-      }
-
-      /* =============================================
-         SUPER ADMIN
-      ============================================= */
+  const handleSubmit =
+    async (event) => {
+      event.preventDefault();
 
       if (
-        loggedInUser.role ===
-        "superadmin"
+        loading ||
+        showTanker
       ) {
+        return;
+      }
+
+      const cleanEmail =
+        email
+          .trim()
+          .toLowerCase();
+
+      /* =================================================
+         VALIDATION
+      ================================================= */
+
+      if (!cleanEmail) {
+        toast.error(
+          "Enter your email."
+        );
+        return;
+      }
+
+      if (
+        cleanEmail.length >
+        254
+      ) {
+        toast.error(
+          "Email address is too long."
+        );
+        return;
+      }
+
+      const emailRegex =
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+      if (
+        !emailRegex.test(
+          cleanEmail
+        )
+      ) {
+        toast.error(
+          "Enter a valid email address."
+        );
+        return;
+      }
+
+      if (!password) {
+        toast.error(
+          "Enter your password."
+        );
+        return;
+      }
+
+      if (
+        password.length >
+        128
+      ) {
+        toast.error(
+          "Password is too long."
+        );
+        return;
+      }
+
+      try {
+        setLoading(true);
+
+        /* =================================================
+           LOGIN
+        ================================================= */
+
+        const result =
+          await login(
+            cleanEmail,
+            password
+          );
+
+        const loggedInUser =
+          result?.user;
+
+        if (!loggedInUser) {
+          throw new Error(
+            "User information was not returned."
+          );
+        }
+
+        /* =================================================
+           SUPER ADMIN
+        ================================================= */
+
+        if (
+          loggedInUser.role ===
+          "superadmin"
+        ) {
+          setPumpName(
+            "ShivShambho Super Admin"
+          );
+
+          toast.success(
+            "Super Admin login successful."
+          );
+
+          setShowTanker(true);
+
+          if (
+            navigationTimerRef.current
+          ) {
+            clearTimeout(
+              navigationTimerRef.current
+            );
+          }
+
+          navigationTimerRef.current =
+            setTimeout(() => {
+              navigate(
+                "/superadmin",
+                {
+                  replace: true,
+                }
+              );
+
+              navigationTimerRef.current =
+                null;
+            }, 4300);
+
+          return;
+        }
+
+        /* =================================================
+           NORMAL PUMP USERS
+        ================================================= */
+
+        if (
+          !loggedInUser.pumpId
+        ) {
+          throw new Error(
+            "This account is not assigned to a petrol pump."
+          );
+        }
+
+        const currentPumpName =
+          await loadPumpName();
+
         setPumpName(
-          "ShivShambho Super Admin"
+          currentPumpName
         );
 
         toast.success(
-          "Super Admin login successful"
+          "Login successful."
         );
 
         setShowTanker(true);
 
-        setTimeout(() => {
-          navigate(
-            "/superadmin",
-            {
-              replace: true,
-            }
+        if (
+          navigationTimerRef.current
+        ) {
+          clearTimeout(
+            navigationTimerRef.current
           );
-        }, 4300);
+        }
 
-        return;
-      }
+        navigationTimerRef.current =
+          setTimeout(() => {
+            navigate(
+              "/dashboard",
+              {
+                replace: true,
+              }
+            );
 
-      /* =============================================
-         CLIENT / OWNER / MANAGER / STAFF
-      ============================================= */
+            navigationTimerRef.current =
+              null;
+          }, 4300);
 
-      const currentPumpName =
-        await loadPumpName();
-
-      setPumpName(
-        currentPumpName
-      );
-
-      toast.success(
-        "Login successful"
-      );
-
-      setShowTanker(true);
-
-      setTimeout(() => {
-        navigate(
-          "/dashboard",
-          {
-            replace: true,
-          }
-        );
-      }, 4300);
-
-    } catch (error) {
-      console.error(
-        "LOGIN PAGE ERROR:",
-        error
-      );
-
-      /* =============================================
-         BACKEND ERROR CODE HANDLING
-      ============================================= */
-
-      const errorData =
-        error?.response?.data;
-
-      const errorCode =
-        errorData?.code;
-
-      /* ---------------------------------------------
-         REGISTRATION PENDING
-      --------------------------------------------- */
-
-      if (
-        errorCode ===
-        "REGISTRATION_PENDING"
-      ) {
-        toast.error(
-          "Your registration is waiting for Super Admin approval."
+      } catch (error) {
+        console.error(
+          "LOGIN PAGE ERROR:",
+          error.response?.data
+            ?.message ||
+            error.message ||
+            error
         );
 
-        return;
-      }
+        /* =================================================
+           BACKEND ERROR DATA
+        ================================================= */
 
-      /* ---------------------------------------------
-         REGISTRATION REJECTED
-      --------------------------------------------- */
+        const errorData =
+          error?.response?.data;
 
-      if (
-        errorCode ===
-        "REGISTRATION_REJECTED"
-      ) {
+        const errorCode =
+          errorData?.code;
+
+        /* =================================================
+           REGISTRATION PENDING
+        ================================================= */
+
+        if (
+          errorCode ===
+          "REGISTRATION_PENDING"
+        ) {
+          toast.error(
+            "Your registration is waiting for Super Admin approval."
+          );
+
+          return;
+        }
+
+        /* =================================================
+           REGISTRATION REJECTED
+        ================================================= */
+
+        if (
+          errorCode ===
+          "REGISTRATION_REJECTED"
+        ) {
+          toast.error(
+            errorData?.message ||
+              "Your registration request was rejected."
+          );
+
+          return;
+        }
+
+        /* =================================================
+           ACCOUNT DISABLED
+        ================================================= */
+
+        if (
+          errorCode ===
+          "ACCOUNT_DISABLED"
+        ) {
+          toast.error(
+            "Your account is currently disabled. Contact the Super Admin."
+          );
+
+          return;
+        }
+
+        /* =================================================
+           GENERAL LOGIN ERROR
+        ================================================= */
+
         toast.error(
           errorData?.message ||
-          "Your registration request was rejected."
+            error.message ||
+            "Login failed."
         );
-
-        return;
+      } finally {
+        setLoading(false);
       }
-
-      /* ---------------------------------------------
-         ACCOUNT DISABLED
-      --------------------------------------------- */
-
-      if (
-        errorCode ===
-        "ACCOUNT_DISABLED"
-      ) {
-        toast.error(
-          "Your account is currently disabled. Contact the Super Admin."
-        );
-
-        return;
-      }
-
-      /* ---------------------------------------------
-         INVALID LOGIN / GENERAL ERROR
-      --------------------------------------------- */
-
-      toast.error(
-        errorData?.message ||
-        error.message ||
-        "Login failed"
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
 
   /* =====================================================
      UI
@@ -331,7 +426,6 @@ const Login = () => {
 
           </div>
 
-
           {/* ===========================================
               LOGIN FORM
           =========================================== */}
@@ -340,19 +434,21 @@ const Login = () => {
             onSubmit={
               handleSubmit
             }
+            noValidate
           >
 
-            {/* =========================================
-                EMAIL
-            ========================================= */}
+            {/* EMAIL */}
 
             <div className="form-group">
 
-              <label>
+              <label
+                htmlFor="login-email"
+              >
                 Email
               </label>
 
               <input
+                id="login-email"
                 type="email"
                 value={email}
                 onChange={(event) =>
@@ -362,6 +458,7 @@ const Login = () => {
                 }
                 placeholder="Enter your email"
                 autoComplete="email"
+                maxLength={254}
                 disabled={
                   loading ||
                   showTanker
@@ -371,18 +468,18 @@ const Login = () => {
 
             </div>
 
-
-            {/* =========================================
-                PASSWORD
-            ========================================= */}
+            {/* PASSWORD */}
 
             <div className="form-group">
 
-              <label>
+              <label
+                htmlFor="login-password"
+              >
                 Password
               </label>
 
               <input
+                id="login-password"
                 type="password"
                 value={password}
                 onChange={(event) =>
@@ -392,6 +489,7 @@ const Login = () => {
                 }
                 placeholder="Enter your password"
                 autoComplete="current-password"
+                maxLength={128}
                 disabled={
                   loading ||
                   showTanker
@@ -401,36 +499,32 @@ const Login = () => {
 
             </div>
 
-
-            {/* =========================================
-                FORGOT PASSWORD
-            ========================================= */}
+            {/* FORGOT PASSWORD */}
 
             <div
               style={{
                 display: "flex",
-                justifyContent: "flex-end",
-                marginBottom: "14px",
+                justifyContent:
+                  "flex-end",
+                marginBottom:
+                  "14px",
               }}
             >
-
               <Link
                 to="/forgot-password"
                 className="register-link"
                 style={{
-                  fontSize: "14px",
-                  textDecoration: "none",
+                  fontSize:
+                    "14px",
+                  textDecoration:
+                    "none",
                 }}
               >
                 Forgot Password?
               </Link>
-
             </div>
 
-
-            {/* =========================================
-                LOGIN BUTTON
-            ========================================= */}
+            {/* LOGIN BUTTON */}
 
             <button
               type="submit"
@@ -443,15 +537,12 @@ const Login = () => {
                 width: "100%",
               }}
             >
-
               {loading
                 ? "Signing in..."
                 : "Login"}
-
             </button>
 
           </form>
-
 
           {/* ===========================================
               CREATE ACCOUNT
@@ -472,29 +563,9 @@ const Login = () => {
 
           </div>
 
-
-          {/* ===========================================
-              SUPER ADMIN MESSAGE
-
-              ONLY SHOWS FOR:
-              superadmin@mypump.com
-          =========================================== */}
-
-          {isSuperAdminEmail && (
-            <div className="login-admin-note">
-
-              <span>
-                Super Admin access is restricted
-                to authorized administrators.
-              </span>
-
-            </div>
-          )}
-
         </div>
 
       </div>
-
 
       {/* ===============================================
           TANKER ANIMATION

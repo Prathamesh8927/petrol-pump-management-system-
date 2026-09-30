@@ -7,6 +7,7 @@ import {
 import {
   LogOut,
   User,
+  Menu,
 } from "lucide-react";
 
 import {
@@ -19,13 +20,19 @@ import {
 
 import api from "../services/api";
 
-const Navbar = () => {
-  const navigate = useNavigate();
+const Navbar = ({
+  isMobile = false,
+  onOpenMobileMenu,
+}) => {
+  const navigate =
+    useNavigate();
 
   const {
     user,
     logout,
-  } = useContext(AuthContext);
+  } = useContext(
+    AuthContext
+  );
 
   const [
     pump,
@@ -37,8 +44,19 @@ const Navbar = () => {
   ===================================================== */
 
   useEffect(() => {
+    let isMounted = true;
+
     const loadPump = async () => {
+      /*
+       * Clear old pump information whenever
+       * the authenticated user changes.
+       */
+
       if (!user) {
+        if (isMounted) {
+          setPump(null);
+        }
+
         return;
       }
 
@@ -46,8 +64,14 @@ const Navbar = () => {
          SUPER ADMIN
       =============================================== */
 
-      if (user.role === "superadmin") {
-        setPump(null);
+      if (
+        user.role ===
+        "superadmin"
+      ) {
+        if (isMounted) {
+          setPump(null);
+        }
+
         return;
       }
 
@@ -56,25 +80,42 @@ const Navbar = () => {
       =============================================== */
 
       if (!user.pumpId) {
-        setPump(null);
+        if (isMounted) {
+          setPump(null);
+        }
+
         return;
       }
 
       try {
-        const response = await api.get(
-          "/settings/pump"
-        );
+        const response =
+          await api.get(
+            "/settings/pump"
+          );
+
+        if (!isMounted) {
+          return;
+        }
 
         const data =
           response.data?.pump ||
           response.data?.settings ||
           response.data;
 
-        setPump(data || null);
+        setPump(
+          data || null
+        );
       } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
         console.error(
           "NAVBAR PUMP ERROR:",
-          error
+          error.response?.data
+            ?.message ||
+            error.message ||
+            "Unable to load pump information."
         );
 
         setPump(null);
@@ -82,6 +123,10 @@ const Navbar = () => {
     };
 
     loadPump();
+
+    return () => {
+      isMounted = false;
+    };
   }, [user]);
 
   /* =====================================================
@@ -100,85 +145,235 @@ const Navbar = () => {
      DISPLAY INFORMATION
   ===================================================== */
 
+  const isSuperAdmin =
+    user?.role ===
+    "superadmin";
+
   const displayName =
-    user?.role === "superadmin"
-      ? "MyPump Super Admin"
+    isSuperAdmin
+      ? "ShivShambho Super Admin"
       : pump?.pumpName ||
         "ShivShambho";
 
   const displayOwner =
-    user?.role === "superadmin"
-      ? "MyPump Super Admin"
+    isSuperAdmin
+      ? "ShivShambho Super Admin"
       : pump?.ownerName ||
         user?.name ||
         "Owner";
 
   const displayRole =
-    user?.role === "superadmin"
+    isSuperAdmin
       ? "Super Admin"
-      : user?.role || "User";
+      : user?.role ||
+        "User";
 
   /* =====================================================
      UI
   ===================================================== */
 
   return (
-    <header className="navbar">
+    <header
+      className="navbar"
+      role="banner"
+      style={{
+        width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
+      }}
+    >
+      {/* =================================================
+          MOBILE MENU BUTTON
+      ================================================= */}
 
-      <div>
+      {isMobile && (
+        <button
+          type="button"
+          onClick={
+            onOpenMobileMenu
+          }
+          aria-label="Open navigation menu"
+          aria-expanded={false}
+          style={{
+            width: "42px",
+            height: "42px",
+            minWidth: "42px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent:
+              "center",
+            border: "none",
+            borderRadius: "10px",
+            background:
+              "#f1f5f9",
+            color: "#334155",
+            cursor: "pointer",
+            flexShrink: 0,
+            padding: 0,
+          }}
+        >
+          <Menu
+            size={23}
+            aria-hidden="true"
+          />
+        </button>
+      )}
 
-        <h3>
+      {/* =================================================
+          PUMP / USER INFORMATION
+      ================================================= */}
+
+      <div
+        className="navbar-info"
+        style={{
+          minWidth: 0,
+          flex: 1,
+          overflow: "hidden",
+        }}
+      >
+        <h3
+          title={displayName}
+          style={{
+            overflow: "hidden",
+            textOverflow:
+              "ellipsis",
+            whiteSpace:
+              "nowrap",
+          }}
+        >
           {displayName}
         </h3>
 
-        <small>
-          {displayOwner} • {displayRole}
-        </small>
+        <small
+          style={{
+            display: "flex",
+            alignItems: "center",
+            minWidth: 0,
+            overflow: "hidden",
+          }}
+        >
+          <span
+            style={{
+              overflow: "hidden",
+              textOverflow:
+                "ellipsis",
+              whiteSpace:
+                "nowrap",
+            }}
+          >
+            {displayOwner}
+          </span>
 
+          <span
+            aria-hidden="true"
+            style={{
+              flexShrink: 0,
+            }}
+          >
+            {" • "}
+          </span>
+
+          <span
+            style={{
+              flexShrink: 0,
+            }}
+          >
+            {displayRole}
+          </span>
+        </small>
       </div>
 
+      {/* =================================================
+          RIGHT SIDE
+      ================================================= */}
+
       <div
+        className="navbar-actions"
         style={{
           display: "flex",
           alignItems: "center",
           gap: "12px",
+          minWidth: 0,
+          flexShrink: 0,
         }}
       >
+        {/* USER EMAIL */}
 
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "7px",
-            color: "#475569",
-            fontSize: "14px",
-          }}
-        >
+        {!isMobile && (
+          <div
+            className="navbar-user"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "7px",
+              color: "#475569",
+              fontSize: "14px",
+              minWidth: 0,
+              maxWidth: "260px",
+            }}
+          >
+            <User
+              size={17}
+              aria-hidden="true"
+            />
 
-          <User size={17} />
+            <span
+              title={
+                user?.email ||
+                ""
+              }
+              style={{
+                overflow: "hidden",
+                textOverflow:
+                  "ellipsis",
+                whiteSpace:
+                  "nowrap",
+                minWidth: 0,
+              }}
+            >
+              {user?.email || ""}
+            </span>
+          </div>
+        )}
 
-          <span>
-            {user?.email || ""}
-          </span>
-
-        </div>
+        {/* LOGOUT */}
 
         <button
           type="button"
           className="logout-button"
-          onClick={handleLogout}
+          onClick={
+            handleLogout
+          }
+          aria-label="Logout"
+          style={
+            isMobile
+              ? {
+                  width: "42px",
+                  height: "42px",
+                  minWidth: "42px",
+                  display: "flex",
+                  alignItems:
+                    "center",
+                  justifyContent:
+                    "center",
+                  padding: 0,
+                  gap: 0,
+                }
+              : undefined
+          }
         >
+          <LogOut
+            size={17}
+            aria-hidden="true"
+          />
 
-          <LogOut size={17} />
-
-          <span>
-            Logout
-          </span>
-
+          {!isMobile && (
+            <span>
+              Logout
+            </span>
+          )}
         </button>
-
       </div>
-
     </header>
   );
 };

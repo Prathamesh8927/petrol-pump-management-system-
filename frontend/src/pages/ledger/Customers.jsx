@@ -1,6 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
 import { useNavigate } from "react-router-dom";
-import { toast } from "react-toastify";
+
+import toast from "react-hot-toast";
+
 import {
   Plus,
   Eye,
@@ -19,523 +28,795 @@ import {
 } from "../../services/ledgerService";
 
 import api from "../../services/api";
-import { exportLedgerPDF } from "../../utils/ledgerExport";
+
+import {
+  exportLedgerPDF,
+} from "../../utils/ledgerExport";
+
+/* =========================================================
+   COLORS
+   IMPORTANT:
+   These are kept the same as the previous Ledger List UI.
+========================================================= */
+
+const COLORS = {
+  pageBackground: "#f5f7fa",
+
+  primary: "#124b68",
+  primaryDark: "#0d3f59",
+  primaryText: "#0f4663",
+
+  text: "#102a43",
+  muted: "#64748b",
+
+  white: "#ffffff",
+
+  border: "#dfe5eb",
+  borderDark: "#cbd5e1",
+
+  success: "#15803d",
+  successBackground: "#dcfce7",
+
+  danger: "#dc2626",
+  dangerDark: "#b91c1c",
+  dangerBackground: "#fee2e2",
+
+  hover: "#f8fafc",
+};
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+const resolveLogoUrl = (settings = {}) => {
+  const candidates = [
+    settings?.logoUrl,
+    settings?.logoURL,
+    settings?.companyLogo,
+    settings?.pumpLogo,
+    settings?.logo?.url,
+    settings?.logo?.secure_url,
+    settings?.logo?.secureUrl,
+    settings?.logo?.path,
+    settings?.logo?.src,
+    settings?.logo,
+  ];
+
+  const resolved = candidates.find(
+    (value) =>
+      typeof value === "string" &&
+      value.trim().length > 0
+  );
+
+  return resolved
+    ? resolved.trim()
+    : null;
+};
+
+const getErrorMessage = (
+  error,
+  fallback
+) => {
+  return (
+    error?.response?.data?.message ||
+    error?.message ||
+    fallback
+  );
+};
+
+const safeNumber = (value) => {
+  const number = Number(value);
+
+  return Number.isFinite(number)
+    ? number
+    : 0;
+};
+
+/* =========================================================
+   COMPONENT
+========================================================= */
 
 const Customers = () => {
   const navigate = useNavigate();
 
-  const [customers, setCustomers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
+  /* =======================================================
+     STATE
+  ======================================================= */
 
-  const [totals, setTotals] = useState({
+  const [
+    customers,
+    setCustomers,
+  ] = useState([]);
+
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
+
+  const [
+    search,
+    setSearch,
+  ] = useState("");
+
+  const [
+    deletingId,
+    setDeletingId,
+  ] = useState(null);
+
+  const [
+    exportingId,
+    setExportingId,
+  ] = useState(null);
+
+  const [
+    totals,
+    setTotals,
+  ] = useState({
     totalCustomers: 0,
     totalCredit: 0,
     totalPaid: 0,
     totalPending: 0,
   });
 
-  /* =========================================================
-     COLORS
-  ========================================================= */
+  /* =======================================================
+     REFS
+  ======================================================= */
 
-  const COLORS = {
-    pageBackground: "#f5f7fa",
+  const mountedRef =
+    useRef(true);
 
-    primary: "#124b68",
-    primaryDark: "#0d3f59",
-    primaryText: "#0f4663",
+  const loadingRef =
+    useRef(false);
 
-    text: "#102a43",
-    muted: "#64748b",
+  const deletingRef =
+    useRef(false);
 
-    white: "#ffffff",
+  const exportingRef =
+    useRef(false);
 
-    border: "#dfe5eb",
-    borderDark: "#cbd5e1",
+  /* =======================================================
+     MOUNT / UNMOUNT
+  ======================================================= */
 
-    success: "#15803d",
-    successBackground: "#dcfce7",
+  useEffect(() => {
+    mountedRef.current = true;
 
-    danger: "#dc2626",
-    dangerDark: "#b91c1c",
-    dangerBackground: "#fee2e2",
-
-    hover: "#f8fafc",
-  };
-
-  /* =========================================================
-     RESOLVE PROFILE LOGO
-  ========================================================= */
-
-  const resolveLogoUrl = (settings = {}) => {
-    const candidates = [
-      settings?.logoUrl,
-      settings?.logoURL,
-      settings?.companyLogo,
-      settings?.pumpLogo,
-      settings?.logo?.url,
-      settings?.logo?.secure_url,
-      settings?.logo?.secureUrl,
-      settings?.logo?.path,
-      settings?.logo?.src,
-      settings?.logo,
-    ];
-
-    const resolved = candidates.find(
-      (value) =>
-        typeof value === "string" &&
-        value.trim().length > 0
-    );
-
-    return resolved ? resolved.trim() : null;
-  };
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   /* =========================================================
      LOAD CUSTOMERS
   ========================================================= */
 
-  const loadCustomers = async () => {
-    try {
-      setLoading(true);
+  const loadCustomers = useCallback(
+    async (options = {}) => {
+      const {
+        silent = false,
+      } = options;
 
-      const data = await getLedgerCustomers();
+      if (
+        loadingRef.current &&
+        !silent
+      ) {
+        return;
+      }
 
-      const customerList = data?.customers || [];
+      loadingRef.current = true;
 
-      setCustomers(customerList);
+      if (!silent && mountedRef.current) {
+        setLoading(true);
+      }
 
-      setTotals({
-        totalCustomers:
-          data?.totalCustomers ??
-          customerList.length ??
-          0,
+      try {
+        const data =
+          await getLedgerCustomers();
 
-        totalCredit: Number(
-          data?.totalCredit ??
-            data?.totalPurchased ??
-            0
-        ),
+        if (!mountedRef.current) {
+          return;
+        }
 
-        totalPaid: Number(
-          data?.totalPaid ?? 0
-        ),
+        const customerList =
+          Array.isArray(
+            data?.customers
+          )
+            ? data.customers
+            : [];
 
-        totalPending: Number(
-          data?.totalPending ??
-            data?.totalCreditPending ??
-            0
-        ),
-      });
-    } catch (error) {
-      console.error(
-        "LOAD CUSTOMERS ERROR:",
-        error
-      );
+        setCustomers(
+          customerList
+        );
 
-      toast.error(
-        error?.response?.data?.message ||
-          error?.message ||
-          "Failed to load customers"
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+        setTotals({
+          totalCustomers:
+            Number.isFinite(
+              Number(
+                data?.totalCustomers
+              )
+            )
+              ? Number(
+                  data.totalCustomers
+                )
+              : customerList.length,
+
+          totalCredit:
+            safeNumber(
+              data?.totalCredit ??
+                data?.totalPurchased
+            ),
+
+          totalPaid:
+            safeNumber(
+              data?.totalPaid
+            ),
+
+          totalPending:
+            safeNumber(
+              data?.totalPending ??
+                data?.totalCreditPending
+            ),
+        });
+      } catch (error) {
+        if (!mountedRef.current) {
+          return;
+        }
+
+        toast.error(
+          getErrorMessage(
+            error,
+            "Failed to load customers"
+          )
+        );
+      } finally {
+        loadingRef.current = false;
+
+        if (mountedRef.current) {
+          setLoading(false);
+        }
+      }
+    },
+    []
+  );
+
+  /* =========================================================
+     INITIAL LOAD
+  ========================================================= */
 
   useEffect(() => {
     loadCustomers();
-  }, []);
+  }, [loadCustomers]);
+
+  /* =========================================================
+     REFRESH WHEN TAB / WINDOW BECOMES ACTIVE
+  ========================================================= */
+
+  useEffect(() => {
+    let refreshTimer = null;
+
+    const refresh = () => {
+      if (
+        document.visibilityState ===
+        "hidden"
+      ) {
+        return;
+      }
+
+      clearTimeout(
+        refreshTimer
+      );
+
+      refreshTimer = setTimeout(
+        () => {
+          loadCustomers({
+            silent: true,
+          });
+        },
+        250
+      );
+    };
+
+    window.addEventListener(
+      "focus",
+      refresh
+    );
+
+    document.addEventListener(
+      "visibilitychange",
+      refresh
+    );
+
+    return () => {
+      clearTimeout(
+        refreshTimer
+      );
+
+      window.removeEventListener(
+        "focus",
+        refresh
+      );
+
+      document.removeEventListener(
+        "visibilitychange",
+        refresh
+      );
+    };
+  }, [loadCustomers]);
 
   /* =========================================================
      SEARCH
   ========================================================= */
 
-  const filteredCustomers = useMemo(() => {
-    const value = search
-      .trim()
-      .toLowerCase();
+  const filteredCustomers =
+    useMemo(() => {
+      const value =
+        search
+          .trim()
+          .toLowerCase();
 
-    if (!value) {
-      return customers;
-    }
+      if (!value) {
+        return customers;
+      }
 
-    return customers.filter((customer) => {
-      return (
-        String(customer?.name || "")
-          .toLowerCase()
-          .includes(value) ||
+      return customers.filter(
+        (customer) => {
+          return (
+            String(
+              customer?.name || ""
+            )
+              .toLowerCase()
+              .includes(value) ||
 
-        String(customer?.phone || "")
-          .toLowerCase()
-          .includes(value) ||
+            String(
+              customer?.phone || ""
+            )
+              .toLowerCase()
+              .includes(value) ||
 
-        String(
-          customer?.vehicleNumber || ""
-        )
-          .toLowerCase()
-          .includes(value) ||
+            String(
+              customer?.vehicleNumber ||
+                ""
+            )
+              .toLowerCase()
+              .includes(value) ||
 
-        String(customer?.address || "")
-          .toLowerCase()
-          .includes(value)
+            String(
+              customer?.address || ""
+            )
+              .toLowerCase()
+              .includes(value)
+          );
+        }
       );
-    });
-  }, [customers, search]);
+    }, [
+      customers,
+      search,
+    ]);
 
   /* =========================================================
      OPEN CUSTOMER LEDGER
-     
-     Clicking anywhere on the customer row uses
-     exactly the same route as the View/Eye button.
   ========================================================= */
 
-  const handleCustomerRowClick = (customer) => {
-    if (!customer?._id) {
-      return;
-    }
+  const handleCustomerRowClick =
+    useCallback(
+      (customer) => {
+        if (!customer?._id) {
+          return;
+        }
 
-    navigate(
-      `/ledger/customer?id=${customer._id}`
+        navigate(
+          `/ledger/customer?id=${encodeURIComponent(
+            customer._id
+          )}`
+        );
+      },
+      [navigate]
     );
-  };
 
   /* =========================================================
      DELETE CUSTOMER
   ========================================================= */
 
-  const handleDelete = async (customer) => {
-    const confirmed = window.confirm(
-      `Are you sure you want to delete "${customer?.name}"?`
+  const handleDelete =
+    useCallback(
+      async (customer) => {
+        if (
+          !customer?._id ||
+          deletingRef.current
+        ) {
+          return;
+        }
+
+        const confirmed =
+          window.confirm(
+            `Are you sure you want to delete "${customer?.name}"?\n\nThe customer will be moved to recovery storage according to the configured retention period.`
+          );
+
+        if (!confirmed) {
+          return;
+        }
+
+        deletingRef.current =
+          true;
+
+        if (mountedRef.current) {
+          setDeletingId(
+            customer._id
+          );
+        }
+
+        try {
+          await deleteLedgerCustomer(
+            customer._id
+          );
+
+          if (!mountedRef.current) {
+            return;
+          }
+
+          toast.success(
+            "Customer moved to recovery storage"
+          );
+
+          await loadCustomers({
+            silent: true,
+          });
+        } catch (error) {
+          if (!mountedRef.current) {
+            return;
+          }
+
+          toast.error(
+            getErrorMessage(
+              error,
+              "Failed to delete customer"
+            )
+          );
+        } finally {
+          deletingRef.current =
+            false;
+
+          if (mountedRef.current) {
+            setDeletingId(null);
+          }
+        }
+      },
+      [loadCustomers]
     );
-
-    if (!confirmed) {
-      return;
-    }
-
-    try {
-      await deleteLedgerCustomer(
-        customer._id
-      );
-
-      toast.success(
-        "Customer deleted successfully"
-      );
-
-      await loadCustomers();
-    } catch (error) {
-      console.error(
-        "DELETE CUSTOMER ERROR:",
-        error
-      );
-
-      toast.error(
-        error?.response?.data?.message ||
-          error?.message ||
-          "Failed to delete customer"
-      );
-    }
-  };
 
   /* =========================================================
      DOWNLOAD CUSTOMER LEDGER PDF
   ========================================================= */
 
-  const handleDownloadPDF = async (
-    customer
-  ) => {
-    let loadingToast = null;
+  const handleDownloadPDF =
+    useCallback(
+      async (customer) => {
+        if (
+          !customer?._id ||
+          exportingRef.current
+        ) {
+          return;
+        }
 
-    try {
-      loadingToast = toast.loading(
-        "Preparing customer ledger PDF..."
-      );
+        exportingRef.current =
+          true;
 
-      const historyResponse =
-        await getCustomerLedgerHistory(
-          customer._id
-        );
+        if (mountedRef.current) {
+          setExportingId(
+            customer._id
+          );
+        }
 
-      const pdfCustomer =
-        historyResponse?.customer ||
-        historyResponse?.data?.customer ||
-        customer;
+        const loadingToast =
+          toast.loading(
+            "Preparing customer ledger PDF..."
+          );
 
-      const entries =
-        historyResponse?.entries ||
-        historyResponse?.transactions ||
-        historyResponse?.data?.entries ||
-        historyResponse?.data?.transactions ||
-        [];
+        try {
+          const historyResponse =
+            await getCustomerLedgerHistory(
+              customer._id
+            );
 
-      const summary =
-        historyResponse?.summary ||
-        historyResponse?.data?.summary ||
-        {};
+          const pdfCustomer =
+            historyResponse?.customer ||
+            historyResponse
+              ?.data?.customer ||
+            customer;
 
-      /* -------------------------------------------------------
-         LOAD PUMP PROFILE
-      ------------------------------------------------------- */
+          const entries =
+            historyResponse?.entries ||
+            historyResponse?.transactions ||
+            historyResponse
+              ?.data?.entries ||
+            historyResponse
+              ?.data?.transactions ||
+            [];
 
-      let pumpSettings = {};
+          const summary =
+            historyResponse?.summary ||
+            historyResponse
+              ?.data?.summary ||
+            {};
 
-      try {
-        const pumpResponse =
-          await api.get("/settings/pump");
+          /* ==============================================
+             LOAD PUMP PROFILE
+          ============================================== */
 
-        pumpSettings =
-          pumpResponse?.settings ||
-          pumpResponse?.data?.settings ||
-          pumpResponse?.data ||
-          {};
-      } catch (pumpError) {
-        console.error(
-          "PUMP SETTINGS PDF ERROR:",
-          pumpError
-        );
-      }
+          let pumpSettings = {};
 
-      /* -------------------------------------------------------
-         PROFILE LOGO
-      ------------------------------------------------------- */
+          try {
+            const pumpResponse =
+              await api.get(
+                "/settings/pump"
+              );
 
-      const logoUrl =
-        resolveLogoUrl(pumpSettings);
+            pumpSettings =
+              pumpResponse?.settings ||
+              pumpResponse
+                ?.data?.settings ||
+              pumpResponse?.data ||
+              {};
+          } catch {
+            pumpSettings = {};
+          }
 
-      /* -------------------------------------------------------
-         NORMALIZED PUMP PROFILE
-      ------------------------------------------------------- */
+          /* ==============================================
+             PROFILE LOGO
+          ============================================== */
 
-      const pump = {
-        ...pumpSettings,
+          const logoUrl =
+            resolveLogoUrl(
+              pumpSettings
+            );
 
-        pumpName:
-          pumpSettings?.pumpName ||
-          pumpSettings?.name ||
-          "Shivshambho",
+          /* ==============================================
+             NORMALIZED PUMP PROFILE
+          ============================================== */
 
-        ownerName:
-          pumpSettings?.ownerName ||
-          pumpSettings?.owner ||
-          "",
+          const pump = {
+            ...pumpSettings,
 
-        companyName:
-          pumpSettings?.companyName ||
-          pumpSettings?.oilCompanyName ||
-          pumpSettings?.oilCompany ||
-          "",
+            pumpName:
+              pumpSettings?.pumpName ||
+              pumpSettings?.name ||
+              "Shivshambho",
 
-        gstin:
-          pumpSettings?.gstin ||
-          pumpSettings?.gstNo ||
-          "",
+            ownerName:
+              pumpSettings?.ownerName ||
+              pumpSettings?.owner ||
+              "",
 
-        address:
-          pumpSettings?.address ||
-          "",
+            companyName:
+              pumpSettings?.companyName ||
+              pumpSettings
+                ?.oilCompanyName ||
+              pumpSettings
+                ?.oilCompany ||
+              "",
 
-        city:
-          pumpSettings?.city ||
-          "",
+            gstin:
+              pumpSettings?.gstin ||
+              pumpSettings?.gstNo ||
+              "",
 
-        state:
-          pumpSettings?.state ||
-          "",
+            address:
+              pumpSettings?.address ||
+              "",
 
-        pincode:
-          pumpSettings?.pincode ||
-          pumpSettings?.pinCode ||
-          "",
+            city:
+              pumpSettings?.city ||
+              "",
 
-        phone:
-          pumpSettings?.phone ||
-          pumpSettings?.mobile ||
-          pumpSettings?.mobileNumber ||
-          "",
+            state:
+              pumpSettings?.state ||
+              "",
 
-        email:
-          pumpSettings?.email ||
-          "",
+            pincode:
+              pumpSettings?.pincode ||
+              pumpSettings?.pinCode ||
+              "",
 
-        logoUrl:
-          logoUrl || null,
+            phone:
+              pumpSettings?.phone ||
+              pumpSettings?.mobile ||
+              pumpSettings
+                ?.mobileNumber ||
+              "",
 
-        logo:
-          pumpSettings?.logo ||
-          logoUrl ||
-          null,
-      };
+            email:
+              pumpSettings?.email ||
+              "",
 
-      /* -------------------------------------------------------
-         BILL DATE
-      ------------------------------------------------------- */
+            logoUrl:
+              logoUrl || null,
 
-      const latestEntry =
-        entries?.length > 0
-          ? entries[
-              entries.length - 1
-            ]
-          : null;
+            logo:
+              pumpSettings?.logo ||
+              logoUrl ||
+              null,
+          };
 
-      const billDate =
-        pdfCustomer?.billDate ||
-        pdfCustomer?.invoiceDate ||
-        pdfCustomer?.createdAt ||
-        latestEntry?.date ||
-        latestEntry?.transactionDate ||
-        latestEntry?.createdAt ||
-        new Date();
+          /* ==============================================
+             BILL DATE
+          ============================================== */
 
-      /* -------------------------------------------------------
-         BILL NUMBER
-      ------------------------------------------------------- */
+          const latestEntry =
+            entries.length > 0
+              ? entries[
+                  entries.length - 1
+                ]
+              : null;
 
-      const billNo =
-        pdfCustomer?.billNo ||
-        pdfCustomer?.billNumber ||
-        pdfCustomer?.invoiceNo ||
-        pdfCustomer?.invoiceNumber ||
-        pdfCustomer?.ledgerNo ||
-        pdfCustomer?.ledgerNumber ||
-        (customer?._id
-          ? `LED-${String(
+          const billDate =
+            pdfCustomer?.billDate ||
+            pdfCustomer?.invoiceDate ||
+            pdfCustomer?.createdAt ||
+            latestEntry?.entryDate ||
+            latestEntry?.date ||
+            latestEntry?.transactionDate ||
+            latestEntry?.createdAt ||
+            new Date();
+
+          /* ==============================================
+             BILL NUMBER
+          ============================================== */
+
+          const billNo =
+            pdfCustomer?.billNo ||
+            pdfCustomer?.billNumber ||
+            pdfCustomer?.invoiceNo ||
+            pdfCustomer?.invoiceNumber ||
+            pdfCustomer?.ledgerNo ||
+            pdfCustomer?.ledgerNumber ||
+            `LED-${String(
               customer._id
             )
               .slice(-6)
-              .toUpperCase()}`
-          : `LED-${Date.now()}`);
+              .toUpperCase()}`;
 
-      /* -------------------------------------------------------
-         BILL FROM
-      ------------------------------------------------------- */
+          /* ==============================================
+             EXPORT
+          ============================================== */
 
-      const billFrom =
-        pdfCustomer?.billFrom ||
-        "";
+          await exportLedgerPDF({
+            customer: {
+              ...pdfCustomer,
 
-      /* -------------------------------------------------------
-         EXPORT PDF
-      ------------------------------------------------------- */
+              entries,
 
-      await exportLedgerPDF({
-        customer: {
-          ...pdfCustomer,
+              summary,
 
-          entries,
+              totalPurchases:
+                safeNumber(
+                  summary?.totalPurchased ??
+                    summary?.totalPurchase
+                ),
 
-          summary,
+              totalAmount:
+                safeNumber(
+                  summary?.totalPurchased ??
+                    summary?.totalPurchase ??
+                    summary?.totalAmount ??
+                    pdfCustomer?.totalAmount
+                ),
 
-          totalAmount:
-            summary?.totalPurchased ??
-            summary?.totalPurchase ??
-            summary?.totalAmount ??
-            pdfCustomer?.totalAmount ??
-            0,
+              paidAmount:
+                safeNumber(
+                  summary?.totalPaid ??
+                    summary?.paidAmount ??
+                    pdfCustomer?.paidAmount
+                ),
 
-          paidAmount:
-            summary?.totalPaid ??
-            summary?.paidAmount ??
-            pdfCustomer?.paidAmount ??
-            0,
+              totalPaid:
+                safeNumber(
+                  summary?.totalPaid ??
+                    summary?.paidAmount
+                ),
 
-          currentBalance:
-            summary?.totalPending ??
-            summary?.pendingAmount ??
-            pdfCustomer?.currentBalance ??
-            0,
-        },
+              totalPending:
+                safeNumber(
+                  summary?.totalPending ??
+                    summary?.pendingAmount
+                ),
 
-        pump,
+              currentBalance:
+                safeNumber(
+                  summary?.totalPending ??
+                    summary?.pendingAmount ??
+                    pdfCustomer?.currentBalance
+                ),
+            },
 
-        billNo,
+            pump,
 
-        billDate,
+            billNo,
 
-        billFrom,
+            billDate,
 
-        logoUrl:
-          logoUrl || null,
-      });
+            billFrom:
+              pdfCustomer?.billFrom ||
+              "",
 
-      if (loadingToast) {
-        toast.update(
-          loadingToast,
-          {
-            render:
-              "Customer ledger PDF generated successfully",
+            logoUrl:
+              logoUrl || null,
+          });
 
-            type: "success",
+          toast.dismiss(
+            loadingToast
+          );
 
-            isLoading: false,
-
-            autoClose: 2500,
+          if (mountedRef.current) {
+            toast.success(
+              "Customer ledger PDF generated successfully"
+            );
           }
-        );
-      }
-    } catch (error) {
-      console.error(
-        "CUSTOMER LEDGER PDF ERROR:",
-        error
-      );
+        } catch (error) {
+          toast.dismiss(
+            loadingToast
+          );
 
-      if (loadingToast) {
-        toast.update(
-          loadingToast,
-          {
-            render:
-              error?.response?.data?.message ||
-              error?.message ||
-              "Failed to generate customer ledger PDF",
-
-            type: "error",
-
-            isLoading: false,
-
-            autoClose: 3000,
+          if (mountedRef.current) {
+            toast.error(
+              getErrorMessage(
+                error,
+                "Failed to generate customer ledger PDF"
+              )
+            );
           }
-        );
-      } else {
-        toast.error(
-          error?.response?.data?.message ||
-            error?.message ||
-            "Failed to generate customer ledger PDF"
-        );
-      }
-    }
-  };
+        } finally {
+          exportingRef.current =
+            false;
+
+          if (mountedRef.current) {
+            setExportingId(null);
+          }
+        }
+      },
+      []
+    );
 
   /* =========================================================
      MONEY FORMAT
   ========================================================= */
 
-  const formatMoney = (value) => {
-    const amount = Number(value || 0);
+  const formatMoney =
+    useCallback(
+      (value) => {
+        const amount =
+          safeNumber(value);
 
-    return `₹${amount.toLocaleString(
-      "en-IN",
-      {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      }
-    )}`;
-  };
+        return `₹${amount.toLocaleString(
+          "en-IN",
+          {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }
+        )}`;
+      },
+      []
+    );
 
   /* =========================================================
      STATUS
   ========================================================= */
 
-  const getStatus = (customer) => {
-    const pending = Number(
-      customer?.currentBalance ??
-        customer?.pendingAmount ??
-        customer?.totalPending ??
-        0
-    );
+  const getStatus =
+    useCallback(
+      (customer) => {
+        const pending =
+          safeNumber(
+            customer?.currentBalance ??
+              customer?.pendingAmount ??
+              customer?.totalPending
+          );
 
-    return pending > 0
-      ? "Pending"
-      : "Paid";
-  };
+        return pending > 0
+          ? "Pending"
+          : "Paid";
+      },
+      []
+    );
 
   /* =========================================================
      RENDER
@@ -621,8 +902,7 @@ const Customers = () => {
               "1px solid " +
               COLORS.primaryDark,
 
-            borderRadius:
-              "9px",
+            borderRadius: "9px",
 
             padding:
               "0 20px",
@@ -636,11 +916,9 @@ const Customers = () => {
             fontSize:
               "16px",
 
-            fontWeight:
-              700,
+            fontWeight: 700,
 
-            cursor:
-              "pointer",
+            cursor: "pointer",
 
             transition:
               "all 0.18s ease",
@@ -689,8 +967,8 @@ const Customers = () => {
 
         <button
           type="button"
-          onClick={
-            loadCustomers
+          onClick={() =>
+            loadCustomers()
           }
           disabled={loading}
           title="Refresh Customers"
@@ -704,8 +982,7 @@ const Customers = () => {
               "1px solid " +
               COLORS.borderDark,
 
-            borderRadius:
-              "9px",
+            borderRadius: "9px",
 
             background:
               COLORS.white,
@@ -713,8 +990,7 @@ const Customers = () => {
             color:
               COLORS.text,
 
-            display:
-              "flex",
+            display: "flex",
 
             alignItems:
               "center",
@@ -813,7 +1089,9 @@ const Customers = () => {
                 COLORS.primaryText,
             }}
           >
-            {totals.totalCustomers}
+            {
+              totals.totalCustomers
+            }
           </div>
         </div>
 
@@ -1249,31 +1527,32 @@ const Customers = () => {
                     index
                   ) => {
                     const credit =
-                      Number(
+                      safeNumber(
                         customer?.totalPurchased ??
                           customer?.totalCredit ??
                           customer?.creditAmount ??
-                          customer?.totalAmount ??
-                          0
+                          customer?.totalAmount
                       );
 
                     const paid =
-                      Number(
+                      safeNumber(
                         customer?.totalPaid ??
-                          customer?.paidAmount ??
-                          0
+                          customer?.paidAmount
+                      );
+
+                    const calculatedPending =
+                      Math.max(
+                        credit -
+                          paid,
+                        0
                       );
 
                     const pending =
-                      Number(
+                      safeNumber(
                         customer?.currentBalance ??
                           customer?.pendingAmount ??
                           customer?.totalPending ??
-                          Math.max(
-                            credit -
-                              paid,
-                            0
-                          )
+                          calculatedPending
                       );
 
                     const status =
@@ -1281,15 +1560,20 @@ const Customers = () => {
                         customer
                       );
 
+                    const isDeleting =
+                      deletingId ===
+                      customer._id;
+
+                    const isExporting =
+                      exportingId ===
+                      customer._id;
+
                     return (
                       <tr
                         key={
                           customer._id
                         }
 
-                        /* =================================================
-                           ENTIRE ROW IS CLICKABLE
-                        ================================================= */
                         onClick={() =>
                           handleCustomerRowClick(
                             customer
@@ -1325,9 +1609,7 @@ const Customers = () => {
                             COLORS.white;
                         }}
                       >
-                        {/* =================================================
-                            NUMBER
-                        ================================================= */}
+                        {/* NUMBER */}
 
                         <td
                           style={{
@@ -1347,9 +1629,7 @@ const Customers = () => {
                           {index + 1}
                         </td>
 
-                        {/* =================================================
-                            CUSTOMER
-                        ================================================= */}
+                        {/* CUSTOMER */}
 
                         <td
                           style={{
@@ -1375,7 +1655,9 @@ const Customers = () => {
                                 "1.3",
                             }}
                           >
-                            {customer.name}
+                            {
+                              customer.name
+                            }
                           </div>
 
                           {customer.phone && (
@@ -1401,9 +1683,7 @@ const Customers = () => {
                           )}
                         </td>
 
-                        {/* =================================================
-                            VEHICLE
-                        ================================================= */}
+                        {/* VEHICLE */}
 
                         <td
                           style={{
@@ -1424,9 +1704,7 @@ const Customers = () => {
                             "-"}
                         </td>
 
-                        {/* =================================================
-                            CREDIT
-                        ================================================= */}
+                        {/* CREDIT */}
 
                         <td
                           style={{
@@ -1454,9 +1732,7 @@ const Customers = () => {
                           )}
                         </td>
 
-                        {/* =================================================
-                            PAID
-                        ================================================= */}
+                        {/* PAID */}
 
                         <td
                           style={{
@@ -1484,9 +1760,7 @@ const Customers = () => {
                           )}
                         </td>
 
-                        {/* =================================================
-                            PENDING
-                        ================================================= */}
+                        {/* PENDING */}
 
                         <td
                           style={{
@@ -1516,9 +1790,7 @@ const Customers = () => {
                           )}
                         </td>
 
-                        {/* =================================================
-                            STATUS
-                        ================================================= */}
+                        {/* STATUS */}
 
                         <td
                           style={{
@@ -1575,13 +1847,7 @@ const Customers = () => {
                           </span>
                         </td>
 
-                        {/* =================================================
-                            ACTIONS
-
-                            IMPORTANT:
-                            Stop row click propagation so these buttons
-                            perform only their own action.
-                        ================================================= */}
+                        {/* ACTIONS */}
 
                         <td
                           onClick={(e) =>
@@ -1613,9 +1879,7 @@ const Customers = () => {
                                 "7px",
                             }}
                           >
-                            {/* =================================================
-                                VIEW
-                            ================================================= */}
+                            {/* VIEW */}
 
                             <button
                               type="button"
@@ -1660,7 +1924,6 @@ const Customers = () => {
                                 transition:
                                   "all 0.15s ease",
                               }}
-
                               onMouseEnter={(
                                 e
                               ) => {
@@ -1670,7 +1933,6 @@ const Customers = () => {
                                 e.currentTarget.style.borderColor =
                                   COLORS.primary;
                               }}
-
                               onMouseLeave={(
                                 e
                               ) => {
@@ -1682,21 +1944,19 @@ const Customers = () => {
                               }}
                             >
                               <Eye
-                                size={
-                                  17
-                                }
+                                size={17}
                               />
                             </button>
 
-                            {/* =================================================
-                                EDIT
-                            ================================================= */}
+                            {/* EDIT */}
 
                             <button
                               type="button"
                               onClick={() =>
                                 navigate(
-                                  `/ledger/customer?id=${customer._id}&edit=true`
+                                  `/ledger/customer?id=${encodeURIComponent(
+                                    customer._id
+                                  )}&edit=true`
                                 )
                               }
                               title="Edit Customer"
@@ -1735,7 +1995,6 @@ const Customers = () => {
                                 transition:
                                   "all 0.15s ease",
                               }}
-
                               onMouseEnter={(
                                 e
                               ) => {
@@ -1745,7 +2004,6 @@ const Customers = () => {
                                 e.currentTarget.style.borderColor =
                                   COLORS.primary;
                               }}
-
                               onMouseLeave={(
                                 e
                               ) => {
@@ -1757,18 +2015,18 @@ const Customers = () => {
                               }}
                             >
                               <Pencil
-                                size={
-                                  17
-                                }
+                                size={17}
                               />
                             </button>
 
-                            {/* =================================================
-                                PDF
-                            ================================================= */}
+                            {/* PDF */}
 
                             <button
                               type="button"
+                              disabled={
+                                isExporting ||
+                                exportingRef.current
+                              }
                               onClick={() =>
                                 handleDownloadPDF(
                                   customer
@@ -1805,22 +2063,33 @@ const Customers = () => {
                                   "center",
 
                                 cursor:
-                                  "pointer",
+                                  isExporting
+                                    ? "not-allowed"
+                                    : "pointer",
+
+                                opacity:
+                                  isExporting
+                                    ? 0.55
+                                    : 1,
 
                                 transition:
                                   "all 0.15s ease",
                               }}
-
                               onMouseEnter={(
                                 e
                               ) => {
+                                if (
+                                  isExporting
+                                ) {
+                                  return;
+                                }
+
                                 e.currentTarget.style.background =
                                   "#f1f5f9";
 
                                 e.currentTarget.style.borderColor =
                                   COLORS.primary;
                               }}
-
                               onMouseLeave={(
                                 e
                               ) => {
@@ -1831,19 +2100,29 @@ const Customers = () => {
                                   COLORS.borderDark;
                               }}
                             >
-                              <FileText
-                                size={
-                                  17
-                                }
-                              />
+                              {isExporting ? (
+                                <RefreshCw
+                                  size={17}
+                                  style={{
+                                    animation:
+                                      "spin 1s linear infinite",
+                                  }}
+                                />
+                              ) : (
+                                <FileText
+                                  size={17}
+                                />
+                              )}
                             </button>
 
-                            {/* =================================================
-                                DELETE
-                            ================================================= */}
+                            {/* DELETE */}
 
                             <button
                               type="button"
+                              disabled={
+                                isDeleting ||
+                                deletingRef.current
+                              }
                               onClick={() =>
                                 handleDelete(
                                   customer
@@ -1879,22 +2158,33 @@ const Customers = () => {
                                   "center",
 
                                 cursor:
-                                  "pointer",
+                                  isDeleting
+                                    ? "not-allowed"
+                                    : "pointer",
+
+                                opacity:
+                                  isDeleting
+                                    ? 0.55
+                                    : 1,
 
                                 transition:
                                   "all 0.15s ease",
                               }}
-
                               onMouseEnter={(
                                 e
                               ) => {
+                                if (
+                                  isDeleting
+                                ) {
+                                  return;
+                                }
+
                                 e.currentTarget.style.background =
                                   "#fef2f2";
 
                                 e.currentTarget.style.borderColor =
                                   COLORS.danger;
                               }}
-
                               onMouseLeave={(
                                 e
                               ) => {
@@ -1905,11 +2195,19 @@ const Customers = () => {
                                   "#fecaca";
                               }}
                             >
-                              <Trash2
-                                size={
-                                  17
-                                }
-                              />
+                              {isDeleting ? (
+                                <RefreshCw
+                                  size={17}
+                                  style={{
+                                    animation:
+                                      "spin 1s linear infinite",
+                                  }}
+                                />
+                              ) : (
+                                <Trash2
+                                  size={17}
+                                />
+                              )}
                             </button>
                           </div>
                         </td>
@@ -1943,17 +2241,35 @@ const Customers = () => {
             .customers-page {
               padding: 20px !important;
             }
+
+            .customers-page
+              > div:nth-child(4) {
+              grid-template-columns:
+                repeat(2, minmax(0, 1fr)) !important;
+            }
           }
 
           @media (max-width: 768px) {
             .customers-page {
               padding: 16px !important;
             }
+
+            .customers-page
+              > div:nth-child(4) {
+              grid-template-columns:
+                repeat(2, minmax(0, 1fr)) !important;
+            }
           }
 
           @media (max-width: 600px) {
             .customers-page {
               padding: 12px !important;
+            }
+
+            .customers-page
+              > div:nth-child(4) {
+              grid-template-columns:
+                1fr !important;
             }
           }
         `}

@@ -3981,3 +3981,1434 @@ input[type="number"] {
   -moz-appearance: textfield;
   appearance: textfield;
 }
+/* =========================================================
+   SHIVSHAMBHO - FINAL RESPONSIVE MOBILE SYSTEM
+   =========================================================
+
+   IMPORTANT:
+   This section is intentionally placed at the END of the
+   stylesheet so it overrides older responsive rules.
+
+   Works with:
+   - DashboardLayout.jsx
+   - Navbar.jsx
+   - Sidebar.jsx
+
+   Desktop:
+   Existing layout remains unchanged.
+
+   Mobile:
+   - Sidebar becomes a drawer
+   - Navbar gets mobile spacing
+   - Main content uses full width
+   - Inner sidebar works as a secondary drawer
+   - Tables remain horizontally scrollable
+   - Forms become single-column
+   - Cards become mobile-friendly
+========================================================= */
+
+
+/* =========================================================
+   GLOBAL RESPONSIVE SAFETY
+========================================================= */
+
+html {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+#root {
+  width: 100%;
+  max-width: 100%;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+.dashboard-layout {
+  width: 100%;
+  max-width: 100%;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+.dashboard-main {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.dashboard-content {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+
+/* =========================================================
+   TABLET
+   769px - 1024px
+========================================================= */
+
+@media (min-width: 769px) and (max-width: 1024px) {
+
+  .dashboard-content {
+    padding: 20px;
+  }
+
+  .dashboard-card-grid {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-small-grid {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+
+  .quick-action-grid {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-chart-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .form-row {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+
+  .table-container {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .content-panel {
+    max-width: 100%;
+  }
+
+  .ledger-page {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .super-summary-grid {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+}
+
+
+/* =========================================================
+   MOBILE
+   768px AND BELOW
+========================================================= */
+
+@media (max-width: 768px) {
+
+  /* =======================================================
+     MAIN DASHBOARD
+  ======================================================= */
+
+  .dashboard-layout {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: hidden;
+  }
+
+  .dashboard-main {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    margin-left: 0 !important;
+    overflow-x: hidden;
+  }
+
+  .dashboard-content {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+
+    padding:
+      16px;
+
+    box-sizing: border-box;
+
+    overflow-x: hidden;
+  }
+
+
+  /* =======================================================
+     MOBILE SIDEBAR
+
+     Sidebar.jsx controls the drawer position with inline
+     styles. These rules provide the correct appearance.
+  ======================================================= */
+
+  .main-sidebar {
+    width: 280px !important;
+    max-width: 86vw !important;
+
+    height: 100vh;
+
+    top: 0;
+    left: 0;
+
+    z-index: 1200;
+
+    overflow: hidden;
+
+    box-sizing: border-box;
+
+    background: #ffffff;
+
+    box-shadow:
+      8px 0 30px
+      rgba(15, 23, 42, 0.18);
+  }
+
+  .main-sidebar .sidebar-navigation {
+    width: 100%;
+
+    flex: 1;
+
+    overflow-x: hidden;
+    overflow-y: auto;
+
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .main-sidebar .main-sidebar-item {
+    width: 100%;
+
+    min-height: 60px;
+
+    padding:
+      12px 18px;
+
+    display: flex;
+    flex-direction: row;
+
+    align-items: center;
+    justify-content: flex-start;
+
+    gap: 13px;
+
+    font-size: 14px;
+
+    text-align: left;
+
+    box-sizing: border-box;
+  }
+
+  .main-sidebar .main-sidebar-item span {
+    display: block;
+
+    text-align: left;
+
+    flex: 1;
+
+    min-width: 0;
+  }
+
+  .main-sidebar .main-sidebar-item svg {
+    flex-shrink: 0;
+  }
+
+  .main-sidebar .menu-arrow {
+    display: block;
+
+    position: static;
+
+    margin-left: auto;
+
+    transform: rotate(0deg);
+  }
+
+  .main-sidebar .menu-arrow.opened {
+    transform: rotate(180deg);
+  }
+
+
+  /* =======================================================
+     BRAND
+  ======================================================= */
+
+  .main-sidebar .sidebar-brand {
+    width: 100%;
+
+    min-height: 75px;
+
+    padding:
+      10px 18px;
+
+    display: flex;
+    flex-direction: row;
+
+    justify-content: flex-start;
+
+    gap: 12px;
+
+    box-sizing: border-box;
+  }
+
+  .main-sidebar .sidebar-brand span {
+    display: block;
+
+    font-size: 17px;
+
+    white-space: nowrap;
+  }
+
+
+  /* =======================================================
+     SIDEBAR LOGOUT
+  ======================================================= */
+
+  .main-sidebar .sidebar-bottom {
+    width: 100%;
+  }
+
+  .main-sidebar .logout-sidebar {
+    color: #dc2626;
+  }
+
+
+  /* =======================================================
+     MOBILE SIDEBAR BACKDROP
+
+     Sidebar.jsx creates its own mobile backdrop inline.
+  ======================================================= */
+
+  .sidebar-backdrop {
+    display: block;
+
+    position: fixed;
+
+    inset: 0;
+
+    width: 100%;
+    height: 100vh;
+
+    background:
+      rgba(15, 23, 42, 0.45);
+
+    z-index: 1190;
+
+    backdrop-filter: blur(2px);
+  }
+
+
+  /* =======================================================
+     INNER SIDEBAR
+  ======================================================= */
+
+  .inner-sidebar {
+    width: 250px !important;
+    max-width:
+      calc(100vw - 280px) !important;
+
+    height: 100vh;
+
+    top: 0;
+
+    z-index: 1210;
+
+    overflow-x: hidden;
+    overflow-y: auto;
+
+    box-sizing: border-box;
+  }
+
+  .inner-sidebar-header {
+    min-height: 70px;
+
+    height: 70px;
+
+    padding:
+      0 16px;
+  }
+
+  .inner-sidebar-header h2 {
+    font-size: 18px;
+
+    min-width: 0;
+
+    overflow: hidden;
+
+    text-overflow: ellipsis;
+
+    white-space: nowrap;
+  }
+
+  .inner-sidebar-menu {
+    height:
+      calc(100vh - 70px);
+
+    overflow-x: hidden;
+    overflow-y: auto;
+
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .inner-sidebar-link {
+    min-height: 50px;
+
+    padding:
+      13px 18px;
+
+    font-size: 14px;
+  }
+
+
+  /* =======================================================
+     NAVBAR
+  ======================================================= */
+
+  .navbar {
+    width: 100%;
+
+    min-height: 64px;
+
+    height: auto;
+
+    padding:
+      10px 12px;
+
+    gap: 9px;
+
+    box-sizing: border-box;
+
+    overflow: hidden;
+
+    position: sticky;
+
+    top: 0;
+
+    z-index: 800;
+  }
+
+  .navbar-info {
+    flex: 1;
+
+    min-width: 0;
+
+    overflow: hidden;
+  }
+
+  .navbar h3 {
+    max-width: 100%;
+
+    font-size: 16px;
+
+    line-height: 20px;
+
+    margin-bottom: 2px;
+
+    overflow: hidden;
+
+    text-overflow: ellipsis;
+
+    white-space: nowrap;
+  }
+
+  .navbar small {
+    display: flex;
+
+    min-width: 0;
+
+    max-width: 100%;
+
+    font-size: 11px;
+
+    line-height: 16px;
+
+    overflow: hidden;
+  }
+
+  .navbar-actions {
+    flex-shrink: 0;
+
+    gap: 7px !important;
+  }
+
+  .navbar-user {
+    display: none !important;
+  }
+
+  .logout-button {
+    width: 42px;
+
+    height: 42px;
+
+    min-width: 42px;
+
+    padding: 0 !important;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: center;
+
+    border-radius: 9px;
+  }
+
+  .logout-button span {
+    display: none;
+  }
+
+
+  /* =======================================================
+     PAGE HEADERS
+  ======================================================= */
+
+  .page-header {
+    width: 100%;
+
+    align-items: flex-start;
+
+    flex-direction: column;
+
+    gap: 12px;
+
+    margin-bottom: 18px;
+  }
+
+  .page-header h1,
+  .page-title {
+    font-size: 22px;
+
+    line-height: 28px;
+
+    margin-bottom: 5px;
+  }
+
+  .page-header p {
+    font-size: 13px;
+
+    line-height: 19px;
+  }
+
+
+  /* =======================================================
+     BREADCRUMBS
+  ======================================================= */
+
+  .breadcrumbs {
+    width: 100%;
+
+    min-height: 48px;
+
+    padding:
+      9px 12px;
+
+    margin-bottom: 15px;
+
+    gap: 5px;
+
+    overflow-x: auto;
+
+    overflow-y: hidden;
+
+    white-space: nowrap;
+
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .breadcrumbs a,
+  .breadcrumb-current {
+    font-size: 12px;
+  }
+
+
+  /* =======================================================
+     DASHBOARD HEADING
+  ======================================================= */
+
+  .dashboard-heading {
+    width: 100%;
+
+    align-items: flex-start;
+
+    flex-direction: column;
+
+    gap: 14px;
+
+    margin-bottom: 18px;
+  }
+
+  .dashboard-heading h1 {
+    font-size: 23px;
+
+    line-height: 29px;
+  }
+
+  .dashboard-heading p {
+    font-size: 13px;
+  }
+
+  .dashboard-pump-info-box {
+    width: 100%;
+
+    max-width: 100%;
+  }
+
+
+  /* =======================================================
+     DASHBOARD CARDS
+  ======================================================= */
+
+  .dashboard-card-grid {
+    width: 100%;
+
+    grid-template-columns: 1fr;
+
+    gap: 12px;
+
+    margin-bottom: 16px;
+  }
+
+  .dashboard-card {
+    width: 100%;
+
+    min-height: 135px;
+  }
+
+  .dashboard-card-top {
+    min-height: 100px;
+
+    padding: 18px;
+  }
+
+  .dashboard-card h2 {
+    font-size: 25px;
+  }
+
+  .dashboard-card p {
+    font-size: 14px;
+  }
+
+
+  /* =======================================================
+     DASHBOARD SMALL CARDS
+  ======================================================= */
+
+  .dashboard-small-grid {
+    width: 100%;
+
+    grid-template-columns: 1fr;
+
+    gap: 12px;
+
+    margin-bottom: 16px;
+  }
+
+  .dashboard-small-card {
+    width: 100%;
+
+    padding: 15px;
+  }
+
+
+  /* =======================================================
+     QUICK ACTIONS
+  ======================================================= */
+
+  .quick-action-grid {
+    width: 100%;
+
+    grid-template-columns: 1fr;
+
+    gap: 10px;
+  }
+
+  .quick-action-grid button {
+    width: 100%;
+
+    min-height: 50px;
+  }
+
+
+  /* =======================================================
+     STATS
+  ======================================================= */
+
+  .stats-grid {
+    width: 100%;
+
+    grid-template-columns: 1fr;
+
+    gap: 12px;
+  }
+
+  .stat-card {
+    width: 100%;
+
+    padding: 16px;
+  }
+
+
+  /* =======================================================
+     DASHBOARD CHARTS
+  ======================================================= */
+
+  .dashboard-chart-grid {
+    width: 100%;
+
+    grid-template-columns: 1fr;
+
+    gap: 14px;
+  }
+
+  .dashboard-chart-card {
+    width: 100%;
+
+    padding: 15px;
+
+    min-width: 0;
+
+    overflow: hidden;
+  }
+
+  .chart-heading {
+    gap: 10px;
+
+    margin-bottom: 14px;
+  }
+
+  .chart-heading h3 {
+    font-size: 16px;
+  }
+
+  .chart-heading p {
+    font-size: 12px;
+  }
+
+  .chart-container {
+    width: 100%;
+
+    height: 240px;
+
+    min-width: 0;
+  }
+
+
+  /* =======================================================
+     CONTENT PANELS
+  ======================================================= */
+
+  .content-panel {
+    width: 100%;
+
+    max-width: 100%;
+
+    min-width: 0;
+
+    border-radius: 9px;
+  }
+
+  .content-panel-header {
+    min-height: 56px;
+
+    padding:
+      10px 14px;
+
+    gap: 10px;
+  }
+
+  .content-panel-header h2 {
+    font-size: 16px;
+
+    min-width: 0;
+
+    overflow: hidden;
+
+    text-overflow: ellipsis;
+  }
+
+  .content-panel-body {
+    padding: 15px;
+
+    min-width: 0;
+  }
+
+
+  /* =======================================================
+     FORMS
+  ======================================================= */
+
+  .form-card,
+  .clean-form,
+  .content-panel:has(.clean-form) {
+    width: 100%;
+
+    max-width: 100%;
+  }
+
+  .form-row {
+    width: 100%;
+
+    grid-template-columns: 1fr;
+
+    gap: 0;
+  }
+
+  .form-group {
+    width: 100%;
+
+    margin-bottom: 15px;
+  }
+
+  .form-group label {
+    font-size: 13px;
+  }
+
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    width: 100%;
+
+    min-width: 0;
+
+    padding:
+      10px 11px;
+  }
+
+  .primary-button,
+  .secondary-button {
+    min-height: 42px;
+  }
+
+
+  /* =======================================================
+     TABLE TOOLBAR
+  ======================================================= */
+
+  .table-toolbar {
+    width: 100%;
+
+    padding:
+      15px 14px 10px;
+
+    flex-direction: column;
+
+    align-items: stretch;
+
+    gap: 10px;
+
+    box-sizing: border-box;
+  }
+
+  .table-search {
+    width: 100%;
+
+    min-width: 0;
+  }
+
+  .table-search input {
+    width: 100%;
+
+    min-width: 0;
+
+    flex: 1;
+  }
+
+  .table-toolbar select {
+    width: 100%;
+
+    min-height: 40px;
+  }
+
+
+  /* =======================================================
+     TABLE EXPORT BUTTONS
+  ======================================================= */
+
+  .table-export-actions {
+    width: 100%;
+
+    padding:
+      0 14px 12px;
+
+    flex-wrap: wrap;
+
+    gap: 6px;
+
+    box-sizing: border-box;
+  }
+
+  .table-export-actions button {
+    min-height: 40px;
+
+    flex: 1;
+
+    min-width: 100px;
+
+    border-radius: 6px !important;
+  }
+
+
+  /* =======================================================
+     TABLES
+
+     Keep tables intact and allow horizontal scrolling.
+     This is safer than shrinking columns.
+  ======================================================= */
+
+  .table-container {
+    width: 100%;
+
+    max-width: 100%;
+
+    overflow-x: auto;
+
+    overflow-y: hidden;
+
+    -webkit-overflow-scrolling: touch;
+
+    scrollbar-width: thin;
+  }
+
+  .table-container table {
+    min-width: 650px;
+  }
+
+  .table-container th,
+  .table-container td {
+    padding:
+      10px 11px;
+
+    font-size: 12px;
+  }
+
+  .row-actions {
+    gap: 5px;
+  }
+
+  .row-actions button {
+    width: 32px;
+
+    height: 32px;
+
+    min-width: 32px;
+  }
+
+
+  /* =======================================================
+     MODALS
+  ======================================================= */
+
+  .modal-backdrop {
+    padding: 12px;
+  }
+
+  .stock-edit-modal,
+  .super-client-modal {
+    width: 100%;
+
+    max-width: 100%;
+
+    max-height: 90vh;
+
+    padding: 17px;
+
+    border-radius: 10px;
+
+    overflow-x: hidden;
+
+    overflow-y: auto;
+  }
+
+  .stock-edit-modal-header,
+  .super-client-modal-header {
+    gap: 12px;
+
+    margin-bottom: 18px;
+  }
+
+  .stock-edit-modal-header h2,
+  .super-client-modal-header h2 {
+    font-size: 18px;
+  }
+
+  .modal-actions {
+    width: 100%;
+
+    flex-direction: column-reverse;
+
+    align-items: stretch;
+
+    gap: 8px;
+  }
+
+  .modal-actions button {
+    width: 100%;
+  }
+
+
+  /* =======================================================
+     LEDGER
+  ======================================================= */
+
+  .ledger-page {
+    width: 100%;
+
+    min-width: 0;
+
+    padding:
+      15px 0 30px;
+  }
+
+  .ledger-professional-card {
+    width: 100%;
+
+    max-width: 100%;
+
+    border-radius: 10px;
+  }
+
+  .ledger-card-header {
+    padding:
+      14px 15px;
+  }
+
+  .ledger-header-left {
+    min-width: 0;
+
+    gap: 9px;
+  }
+
+  .ledger-header-icon {
+    width: 40px;
+
+    height: 40px;
+
+    min-width: 40px;
+  }
+
+  .ledger-card-header h2 {
+    font-size: 17px;
+  }
+
+  .ledger-card-header p {
+    font-size: 11px;
+  }
+
+  .ledger-card-body {
+    padding:
+      16px 15px;
+  }
+
+  .ledger-input-grid {
+    grid-template-columns: 1fr;
+
+    gap: 14px;
+  }
+
+  .ledger-full-field {
+    grid-column: auto;
+  }
+
+  .ledger-balance-input {
+    grid-template-columns:
+      minmax(0, 1fr)
+      70px;
+  }
+
+  .ledger-card-footer {
+    padding:
+      13px 15px;
+
+    flex-direction: column-reverse;
+
+    align-items: stretch;
+  }
+
+  .ledger-save-btn,
+  .ledger-cancel-btn {
+    width: 100%;
+
+    flex: none;
+  }
+
+  .ledger-search {
+    width: 100%;
+  }
+
+  .ledger-pending-box {
+    font-size: 17px;
+  }
+
+
+  /* =======================================================
+     REPORTS
+  ======================================================= */
+
+  .report-header-actions {
+    width: 100%;
+
+    flex-direction: column;
+
+    align-items: stretch;
+
+    justify-content: flex-start;
+  }
+
+  .report-header-actions input,
+  .report-header-actions select {
+    width: 100%;
+
+    min-height: 40px;
+  }
+
+  .report-export-buttons {
+    width: 100%;
+
+    display: grid;
+
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+
+    gap: 7px;
+  }
+
+  .report-export-btn {
+    width: 100%;
+
+    min-width: 0;
+
+    flex: none;
+  }
+
+
+  /* =======================================================
+     FUEL PURCHASE
+  ======================================================= */
+
+  .fuel-purchase-page {
+    width: 100%;
+
+    max-width: 100%;
+
+    min-width: 0;
+  }
+
+  .fuel-purchase-form-wrapper {
+    width: 100% !important;
+
+    max-width: 100% !important;
+  }
+
+  .fuel-purchase-page
+  .fuel-purchase-panel
+  .content-panel-body {
+    padding:
+      16px;
+  }
+
+  .fuel-purchase-page .form-row {
+    grid-template-columns: 1fr;
+
+    gap: 0;
+  }
+
+  .fuel-purchase-page .supplier-dropdown {
+    max-height: 250px;
+  }
+
+
+  /* =======================================================
+     SUPER ADMIN
+  ======================================================= */
+
+  .super-admin-content {
+    padding: 15px;
+  }
+
+  .super-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .super-client-header {
+    width: 100%;
+
+    align-items: flex-start;
+
+    flex-direction: column;
+
+    gap: 12px;
+  }
+
+  .super-search-box {
+    max-width: 100%;
+  }
+
+  .super-client-modal {
+    padding: 17px;
+  }
+}
+
+
+/* =========================================================
+   SMALL MOBILE
+   480px AND BELOW
+========================================================= */
+
+@media (max-width: 480px) {
+
+  .dashboard-content {
+    padding:
+      12px;
+  }
+
+  .navbar {
+    padding:
+      9px 10px;
+  }
+
+  .navbar h3 {
+    font-size: 15px;
+  }
+
+  .navbar small {
+    font-size: 10px;
+  }
+
+  .page-title,
+  .page-header h1 {
+    font-size: 20px;
+
+    line-height: 26px;
+  }
+
+  .content-panel-body {
+    padding:
+      13px;
+  }
+
+  .content-panel-header {
+    padding:
+      9px 12px;
+  }
+
+  .dashboard-card-top {
+    padding:
+      16px;
+  }
+
+  .dashboard-card h2 {
+    font-size: 23px;
+  }
+
+  .chart-container {
+    height: 220px;
+  }
+
+  .report-export-buttons {
+    grid-template-columns: 1fr;
+  }
+
+  .table-container table {
+    min-width: 620px;
+  }
+
+  .ledger-card-body {
+    padding:
+      14px 12px;
+  }
+
+  .ledger-card-footer {
+    padding:
+      12px;
+  }
+
+  .stock-edit-modal,
+  .super-client-modal {
+    padding:
+      14px;
+  }
+}
+
+
+/* =========================================================
+   VERY SMALL DEVICES
+   360px AND BELOW
+========================================================= */
+
+@media (max-width: 360px) {
+
+  .dashboard-content {
+    padding:
+      10px;
+  }
+
+  .navbar {
+    padding:
+      8px;
+  }
+
+  .navbar h3 {
+    font-size: 14px;
+  }
+
+  .navbar small {
+    font-size: 9px;
+  }
+
+  .main-sidebar {
+    width: 260px !important;
+    max-width: 82vw !important;
+  }
+
+  .inner-sidebar {
+    width: 220px !important;
+
+    max-width:
+      calc(100vw - 260px) !important;
+  }
+
+  .dashboard-card-top {
+    padding:
+      14px;
+  }
+
+  .dashboard-card h2 {
+    font-size: 21px;
+  }
+
+  .content-panel-body {
+    padding:
+      12px;
+  }
+
+  .ledger-balance-input {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* =========================================================
+   TOUCH DEVICE IMPROVEMENTS
+========================================================= */
+
+@media (hover: none) and (pointer: coarse) {
+
+  .main-sidebar-item,
+  .inner-sidebar-link,
+  .primary-button,
+  .secondary-button,
+  .logout-button,
+  .inner-close-button,
+  .row-actions button,
+  .quick-action-grid button {
+    -webkit-tap-highlight-color:
+      transparent;
+  }
+
+  .main-sidebar-item {
+    min-height: 52px;
+  }
+
+  .inner-sidebar-link {
+    min-height: 48px;
+  }
+
+  .row-actions button {
+    width: 38px;
+
+    height: 38px;
+
+    min-width: 38px;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    touch-action: manipulation;
+  }
+}
+
+
+/* =========================================================
+   PREVENT FLEX / GRID CHILDREN FROM OVERFLOWING
+========================================================= */
+
+.dashboard-content > *,
+.page-container > *,
+.content-panel > *,
+.content-panel-body > *,
+.dashboard-section > *,
+.dashboard-chart-card > *,
+.dashboard-small-card > *,
+.dashboard-card > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+
+/* =========================================================
+   MOBILE IMAGE SAFETY
+========================================================= */
+
+@media (max-width: 768px) {
+
+  .dashboard-content img,
+  .content-panel img,
+  .page-container img {
+    max-width: 100%;
+    height: auto;
+  }
+}
+
+
+/* =========================================================
+   MOBILE TEXT SAFETY
+========================================================= */
+
+@media (max-width: 768px) {
+
+  .dashboard-content h1,
+  .dashboard-content h2,
+  .dashboard-content h3,
+  .dashboard-content h4,
+  .dashboard-content p,
+  .dashboard-content span {
+    overflow-wrap: anywhere;
+  }
+
+  .dashboard-content button {
+    max-width: 100%;
+  }
+}
+
+
+/* =========================================================
+   FINAL MOBILE SCROLL SAFETY
+========================================================= */
+
+@media (max-width: 768px) {
+
+  .dashboard-layout,
+  .dashboard-main,
+  .dashboard-content {
+    overflow-x: hidden !important;
+  }
+
+  .table-container,
+  .table-container table {
+    max-width: none;
+  }
+
+}

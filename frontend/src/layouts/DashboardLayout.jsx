@@ -1,34 +1,140 @@
-import { useEffect } from "react";
-import { Outlet } from "react-router-dom";
+import {
+  useEffect,
+  useState,
+} from "react";
+
+import {
+  Outlet,
+  useLocation,
+} from "react-router-dom";
 
 import Sidebar from "../components/Sidebar";
 import Navbar from "../components/Navbar";
 
+const MOBILE_BREAKPOINT = 768;
 
 const DashboardLayout = () => {
+  const location = useLocation();
+
+  const [
+    isMobileMenuOpen,
+    setIsMobileMenuOpen,
+  ] = useState(false);
+
+  const [
+    isMobile,
+    setIsMobile,
+  ] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      window.innerWidth <= MOBILE_BREAKPOINT
+  );
+
+  /* =========================================================
+     RESPONSIVE SCREEN DETECTION
+  ========================================================= */
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile =
+        window.innerWidth <=
+        MOBILE_BREAKPOINT;
+
+      setIsMobile(mobile);
+
+      /*
+       * Automatically close the mobile
+       * sidebar when moving to desktop.
+       */
+      if (!mobile) {
+        setIsMobileMenuOpen(false);
+      }
+    };
+
+    handleResize();
+
+    window.addEventListener(
+      "resize",
+      handleResize
+    );
+
+    return () => {
+      window.removeEventListener(
+        "resize",
+        handleResize
+      );
+    };
+  }, []);
+
+  /* =========================================================
+     CLOSE MOBILE SIDEBAR AFTER ROUTE CHANGE
+  ========================================================= */
+
+  useEffect(() => {
+    if (isMobile) {
+      setIsMobileMenuOpen(false);
+    }
+  }, [
+    location.pathname,
+    isMobile,
+  ]);
+
+  /* =========================================================
+     LOCK BODY SCROLL WHEN MOBILE SIDEBAR IS OPEN
+  ========================================================= */
+
+  useEffect(() => {
+    if (
+      isMobile &&
+      isMobileMenuOpen
+    ) {
+      document.body.style.overflow =
+        "hidden";
+    } else {
+      document.body.style.overflow =
+        "";
+    }
+
+    return () => {
+      document.body.style.overflow =
+        "";
+    };
+  }, [
+    isMobile,
+    isMobileMenuOpen,
+  ]);
 
   /* =========================================================
      DISABLE MOUSE-WHEEL CHANGES ON NUMBER INPUTS
 
-     Prevents the browser from increasing/decreasing
-     number input values when the mouse wheel is used.
+     Prevents accidental value changes while scrolling.
 
-     This applies to all number inputs inside the
-     DashboardLayout.
-
-     No main.jsx modification required.
+     Applies to number inputs inside the dashboard application.
   ========================================================= */
 
   useEffect(() => {
-    const handleNumberWheel = (event) => {
-      const target = event.target;
+    const handleNumberWheel = (
+      event
+    ) => {
+      const target =
+        event.target;
 
       if (
-        target instanceof HTMLInputElement &&
-        target.type === "number"
+        !(target instanceof Element)
       ) {
-        event.preventDefault();
+        return;
       }
+
+      const numberInput =
+        target.closest(
+          'input[type="number"]'
+        );
+
+      if (!numberInput) {
+        return;
+      }
+
+      event.preventDefault();
     };
 
     document.addEventListener(
@@ -47,29 +153,100 @@ const DashboardLayout = () => {
     };
   }, []);
 
+  /* =========================================================
+     MOBILE SIDEBAR CONTROLS
+  ========================================================= */
+
+  const openMobileMenu = () => {
+    if (!isMobile) {
+      return;
+    }
+
+    setIsMobileMenuOpen(true);
+  };
+
+  const closeMobileMenu = () => {
+    setIsMobileMenuOpen(false);
+  };
+
+  /* =========================================================
+     UI
+  ========================================================= */
 
   return (
-    <div className="dashboard-layout">
+    <div
+      className="dashboard-layout"
+      style={{
+        width: "100%",
+        minHeight: "100vh",
+        overflowX: "hidden",
+      }}
+    >
+      {/* =====================================================
+          SIDEBAR
+      ===================================================== */}
 
-      {/* MAIN SIDEBAR */}
-      <Sidebar />
+      <Sidebar
+        isMobile={isMobile}
+        isMobileOpen={
+          isMobileMenuOpen
+        }
+        onCloseMobile={
+          closeMobileMenu
+        }
+      />
 
-      {/* MAIN APPLICATION AREA */}
-      <div className="dashboard-main">
+      {/* =====================================================
+          MAIN APPLICATION AREA
+      ===================================================== */}
 
-        {/* TOP NAVBAR */}
-        <Navbar />
+      <div
+        className="dashboard-main"
+        style={
+          isMobile
+            ? {
+                width: "100%",
+                minWidth: 0,
+                marginLeft: 0,
+              }
+            : undefined
+        }
+      >
+        {/* =================================================
+            TOP NAVBAR
+        ================================================= */}
 
-        {/* PAGE CONTENT */}
-        <main className="dashboard-content">
+        <Navbar
+          isMobile={isMobile}
+          onOpenMobileMenu={
+            openMobileMenu
+          }
+        />
+
+        {/* =================================================
+            PAGE CONTENT
+        ================================================= */}
+
+        <main
+          className="dashboard-content"
+          role="main"
+          style={
+            isMobile
+              ? {
+                  width: "100%",
+                  minWidth: 0,
+                  maxWidth: "100%",
+                  overflowX: "hidden",
+                  boxSizing: "border-box",
+                }
+              : undefined
+          }
+        >
           <Outlet />
         </main>
-
       </div>
-
     </div>
   );
 };
-
 
 export default DashboardLayout;

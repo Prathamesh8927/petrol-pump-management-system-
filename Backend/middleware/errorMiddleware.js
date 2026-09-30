@@ -9,7 +9,8 @@ export const notFound = (
   return res.status(404).json({
     success: false,
 
-    message: `Route not found: ${req.method} ${req.originalUrl}`,
+    message:
+      `Route not found: ${req.method} ${req.originalUrl}`,
   });
 };
 
@@ -28,23 +29,96 @@ export const errorHandler = (
     error
   );
 
-  /* DUPLICATE MONGODB VALUE */
+  /* ===================================================
+     ALREADY SENT RESPONSE
+  =================================================== */
+
+  if (res.headersSent) {
+    return next(error);
+  }
+
+  /* ===================================================
+     CORS ERROR
+  =================================================== */
+
+  if (
+    error?.message ===
+    "CORS origin not allowed"
+  ) {
+    return res.status(403).json({
+      success: false,
+
+      message:
+        "Request origin is not allowed.",
+    });
+  }
+
+  /* ===================================================
+     INVALID JSON
+  =================================================== */
+
+  if (
+    error?.type ===
+    "entity.parse.failed"
+  ) {
+    return res.status(400).json({
+      success: false,
+
+      message:
+        "Invalid JSON request.",
+    });
+  }
+
+  /* ===================================================
+     PAYLOAD TOO LARGE
+  =================================================== */
+
+  if (
+    error?.type ===
+    "entity.too.large"
+  ) {
+    return res.status(413).json({
+      success: false,
+
+      message:
+        "Request payload is too large.",
+    });
+  }
+
+  /* ===================================================
+     DUPLICATE MONGODB VALUE
+  =================================================== */
 
   if (
     error?.code === 11000
   ) {
+    const duplicateFields =
+      error?.keyValue &&
+      typeof error.keyValue ===
+        "object"
+        ? Object.keys(
+            error.keyValue
+          )
+        : [];
+
     return res.status(409).json({
       success: false,
 
       message:
         "Duplicate record already exists",
 
+      /*
+       * Return field names, but don't expose
+       * potentially sensitive duplicate values.
+       */
       fields:
-        error.keyValue || {},
+        duplicateFields,
     });
   }
 
-  /* MONGOOSE VALIDATION */
+  /* ===================================================
+     MONGOOSE VALIDATION
+  =================================================== */
 
   if (
     error?.name ===
@@ -53,20 +127,26 @@ export const errorHandler = (
     const errors =
       Object.values(
         error.errors || {}
-      ).map(
-        (item) =>
-          item.message
-      );
+      )
+        .map(
+          (item) =>
+            item?.message
+        )
+        .filter(Boolean);
 
     return res.status(400).json({
       success: false,
 
       message:
-        errors.join(", "),
+        errors.length > 0
+          ? errors.join(", ")
+          : "Invalid request data.",
     });
   }
 
-  /* INVALID OBJECT ID */
+  /* ===================================================
+     INVALID OBJECT ID
+  =================================================== */
 
   if (
     error?.name ===
@@ -80,7 +160,9 @@ export const errorHandler = (
     });
   }
 
-  /* JWT */
+  /* ===================================================
+     JWT
+  =================================================== */
 
   if (
     error?.name ===
@@ -106,26 +188,74 @@ export const errorHandler = (
     });
   }
 
-  const statusCode =
-    error.statusCode ||
-    error.status ||
-    500;
-
-  return res
-    .status(statusCode)
-    .json({
+  if (
+    error?.name ===
+    "NotBeforeError"
+  ) {
+    return res.status(401).json({
       success: false,
 
       message:
-        error.message ||
-        "Internal server error",
-
-      ...(process.env.NODE_ENV ===
-        "development"
-        ? {
-            stack:
-              error.stack,
-          }
-        : {}),
+        "Authentication token is not active.",
     });
+  }
+
+  /* ===================================================
+     STATUS CODE
+  =================================================== */
+
+  const requestedStatus =
+    Number(
+      error?.statusCode ||
+        error?.status
+    );
+
+  const statusCode =
+    Number.isInteger(
+      requestedStatus
+    ) &&
+    requestedStatus >= 400 &&
+    requestedStatus <= 599
+      ? requestedStatus
+      : 500;
+
+  /* ===================================================
+     PRODUCTION RESPONSE
+  =================================================== */
+
+  if (
+    process.env.NODE_ENV !==
+    "development"
+  ) {
+    return res.status(
+      statusCode
+    ).json({
+      success: false,
+
+      message:
+        statusCode >= 500
+          ? "Internal server error"
+          : (
+              error?.message ||
+              "Request failed"
+            ),
+    });
+  }
+
+  /* ===================================================
+     DEVELOPMENT RESPONSE
+  =================================================== */
+
+  return res.status(
+    statusCode
+  ).json({
+    success: false,
+
+    message:
+      error?.message ||
+      "Internal server error",
+
+    stack:
+      error?.stack,
+  });
 };

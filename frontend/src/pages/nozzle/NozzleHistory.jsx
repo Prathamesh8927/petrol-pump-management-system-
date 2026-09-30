@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useState,
 } from "react";
@@ -11,8 +12,33 @@ import {
 } from "lucide-react";
 
 import {
-  getNozzleReadings,
+  getNozzleReadingHistory,
 } from "../../services/nozzleService";
+
+const normalizeReadings = (data) => {
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (Array.isArray(data?.readings)) {
+    return data.readings;
+  }
+
+  if (Array.isArray(data?.data?.readings)) {
+    return data.data.readings;
+  }
+
+  if (Array.isArray(data?.data)) {
+    return data.data;
+  }
+
+  return [];
+};
+
+const normalizeFuelType = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase();
 
 const ReadingHistory = () => {
   const [
@@ -30,12 +56,12 @@ const ReadingHistory = () => {
   ===================================================== */
 
   const loadReadings =
-    async () => {
+    useCallback(async () => {
       try {
         setLoading(true);
 
         const data =
-          await getNozzleReadings();
+          await getNozzleReadingHistory();
 
         console.log(
           "NOZZLE READING HISTORY:",
@@ -43,11 +69,7 @@ const ReadingHistory = () => {
         );
 
         const list =
-          Array.isArray(data)
-            ? data
-            : data?.readings ||
-              data?.data ||
-              [];
+          normalizeReadings(data);
 
         setReadings(list);
       } catch (error) {
@@ -56,21 +78,22 @@ const ReadingHistory = () => {
           error
         );
 
-        toast.error(
-          error.response?.data
-            ?.message ||
-            "Unable to load reading history"
-        );
+        const message =
+          error?.response?.data?.message ||
+          error?.message ||
+          "Unable to load reading history";
+
+        toast.error(message);
 
         setReadings([]);
       } finally {
         setLoading(false);
       }
-    };
+    }, []);
 
   useEffect(() => {
     loadReadings();
-  }, []);
+  }, [loadReadings]);
 
   /* =====================================================
      DATE
@@ -83,6 +106,43 @@ const ReadingHistory = () => {
       return "-";
     }
 
+    /*
+     * Handle YYYY-MM-DD separately.
+     *
+     * This avoids UTC conversion changing
+     * the displayed calendar date in IST.
+     */
+    if (
+      typeof value === "string" &&
+      /^\d{4}-\d{2}-\d{2}$/.test(
+        value
+      )
+    ) {
+      const [
+        year,
+        month,
+        day,
+      ] = value
+        .split("-")
+        .map(Number);
+
+      const date = new Date(
+        year,
+        month - 1,
+        day
+      );
+
+      if (
+        !Number.isNaN(
+          date.getTime()
+        )
+      ) {
+        return date.toLocaleDateString(
+          "en-IN"
+        );
+      }
+    }
+
     const date =
       new Date(value);
 
@@ -91,7 +151,7 @@ const ReadingHistory = () => {
         date.getTime()
       )
     ) {
-      return value;
+      return String(value);
     }
 
     return date.toLocaleDateString(
@@ -103,23 +163,39 @@ const ReadingHistory = () => {
      NUMBER
   ===================================================== */
 
-  const number = (
+  const formatNumber = (
     value
-  ) =>
-    Number(
-      value || 0
-    ).toLocaleString(
+  ) => {
+    const numericValue =
+      Number(value);
+
+    if (
+      !Number.isFinite(
+        numericValue
+      )
+    ) {
+      return "0.00";
+    }
+
+    return numericValue.toLocaleString(
       "en-IN",
       {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       }
     );
+  };
+
+  /* =====================================================
+     RENDER
+  ===================================================== */
 
   return (
     <div className="page-container">
 
-      {/* HEADER */}
+      {/* =================================================
+          HEADER
+      ================================================= */}
 
       <div className="page-header">
 
@@ -143,17 +219,22 @@ const ReadingHistory = () => {
           onClick={
             loadReadings
           }
+          disabled={loading}
         >
           <RefreshCw
             size={17}
           />
 
-          Refresh
+          {loading
+            ? "Loading..."
+            : "Refresh"}
         </button>
 
       </div>
 
-      {/* SUMMARY */}
+      {/* =================================================
+          SUMMARY
+      ================================================= */}
 
       <div className="stats-grid">
 
@@ -173,7 +254,9 @@ const ReadingHistory = () => {
 
       </div>
 
-      {/* TABLE */}
+      {/* =================================================
+          TABLE
+      ================================================= */}
 
       <div className="content-panel">
 
@@ -209,6 +292,14 @@ const ReadingHistory = () => {
                 </th>
 
                 <th>
+                  Shift
+                </th>
+
+                <th>
+                  Staff
+                </th>
+
+                <th>
                   Nozzle
                 </th>
 
@@ -229,6 +320,10 @@ const ReadingHistory = () => {
                 </th>
 
                 <th>
+                  Payment
+                </th>
+
+                <th>
                   Note
                 </th>
 
@@ -243,7 +338,7 @@ const ReadingHistory = () => {
                 <tr>
 
                   <td
-                    colSpan="8"
+                    colSpan="11"
                     className="empty-table"
                   >
                     Loading reading history...
@@ -257,7 +352,7 @@ const ReadingHistory = () => {
                 <tr>
 
                   <td
-                    colSpan="8"
+                    colSpan="11"
                     className="empty-table"
                   >
                     No nozzle readings found.
@@ -274,20 +369,40 @@ const ReadingHistory = () => {
                   ) => {
 
                     const nozzle =
-                      reading.nozzleId ||
-                      {};
+                      reading.nozzleId &&
+                      typeof reading.nozzleId ===
+                        "object"
+                        ? reading.nozzleId
+                        : {};
+
+                    const staff =
+                      reading.staffId &&
+                      typeof reading.staffId ===
+                        "object"
+                        ? reading.staffId
+                        : {};
+
+                    const fuelType =
+                      normalizeFuelType(
+                        reading.fuelType ||
+                          nozzle.fuelType
+                      );
 
                     return (
                       <tr
                         key={
                           reading._id ||
-                          index
+                          `${reading.readingDate}-${reading.nozzleId}-${index}`
                         }
                       >
+
+                        {/* NUMBER */}
 
                         <td>
                           {index + 1}
                         </td>
+
+                        {/* DATE */}
 
                         <td>
                           {formatDate(
@@ -295,6 +410,38 @@ const ReadingHistory = () => {
                               reading.createdAt
                           )}
                         </td>
+
+                        {/* SHIFT */}
+
+                        <td>
+                          {reading.shiftName
+                            ? String(
+                                reading.shiftName
+                              )
+                                .replace(
+                                  /^./,
+                                  (
+                                    char
+                                  ) =>
+                                    char.toUpperCase()
+                                )
+                                .replace(
+                                  /-/g,
+                                  " "
+                                )
+                            : "-"}
+                        </td>
+
+                        {/* STAFF */}
+
+                        <td>
+                          {staff.name ||
+                            staff.email ||
+                            reading.staffName ||
+                            "-"}
+                        </td>
+
+                        {/* NOZZLE */}
 
                         <td>
 
@@ -306,48 +453,67 @@ const ReadingHistory = () => {
 
                         </td>
 
+                        {/* FUEL */}
+
                         <td>
 
-                          {String(
-                            reading.fuelType ||
-                              nozzle.fuelType ||
-                              ""
-                          ).toLowerCase() ===
+                          {fuelType ===
                           "petrol"
                             ? "Petrol"
-                            : String(
-                                reading.fuelType ||
-                                  nozzle.fuelType ||
-                                  ""
-                              ).toLowerCase() ===
+                            : fuelType ===
                               "diesel"
                             ? "Diesel"
                             : "-"}
 
                         </td>
 
+                        {/* OPENING */}
+
                         <td>
-                          {number(
+                          {formatNumber(
                             reading.openingReading
                           )}
                         </td>
 
+                        {/* CLOSING */}
+
                         <td>
-                          {number(
+                          {formatNumber(
                             reading.closingReading
                           )}
                         </td>
 
+                        {/* SOLD */}
+
                         <td>
 
                           <strong>
-                            {number(
+                            {formatNumber(
                               reading.litresSold
                             )}{" "}
                             L
                           </strong>
 
                         </td>
+
+                        {/* PAYMENT */}
+
+                        <td>
+                          {reading.paymentMethod
+                            ? String(
+                                reading.paymentMethod
+                              )
+                                .replace(
+                                  /^./,
+                                  (
+                                    char
+                                  ) =>
+                                    char.toUpperCase()
+                                )
+                            : "-"}
+                        </td>
+
+                        {/* NOTE */}
 
                         <td>
                           {reading.note ||

@@ -3,6 +3,10 @@ import mongoose from "mongoose";
 import Expense from "../models/Expense.js";
 import Employee from "../models/Employee.js";
 
+import {
+  createDeletedRecord,
+} from "../services/recoveryService.js";
+
 /* =====================================================
    EXPENSE CATEGORIES
 ===================================================== */
@@ -38,8 +42,7 @@ export const addExpense = async (
       title,
       category,
       amount,
-      paymentMethod =
-        "cash",
+      paymentMethod = "cash",
       expenseDate,
       note = "",
     } = req.body;
@@ -47,30 +50,23 @@ export const addExpense = async (
     if (!title?.trim()) {
       return res.status(400).json({
         success: false,
-        message:
-          "Expense title is required",
+        message: "Expense title is required",
       });
     }
 
     if (
-      !VALID_CATEGORIES.includes(
-        category
-      )
+      !VALID_CATEGORIES.includes(category)
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          "Invalid expense category",
+        message: "Invalid expense category",
       });
     }
 
-    const amountValue =
-      Number(amount);
+    const amountValue = Number(amount);
 
     if (
-      !Number.isFinite(
-        amountValue
-      ) ||
+      !Number.isFinite(amountValue) ||
       amountValue <= 0
     ) {
       return res.status(400).json({
@@ -83,8 +79,7 @@ export const addExpense = async (
     if (!expenseDate) {
       return res.status(400).json({
         success: false,
-        message:
-          "Expense date is required",
+        message: "Expense date is required",
       });
     }
 
@@ -95,35 +90,29 @@ export const addExpense = async (
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          "Invalid payment method",
+        message: "Invalid payment method",
       });
     }
 
     const expense =
       await Expense.create({
-        pumpId:
-          req.user.pumpId,
+        pumpId: req.user.pumpId,
 
-        title:
-          title.trim(),
+        title: title.trim(),
 
         category,
 
-        amount:
-          amountValue,
+        amount: amountValue,
 
         paymentMethod,
 
         expenseDate,
 
-        note:
-          String(
-            note || ""
-          ).trim(),
+        note: String(
+          note || ""
+        ).trim(),
 
-        createdBy:
-          req.user._id,
+        createdBy: req.user._id,
       });
 
     return res.status(201).json({
@@ -146,8 +135,7 @@ export const addExpense = async (
       message:
         "Unable to add expense",
 
-      error:
-        error.message,
+      error: error.message,
     });
   }
 };
@@ -171,13 +159,11 @@ export const getExpenses =
       };
 
       if (category) {
-        filter.category =
-          category;
+        filter.category = category;
       }
 
       if (from || to) {
-        filter.expenseDate =
-          {};
+        filter.expenseDate = {};
 
         if (from) {
           filter.expenseDate.$gte =
@@ -191,9 +177,7 @@ export const getExpenses =
       }
 
       const expenses =
-        await Expense.find(
-          filter
-        )
+        await Expense.find(filter)
           .populate(
             "employeeId",
             "name designation salary"
@@ -209,14 +193,10 @@ export const getExpenses =
 
       const totalExpense =
         expenses.reduce(
-          (
-            total,
-            expense
-          ) =>
+          (total, expense) =>
             total +
             Number(
-              expense.amount ||
-                0
+              expense.amount || 0
             ),
           0
         );
@@ -243,8 +223,7 @@ export const getExpenses =
         message:
           "Unable to load expenses",
 
-        error:
-          error.message,
+        error: error.message,
       });
     }
   };
@@ -255,10 +234,35 @@ export const getExpenses =
 
 export const deleteExpense =
   async (req, res) => {
+    const session =
+      await mongoose.startSession();
+
     try {
       const {
         id,
       } = req.params;
+
+      const pumpId =
+        req.user?.pumpId;
+
+      const deletedBy =
+        req.user?._id;
+
+      if (!pumpId) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Pump access is required",
+        });
+      }
+
+      if (!deletedBy) {
+        return res.status(401).json({
+          success: false,
+          message:
+            "Authenticated user not found",
+        });
+      }
 
       if (
         !mongoose.Types.ObjectId.isValid(
@@ -272,23 +276,67 @@ export const deleteExpense =
         });
       }
 
-      const expense =
-        await Expense.findOneAndDelete(
-          {
-            _id: id,
+      /*
+       * Recovery snapshot + physical deletion
+       * happen inside the same transaction.
+       *
+       * This guarantees:
+       *
+       * recovery saved + delete succeeded
+       * OR
+       * neither operation is committed.
+       */
 
-            pumpId:
-              req.user.pumpId,
+      await session.withTransaction(
+        async () => {
+          const expense =
+            await Expense.findOne({
+              _id: id,
+              pumpId,
+            }).session(session);
+
+          if (!expense) {
+            throw new Error(
+              "Expense not found"
+            );
           }
-        );
 
-      if (!expense) {
-        return res.status(404).json({
-          success: false,
-          message:
-            "Expense not found",
-        });
-      }
+          await createDeletedRecord({
+            document: expense,
+
+            originalCollection:
+              Expense.collection.name,
+
+            originalModel:
+              "Expense",
+
+            pumpId,
+
+            deletedBy,
+
+            req,
+
+            deletionReason:
+              "Expense deleted by user",
+
+            session,
+          });
+
+          const deleted =
+            await Expense.deleteOne({
+              _id: expense._id,
+              pumpId,
+            }).session(session);
+
+          if (
+            deleted.deletedCount !== 1
+          ) {
+            throw new Error(
+              "Expense deletion failed"
+            );
+          }
+        }
+      );
 
       return res.status(200).json({
         success: true,
@@ -302,15 +350,27 @@ export const deleteExpense =
         error
       );
 
+      if (
+        error.message ===
+        "Expense not found"
+      ) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Expense not found",
+        });
+      }
+
       return res.status(500).json({
         success: false,
 
         message:
           "Unable to delete expense",
 
-        error:
-          error.message,
+        error: error.message,
       });
+    } finally {
+      await session.endSession();
     }
   };
 
@@ -665,10 +725,35 @@ export const updateEmployee =
 
 export const deleteEmployee =
   async (req, res) => {
+    const session =
+      await mongoose.startSession();
+
     try {
       const {
         id,
       } = req.params;
+
+      const pumpId =
+        req.user?.pumpId;
+
+      const deletedBy =
+        req.user?._id;
+
+      if (!pumpId) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Pump access is required",
+        });
+      }
+
+      if (!deletedBy) {
+        return res.status(401).json({
+          success: false,
+          message:
+            "Authenticated user not found",
+        });
+      }
 
       if (
         !mongoose.Types.ObjectId.isValid(
@@ -682,24 +767,56 @@ export const deleteEmployee =
         });
       }
 
-      const employee =
-        await Employee.findOneAndDelete(
-          {
-            _id: id,
+      await session.withTransaction(
+        async () => {
+          const employee =
+            await Employee.findOne({
+              _id: id,
+              pumpId,
+            }).session(session);
 
-            pumpId:
-              req.user.pumpId,
+          if (!employee) {
+            throw new Error(
+              "Employee not found"
+            );
           }
-        );
 
-      if (!employee) {
-        return res.status(404).json({
-          success: false,
+          await createDeletedRecord({
+            document: employee,
 
-          message:
-            "Employee not found",
-        });
-      }
+            originalCollection:
+              Employee.collection.name,
+
+            originalModel:
+              "Employee",
+
+            pumpId,
+
+            deletedBy,
+
+            req,
+
+            deletionReason:
+              "Employee deleted by user",
+
+            session,
+          });
+
+          const deleted =
+            await Employee.deleteOne({
+              _id: employee._id,
+              pumpId,
+            }).session(session);
+
+          if (
+            deleted.deletedCount !== 1
+          ) {
+            throw new Error(
+              "Employee deletion failed"
+            );
+          }
+        }
+      );
 
       return res.status(200).json({
         success: true,
@@ -713,6 +830,18 @@ export const deleteEmployee =
         error
       );
 
+      if (
+        error.message ===
+        "Employee not found"
+      ) {
+        return res.status(404).json({
+          success: false,
+
+          message:
+            "Employee not found",
+        });
+      }
+
       return res.status(500).json({
         success: false,
 
@@ -722,6 +851,8 @@ export const deleteEmployee =
         error:
           error.message,
       });
+    } finally {
+      await session.endSession();
     }
   };
 
@@ -829,11 +960,6 @@ export const payEmployeeSalary =
             "Invalid payment method",
         });
       }
-
-      /*
-        Salary payment automatically
-        becomes an expense.
-      */
 
       const expense =
         await Expense.create({

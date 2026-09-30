@@ -16,32 +16,38 @@ const SuperAdminRoute = ({
   const {
     user,
     loading,
-  } =
-    useContext(
-      AuthContext
-    );
+  } = useContext(AuthContext);
+
+  /* =====================================================
+     AUTH LOADING
+  ===================================================== */
 
   if (loading) {
     return (
       <div
         style={{
-          minHeight:
-            "100vh",
-
-          display:
-            "flex",
-
-          alignItems:
-            "center",
-
-          justifyContent:
-            "center",
+          minHeight: "100vh",
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "24px",
+          boxSizing: "border-box",
+          color: "#64748b",
+          backgroundColor: "#f8fafc",
+          fontSize: "16px",
         }}
+        role="status"
+        aria-live="polite"
       >
         Loading...
       </div>
     );
   }
+
+  /* =====================================================
+     NOT AUTHENTICATED
+  ===================================================== */
 
   if (!user) {
     return (
@@ -52,10 +58,11 @@ const SuperAdminRoute = ({
     );
   }
 
-  if (
-    user.role !==
-    "superadmin"
-  ) {
+  /* =====================================================
+     SUPER ADMIN AUTHORIZATION
+  ===================================================== */
+
+  if (user.role !== "superadmin") {
     return (
       <Navigate
         to="/dashboard"
@@ -63,6 +70,10 @@ const SuperAdminRoute = ({
       />
     );
   }
+
+  /* =====================================================
+     AUTHORIZED SUPER ADMIN
+  ===================================================== */
 
   return children;
 };

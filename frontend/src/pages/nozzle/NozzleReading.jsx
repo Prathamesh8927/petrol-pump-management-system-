@@ -1,6 +1,8 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -17,10 +19,134 @@ import {
   addNozzleReading,
 } from "../../services/nozzleService";
 
+import api from "../../services/api";
+
+const SHIFT_OPTIONS = [
+  {
+    value: "morning",
+    label: "Morning Shift",
+  },
+  {
+    value: "evening",
+    label: "Evening Shift",
+  },
+  {
+    value: "night",
+    label: "Night Shift",
+  },
+];
+
+const ALLOWED_STAFF_ROLES = new Set([
+  "owner",
+  "manager",
+  "staff",
+]);
+
+const PAYMENT_METHODS = [
+  "cash",
+  "upi",
+  "card",
+  "credit",
+];
+
+const getToday = () => {
+  const now = new Date();
+
+  const year = now.getFullYear();
+
+  const month = String(
+    now.getMonth() + 1
+  ).padStart(2, "0");
+
+  const day = String(
+    now.getDate()
+  ).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+};
+
+/*
+ * Validate a calendar date using local
+ * date components.
+ *
+ * Do NOT use toISOString() here because
+ * the application is used in IST and UTC
+ * conversion can move local midnight to
+ * the previous calendar date.
+ */
+const isValidDate = (value) => {
+  if (
+    typeof value !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(
+      value
+    )
+  ) {
+    return false;
+  }
+
+  const [
+    year,
+    month,
+    day,
+  ] = value
+    .split("-")
+    .map(Number);
+
+  const date = new Date(
+    year,
+    month - 1,
+    day
+  );
+
+  return (
+    date.getFullYear() === year &&
+    date.getMonth() ===
+      month - 1 &&
+    date.getDate() === day
+  );
+};
+
+const normalizeListResponse = (
+  data
+) => {
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (Array.isArray(data?.nozzles)) {
+    return data.nozzles;
+  }
+
+  if (Array.isArray(data?.users)) {
+    return data.users;
+  }
+
+  if (Array.isArray(data?.data)) {
+    return data.data;
+  }
+
+  return [];
+};
+
+const normalizeRole = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase();
+
+const normalizeFuelType = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase();
+
 const NozzleReading = () => {
   const [
     nozzles,
     setNozzles,
+  ] = useState([]);
+
+  const [
+    staff,
+    setStaff,
   ] = useState([]);
 
   const [
@@ -29,132 +155,435 @@ const NozzleReading = () => {
   ] = useState(true);
 
   const [
+    loadingStaff,
+    setLoadingStaff,
+  ] = useState(true);
+
+  const [
     saving,
     setSaving,
   ] = useState(false);
 
   const [
-    selectedNozzleNumber,
-    setSelectedNozzleNumber,
-  ] = useState("1");
+    selectedNozzleId,
+    setSelectedNozzleId,
+  ] = useState("");
 
   const [
     form,
     setForm,
   ] = useState({
+    shiftName: "morning",
+    staffId: "",
     closingReading: "",
-
-    readingDate:
-      new Date().toLocaleDateString(
-        "en-CA"
-      ),
-
+    readingDate: getToday(),
+    paymentMethod: "cash",
     note: "",
   });
+
+  const mountedRef =
+    useRef(true);
+
+  const loadingRef =
+    useRef(false);
+
+  const loadingStaffRef =
+    useRef(false);
+
+  const refreshTimerRef =
+    useRef(null);
+
+  /* =====================================================
+     CLEANUP
+  ===================================================== */
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+
+      if (
+        refreshTimerRef.current
+      ) {
+        window.clearTimeout(
+          refreshTimerRef.current
+        );
+      }
+    };
+  }, []);
 
   /* =====================================================
      LOAD NOZZLES
   ===================================================== */
 
   const loadNozzles =
-    async () => {
-      try {
-        setLoading(true);
+    useCallback(
+      async ({
+        silent = false,
+      } = {}) => {
+        if (
+          loadingRef.current
+        ) {
+          return;
+        }
 
-        const data =
-          await getNozzles();
+        loadingRef.current = true;
 
-        const list =
-          Array.isArray(data)
-            ? data
-            : data?.nozzles ||
-              data?.data ||
-              [];
+        if (!silent) {
+          setLoading(true);
+        }
 
-        setNozzles(
-          list.filter(
-            (item) =>
-              item.active !== false
-          )
-        );
-      } catch (error) {
-        console.error(
-          "LOAD NOZZLES ERROR:",
-          error
-        );
-
-        toast.error(
-          error.response?.data
-            ?.message ||
-            "Unable to load nozzles"
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
-
-  useEffect(() => {
-    loadNozzles();
-  }, []);
-
-  /* =====================================================
-     SELECT NOZZLE 1 OR NOZZLE 2
-  ===================================================== */
-
-  const selectedNozzle =
-    useMemo(() => {
-      return nozzles.find(
-        (item) => {
-          const number =
-            String(
-              item.nozzleNumber ||
-                ""
-            )
-              .trim()
-              .toLowerCase();
-
-          /*
-            Supports:
-            1
-            N1
-            Nozzle 1
-          */
+        try {
+          const data =
+            await getNozzles();
 
           if (
-            selectedNozzleNumber ===
-            "1"
+            !mountedRef.current
           ) {
-            return (
-              number === "1" ||
-              number === "n1" ||
-              number ===
-                "nozzle 1" ||
-              number ===
-                "nozzle1"
+            return;
+          }
+
+          const list =
+            normalizeListResponse(
+              data
+            );
+
+          const activeNozzles =
+            list.filter(
+              (item) =>
+                item?.active !==
+                  false &&
+                String(
+                  item?.status ||
+                    "active"
+                ).toLowerCase() !==
+                  "inactive"
+            );
+
+          setNozzles(
+            activeNozzles
+          );
+
+          setSelectedNozzleId(
+            (previousId) => {
+              const stillExists =
+                activeNozzles.some(
+                  (item) =>
+                    String(
+                      item?._id
+                    ) ===
+                    String(
+                      previousId
+                    )
+                );
+
+              if (
+                stillExists
+              ) {
+                return previousId;
+              }
+
+              return String(
+                activeNozzles[0]?._id ||
+                  ""
+              );
+            }
+          );
+        } catch (error) {
+          if (
+            !mountedRef.current
+          ) {
+            return;
+          }
+
+          if (!silent) {
+            toast.error(
+              error?.response?.data
+                ?.message ||
+                "Unable to load nozzles"
             );
           }
 
-          /*
-            Supports:
-            2
-            N2
-            Nozzle 2
-          */
+          setNozzles([]);
+          setSelectedNozzleId("");
+        } finally {
+          loadingRef.current = false;
 
-          return (
-            number === "2" ||
-            number === "n2" ||
-            number ===
-              "nozzle 2" ||
-            number ===
-              "nozzle2"
-          );
+          if (
+            mountedRef.current
+          ) {
+            setLoading(false);
+          }
         }
+      },
+      []
+    );
+
+  /* =====================================================
+     LOAD STAFF
+  ===================================================== */
+
+  const loadStaff =
+    useCallback(
+      async ({
+        silent = false,
+      } = {}) => {
+        if (
+          loadingStaffRef.current
+        ) {
+          return;
+        }
+
+        loadingStaffRef.current =
+          true;
+
+        if (!silent) {
+          setLoadingStaff(true);
+        }
+
+        try {
+          const response =
+            await api.get(
+              "/settings/users"
+            );
+
+          if (
+            !mountedRef.current
+          ) {
+            return;
+          }
+
+          const list =
+            normalizeListResponse(
+              response.data
+            );
+
+          const activeStaff =
+            list.filter(
+              (user) => {
+                const role =
+                  normalizeRole(
+                    user?.role
+                  );
+
+                return (
+                  user?.active !==
+                    false &&
+                  ALLOWED_STAFF_ROLES.has(
+                    role
+                  )
+                );
+              }
+            );
+
+          setStaff(
+            activeStaff
+          );
+
+          setForm(
+            (previous) => {
+              const currentExists =
+                activeStaff.some(
+                  (user) =>
+                    String(
+                      user?._id
+                    ) ===
+                    String(
+                      previous.staffId
+                    )
+                );
+
+              return {
+                ...previous,
+
+                staffId:
+                  currentExists
+                    ? previous.staffId
+                    : String(
+                        activeStaff[0]?._id ||
+                          ""
+                      ),
+              };
+            }
+          );
+        } catch (error) {
+          if (
+            !mountedRef.current
+          ) {
+            return;
+          }
+
+          if (!silent) {
+            toast.error(
+              error?.response?.data
+                ?.message ||
+                "Unable to load staff"
+            );
+          }
+
+          setStaff([]);
+
+          setForm(
+            (previous) => ({
+              ...previous,
+              staffId: "",
+            })
+          );
+        } finally {
+          loadingStaffRef.current =
+            false;
+
+          if (
+            mountedRef.current
+          ) {
+            setLoadingStaff(false);
+          }
+        }
+      },
+      []
+    );
+
+  /* =====================================================
+     INITIAL LOAD
+  ===================================================== */
+
+  useEffect(() => {
+    loadNozzles();
+    loadStaff();
+  }, [
+    loadNozzles,
+    loadStaff,
+  ]);
+
+  /* =====================================================
+     REFRESH WHEN USER RETURNS
+  ===================================================== */
+
+  useEffect(() => {
+    const refresh = () => {
+      if (
+        document.visibilityState ===
+        "hidden"
+      ) {
+        return;
+      }
+
+      /*
+       * Never start a background refresh
+       * while a reading is being saved.
+       *
+       * Otherwise the refresh can race with
+       * the save operation and overwrite the
+       * UI state with stale data.
+       */
+      if (saving) {
+        return;
+      }
+
+      if (
+        refreshTimerRef.current
+      ) {
+        window.clearTimeout(
+          refreshTimerRef.current
+        );
+      }
+
+      refreshTimerRef.current =
+        window.setTimeout(() => {
+          if (
+            !mountedRef.current ||
+            saving
+          ) {
+            return;
+          }
+
+          loadNozzles({
+            silent: true,
+          });
+
+          loadStaff({
+            silent: true,
+          });
+        }, 250);
+    };
+
+    window.addEventListener(
+      "focus",
+      refresh
+    );
+
+    document.addEventListener(
+      "visibilitychange",
+      refresh
+    );
+
+    return () => {
+      window.removeEventListener(
+        "focus",
+        refresh
       );
-    }, [
-      nozzles,
-      selectedNozzleNumber,
-    ]);
+
+      document.removeEventListener(
+        "visibilitychange",
+        refresh
+      );
+
+      if (
+        refreshTimerRef.current
+      ) {
+        window.clearTimeout(
+          refreshTimerRef.current
+        );
+      }
+    };
+  }, [
+    loadNozzles,
+    loadStaff,
+    saving,
+  ]);
+
+  /* =====================================================
+     SELECTED NOZZLE
+  ===================================================== */
+
+  const selectedNozzle =
+    useMemo(
+      () =>
+        nozzles.find(
+          (item) =>
+            String(
+              item?._id
+            ) ===
+            String(
+              selectedNozzleId
+            )
+        ) || null,
+      [
+        nozzles,
+        selectedNozzleId,
+      ]
+    );
+
+  /* =====================================================
+     SELECTED STAFF
+  ===================================================== */
+
+  const selectedStaff =
+    useMemo(
+      () =>
+        staff.find(
+          (item) =>
+            String(
+              item?._id
+            ) ===
+            String(
+              form.staffId
+            )
+        ) || null,
+      [
+        staff,
+        form.staffId,
+      ]
+    );
 
   /* =====================================================
      OPENING READING
@@ -162,8 +591,7 @@ const NozzleReading = () => {
 
   const openingReading =
     Number(
-      selectedNozzle
-        ?.currentReading ||
+      selectedNozzle?.currentReading ??
         0
     );
 
@@ -173,25 +601,65 @@ const NozzleReading = () => {
 
   const closingReading =
     Number(
-      form.closingReading ||
-        0
+      form.closingReading
     );
+
+  const hasValidClosing =
+    form.closingReading !==
+      "" &&
+    Number.isFinite(
+      closingReading
+    ) &&
+    closingReading >= 0;
+
+  const isClosingReadingValid =
+    hasValidClosing &&
+    closingReading >
+      openingReading;
 
   /* =====================================================
      LITRES SOLD
   ===================================================== */
 
   const litresSold =
-    form.closingReading !==
-      "" &&
-    Number.isFinite(
-      closingReading
-    ) &&
-    closingReading >=
-      openingReading
-      ? closingReading -
-        openingReading
+    selectedNozzle &&
+    isClosingReadingValid
+      ? Number(
+          (
+            closingReading -
+            openingReading
+          ).toFixed(2)
+        )
       : 0;
+
+  /* =====================================================
+     FORM VALIDITY
+  ===================================================== */
+
+  const canSubmit =
+    !loading &&
+    !loadingStaff &&
+    !saving &&
+    Boolean(
+      selectedNozzle?._id
+    ) &&
+    SHIFT_OPTIONS.some(
+      (shift) =>
+        shift.value ===
+        form.shiftName
+    ) &&
+    Boolean(form.staffId) &&
+    Boolean(selectedStaff) &&
+    isValidDate(
+      form.readingDate
+    ) &&
+    isClosingReadingValid &&
+    PAYMENT_METHODS.includes(
+      form.paymentMethod
+    ) &&
+    String(
+      form.note || ""
+    ).trim().length <= 500;
 
   /* =====================================================
      INPUT CHANGE
@@ -207,9 +675,7 @@ const NozzleReading = () => {
       setForm(
         (previous) => ({
           ...previous,
-
-          [name]:
-            value,
+          [name]: value,
         })
       );
     };
@@ -219,19 +685,38 @@ const NozzleReading = () => {
   ===================================================== */
 
   const selectNozzle =
-    (number) => {
-      setSelectedNozzleNumber(
-        number
-      );
+    (event) => {
+      const id =
+        event.target.value;
+
+      setSelectedNozzleId(id);
 
       setForm(
         (previous) => ({
           ...previous,
-
-          closingReading:
-            "",
+          closingReading: "",
         })
       );
+    };
+
+  /* =====================================================
+     MANUAL REFRESH
+  ===================================================== */
+
+  const handleRefresh =
+    async () => {
+      if (
+        loading ||
+        loadingStaff ||
+        saving
+      ) {
+        return;
+      }
+
+      await Promise.all([
+        loadNozzles(),
+        loadStaff(),
+      ]);
     };
 
   /* =====================================================
@@ -242,13 +727,66 @@ const NozzleReading = () => {
     async (event) => {
       event.preventDefault();
 
+      if (saving) {
+        return;
+      }
+
       if (
         !selectedNozzle?._id
       ) {
         toast.error(
-          `Nozzle ${selectedNozzleNumber} not found`
+          "Please select an active nozzle."
+        );
+        return;
+      }
+
+      if (
+        !SHIFT_OPTIONS.some(
+          (shift) =>
+            shift.value ===
+            form.shiftName
+        )
+      ) {
+        toast.error(
+          "Please select a valid shift."
+        );
+        return;
+      }
+
+      if (
+        !form.staffId ||
+        !selectedStaff
+      ) {
+        toast.error(
+          "Please select the staff member responsible for this shift."
+        );
+        return;
+      }
+
+      const staffRole =
+        normalizeRole(
+          selectedStaff.role
         );
 
+      if (
+        !ALLOWED_STAFF_ROLES.has(
+          staffRole
+        )
+      ) {
+        toast.error(
+          "Selected user is not allowed for nozzle readings."
+        );
+        return;
+      }
+
+      if (
+        !isValidDate(
+          form.readingDate
+        )
+      ) {
+        toast.error(
+          "Please select a valid reading date."
+        );
         return;
       }
 
@@ -258,113 +796,185 @@ const NozzleReading = () => {
         );
 
       if (
+        form.closingReading ===
+          "" ||
         !Number.isFinite(
           finalReading
-        )
+        ) ||
+        finalReading < 0
       ) {
         toast.error(
-          "Enter a valid closing reading"
+          "Enter a valid closing reading."
         );
-
         return;
       }
 
       if (
-        finalReading <
+        finalReading <=
         openingReading
       ) {
         toast.error(
-          "Closing reading cannot be lower than opening reading"
+          `Closing reading must be greater than ${openingReading.toFixed(
+            2
+          )}.`
         );
+        return;
+      }
 
+      if (
+        !PAYMENT_METHODS.includes(
+          form.paymentMethod
+        )
+      ) {
+        toast.error(
+          "Please select a valid payment method."
+        );
+        return;
+      }
+
+      const trimmedNote =
+        String(
+          form.note || ""
+        ).trim();
+
+      if (
+        trimmedNote.length >
+        500
+      ) {
+        toast.error(
+          "Note cannot exceed 500 characters."
+        );
         return;
       }
 
       try {
         setSaving(true);
 
-        await addNozzleReading({
-          nozzleId:
-            selectedNozzle._id,
+        const response =
+          await addNozzleReading({
+            nozzleId:
+              selectedNozzle._id,
 
-          closingReading:
-            finalReading,
+            shiftName:
+              form.shiftName,
 
-          readingDate:
-            form.readingDate,
+            staffId:
+              form.staffId,
 
-          note:
-            form.note.trim(),
-        });
+            closingReading:
+              finalReading,
+
+            readingDate:
+              form.readingDate,
+
+            paymentMethod:
+              form.paymentMethod,
+
+            note:
+              trimmedNote,
+          });
+
+        if (
+          !mountedRef.current
+        ) {
+          return;
+        }
+
+        const totalAmount =
+          Number(
+            response?.totalAmount ??
+              response?.sale
+                ?.totalAmount ??
+              0
+          );
 
         toast.success(
-          `Nozzle ${selectedNozzleNumber} reading saved successfully`
+          `₹${totalAmount.toFixed(
+            2
+          )} sale recorded successfully`
         );
 
         setForm(
           (previous) => ({
             ...previous,
-
-            closingReading:
-              "",
-
-            note:
-              "",
+            closingReading: "",
+            note: "",
           })
         );
 
-        await loadNozzles();
+        await loadNozzles({
+          silent: true,
+        });
       } catch (error) {
-        console.error(
-          "ADD NOZZLE READING ERROR:",
-          error
-        );
+        if (
+          !mountedRef.current
+        ) {
+          return;
+        }
 
-        toast.error(
-          error.response?.data
+        const message =
+          error?.response?.data
             ?.message ||
-            "Unable to add reading"
-        );
+          error?.message ||
+          "Unable to add reading";
+
+        toast.error(message);
       } finally {
-        setSaving(false);
+        if (
+          mountedRef.current
+        ) {
+          setSaving(false);
+        }
       }
     };
 
   return (
     <div className="page-container">
 
-      {/* HEADER */}
+      {/* =============================
+          HEADER
+      ============================= */}
 
       <div className="page-header">
 
         <div>
-
           <h1>
             Add Nozzle Reading
           </h1>
 
           <p>
-            Record opening and closing
-            meter readings.
+            Record the closing meter
+            reading and fuel sale.
           </p>
-
         </div>
 
         <button
           type="button"
           className="secondary-button"
           onClick={
-            loadNozzles
+            handleRefresh
+          }
+          disabled={
+            loading ||
+            loadingStaff ||
+            saving
           }
         >
           <RefreshCw
             size={17}
           />
 
-          Refresh
+          {loading ||
+          loadingStaff
+            ? "Loading..."
+            : "Refresh"}
         </button>
 
       </div>
+
+      {/* =============================
+          MAIN PANEL
+      ============================= */}
 
       <div
         className="content-panel"
@@ -378,166 +988,349 @@ const NozzleReading = () => {
           onSubmit={
             handleSubmit
           }
+          noValidate
         >
 
-          {/* =================================================
-              NOZZLE 1 / NOZZLE 2
-          ================================================= */}
+          {/* =========================
+              NOZZLE
+          ========================= */}
 
           <div className="form-group">
 
-            <label>
+            <label
+              htmlFor="nozzle-select"
+            >
               Nozzle *
             </label>
 
-            <div
-              style={{
-                display:
-                  "grid",
-
-                gridTemplateColumns:
-                  "1fr 1fr",
-
-                gap:
-                  "12px",
-              }}
+            <select
+              id="nozzle-select"
+              value={
+                selectedNozzleId
+              }
+              onChange={
+                selectNozzle
+              }
+              disabled={
+                loading ||
+                saving ||
+                nozzles.length ===
+                  0
+              }
+              required
             >
 
-              {/* NOZZLE 1 */}
-
-              <button
-                type="button"
-                onClick={() =>
-                  selectNozzle(
-                    "1"
-                  )
-                }
-                style={{
-                  padding:
-                    "15px 20px",
-
-                  borderRadius:
-                    "9px",
-
-                  border:
-                    selectedNozzleNumber ===
-                    "1"
-                      ? "2px solid #2563eb"
-                      : "1px solid #dbe3ec",
-
-                  background:
-                    selectedNozzleNumber ===
-                    "1"
-                      ? "#eff6ff"
-                      : "#ffffff",
-
-                  color:
-                    selectedNozzleNumber ===
-                    "1"
-                      ? "#1d4ed8"
-                      : "#0f172a",
-
-                  fontWeight:
-                    "600",
-
-                  fontSize:
-                    "15px",
-
-                  cursor:
-                    "pointer",
-                }}
+              <option
+                value=""
+                disabled
               >
-                Nozzle 1
-              </button>
+                {loading
+                  ? "Loading nozzles..."
+                  : "Select Nozzle"}
+              </option>
 
-              {/* NOZZLE 2 */}
+              {nozzles.map(
+                (nozzle) => (
+                  <option
+                    key={
+                      nozzle._id
+                    }
+                    value={
+                      nozzle._id
+                    }
+                  >
+                    {
+                      nozzle.nozzleNumber
+                    }{" "}
+                    -{" "}
+                    {normalizeFuelType(
+                      nozzle.fuelType
+                    ) === "diesel"
+                      ? "Diesel"
+                      : "Petrol"}
+                  </option>
+                )
+              )}
 
-              <button
-                type="button"
-                onClick={() =>
-                  selectNozzle(
-                    "2"
-                  )
-                }
-                style={{
-                  padding:
-                    "15px 20px",
-
-                  borderRadius:
-                    "9px",
-
-                  border:
-                    selectedNozzleNumber ===
-                    "2"
-                      ? "2px solid #2563eb"
-                      : "1px solid #dbe3ec",
-
-                  background:
-                    selectedNozzleNumber ===
-                    "2"
-                      ? "#eff6ff"
-                      : "#ffffff",
-
-                  color:
-                    selectedNozzleNumber ===
-                    "2"
-                      ? "#1d4ed8"
-                      : "#0f172a",
-
-                  fontWeight:
-                    "600",
-
-                  fontSize:
-                    "15px",
-
-                  cursor:
-                    "pointer",
-                }}
-              >
-                Nozzle 2
-              </button>
-
-            </div>
+            </select>
 
           </div>
 
-          {/* =================================================
-              NOZZLE INFORMATION
-          ================================================= */}
+          {/* =========================
+              SHIFT
+          ========================= */}
+
+          <div className="form-group">
+
+            <label
+              htmlFor="shift-name"
+            >
+              Shift *
+            </label>
+
+            <select
+              id="shift-name"
+              name="shiftName"
+              value={
+                form.shiftName
+              }
+              onChange={
+                handleChange
+              }
+              disabled={
+                loading ||
+                saving
+              }
+              required
+            >
+
+              {SHIFT_OPTIONS.map(
+                (shift) => (
+                  <option
+                    key={
+                      shift.value
+                    }
+                    value={
+                      shift.value
+                    }
+                  >
+                    {
+                      shift.label
+                    }
+                  </option>
+                )
+              )}
+
+            </select>
+
+          </div>
+
+          {/* =========================
+              STAFF
+          ========================= */}
+
+          <div className="form-group">
+
+            <label
+              htmlFor="staff-select"
+            >
+              Staff / Shift Responsible *
+            </label>
+
+            <select
+              id="staff-select"
+              name="staffId"
+              value={
+                form.staffId
+              }
+              onChange={
+                handleChange
+              }
+              disabled={
+                loadingStaff ||
+                saving ||
+                staff.length ===
+                  0
+              }
+              required
+            >
+
+              <option
+                value=""
+                disabled
+              >
+                {loadingStaff
+                  ? "Loading staff..."
+                  : staff.length ===
+                    0
+                  ? "No active staff available"
+                  : "Select Staff"}
+              </option>
+
+              {staff.map(
+                (user) => (
+                  <option
+                    key={
+                      user._id
+                    }
+                    value={
+                      user._id
+                    }
+                  >
+                    {user.name ||
+                      user.email ||
+                      "Unnamed User"}
+                    {" - "}
+                    {normalizeRole(
+                      user.role
+                    ).replace(
+                      /^./,
+                      (char) =>
+                        char.toUpperCase()
+                    )}
+                  </option>
+                )
+              )}
+
+            </select>
+
+          </div>
+
+          {/* =========================
+              SHIFT INFORMATION
+          ========================= */}
+
+          {selectedStaff && (
+            <div
+              style={{
+                marginBottom:
+                  "20px",
+                padding:
+                  "12px 15px",
+                background:
+                  "#f8fafc",
+                border:
+                  "1px solid #e2e8f0",
+                borderRadius:
+                  "9px",
+                fontSize:
+                  "13px",
+              }}
+            >
+              <strong>
+                Reading responsibility
+              </strong>
+
+              <div
+                style={{
+                  marginTop:
+                    "6px",
+                  display:
+                    "flex",
+                  flexWrap:
+                    "wrap",
+                  gap:
+                    "8px 18px",
+                  color:
+                    "#475569",
+                }}
+              >
+                <span>
+                  Shift:{" "}
+                  <strong>
+                    {
+                      SHIFT_OPTIONS.find(
+                        (shift) =>
+                          shift.value ===
+                          form.shiftName
+                      )?.label ||
+                      form.shiftName
+                    }
+                  </strong>
+                </span>
+
+                <span>
+                  Staff:{" "}
+                  <strong>
+                    {selectedStaff.name ||
+                      selectedStaff.email}
+                  </strong>
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* =========================
+              NO NOZZLES
+          ========================= */}
 
           {!loading &&
-            selectedNozzle && (
-
+            nozzles.length ===
+              0 && (
               <div
                 style={{
                   marginBottom:
                     "20px",
+                  padding:
+                    "13px 15px",
+                  border:
+                    "1px solid #fecaca",
+                  borderRadius:
+                    "8px",
+                  background:
+                    "#fef2f2",
+                  color:
+                    "#991b1b",
+                  fontSize:
+                    "13px",
+                }}
+              >
+                No active nozzles are
+                configured for this
+                pump.
+              </div>
+            )}
 
+          {/* =========================
+              NO STAFF
+          ========================= */}
+
+          {!loadingStaff &&
+            staff.length ===
+              0 && (
+              <div
+                style={{
+                  marginBottom:
+                    "20px",
+                  padding:
+                    "13px 15px",
+                  border:
+                    "1px solid #fed7aa",
+                  borderRadius:
+                    "8px",
+                  background:
+                    "#fff7ed",
+                  color:
+                    "#9a3412",
+                  fontSize:
+                    "13px",
+                }}
+              >
+                No active owner,
+                manager, or staff user
+                is available for this
+                nozzle reading.
+              </div>
+            )}
+
+          {/* =========================
+              NOZZLE INFORMATION
+          ========================= */}
+
+          {!loading &&
+            selectedNozzle && (
+              <div
+                style={{
+                  marginBottom:
+                    "20px",
                   padding:
                     "14px 16px",
-
                   background:
                     "#f8fafc",
-
                   border:
                     "1px solid #e2e8f0",
-
                   borderRadius:
                     "9px",
                 }}
               >
-
                 <div
                   style={{
                     display:
                       "flex",
-
                     alignItems:
                       "center",
-
                     gap:
                       "8px",
-
                     marginBottom:
                       "10px",
                   }}
@@ -547,9 +1340,8 @@ const NozzleReading = () => {
                   />
 
                   <strong>
-                    Nozzle{" "}
                     {
-                      selectedNozzleNumber
+                      selectedNozzle.nozzleNumber
                     }
                   </strong>
                 </div>
@@ -558,17 +1350,13 @@ const NozzleReading = () => {
                   style={{
                     display:
                       "grid",
-
                     gridTemplateColumns:
                       "1fr 1fr",
-
                     gap:
                       "10px",
                   }}
                 >
-
                   <div>
-
                     <small>
                       Fuel
                     </small>
@@ -577,24 +1365,19 @@ const NozzleReading = () => {
                       style={{
                         marginTop:
                           "3px",
-
                         fontWeight:
                           "600",
+                        textTransform:
+                          "capitalize",
                       }}
                     >
-                      {String(
-                        selectedNozzle.fuelType ||
-                          ""
-                      ).toLowerCase() ===
-                      "petrol"
-                        ? "Petrol"
-                        : "Diesel"}
+                      {
+                        selectedNozzle.fuelType
+                      }
                     </div>
-
                   </div>
 
                   <div>
-
                     <small>
                       Current Reading
                     </small>
@@ -603,10 +1386,8 @@ const NozzleReading = () => {
                       style={{
                         marginTop:
                           "3px",
-
                         fontWeight:
                           "700",
-
                         fontSize:
                           "18px",
                       }}
@@ -616,77 +1397,39 @@ const NozzleReading = () => {
                         {
                           minimumFractionDigits:
                             2,
-
                           maximumFractionDigits:
                             2,
                         }
                       )}
                     </div>
-
                   </div>
-
                 </div>
-
               </div>
-
             )}
 
-          {/* NOZZLE NOT FOUND */}
-
-          {!loading &&
-            !selectedNozzle && (
-
-              <div
-                style={{
-                  marginBottom:
-                    "20px",
-
-                  padding:
-                    "13px 15px",
-
-                  border:
-                    "1px solid #fecaca",
-
-                  borderRadius:
-                    "8px",
-
-                  background:
-                    "#fef2f2",
-
-                  color:
-                    "#991b1b",
-
-                  fontSize:
-                    "13px",
-                }}
-              >
-                Nozzle{" "}
-                {
-                  selectedNozzleNumber
-                }{" "}
-                is not configured or is
-                inactive.
-              </div>
-
-            )}
-
-          {/* =================================================
+          {/* =========================
               READING + DATE
-          ================================================= */}
+          ========================= */}
 
           <div className="form-row">
 
             <div className="form-group">
 
-              <label>
+              <label
+                htmlFor="closing-reading"
+              >
                 Closing Reading *
               </label>
 
               <input
+                id="closing-reading"
                 type="number"
                 name="closingReading"
                 min={
-                  openingReading
+                  selectedNozzle
+                    ? openingReading +
+                      0.01
+                    : 0
                 }
                 step="0.01"
                 value={
@@ -695,18 +1438,33 @@ const NozzleReading = () => {
                 onChange={
                   handleChange
                 }
-                placeholder="Enter closing reading"
+                placeholder={
+                  selectedNozzle
+                    ? `Greater than ${openingReading.toFixed(
+                        2
+                      )}`
+                    : "Select nozzle first"
+                }
+                disabled={
+                  !selectedNozzle ||
+                  loading ||
+                  saving
+                }
+                required
               />
 
             </div>
 
             <div className="form-group">
 
-              <label>
+              <label
+                htmlFor="reading-date"
+              >
                 Reading Date *
               </label>
 
               <input
+                id="reading-date"
                 type="date"
                 name="readingDate"
                 value={
@@ -715,44 +1473,41 @@ const NozzleReading = () => {
                 onChange={
                   handleChange
                 }
+                disabled={
+                  loading ||
+                  saving
+                }
+                required
               />
 
             </div>
 
           </div>
 
-          {/* =================================================
+          {/* =========================
               CALCULATION
-          ================================================= */}
+          ========================= */}
 
           {form.closingReading !==
             "" &&
             selectedNozzle &&
-            closingReading >=
-              openingReading && (
-
+            isClosingReadingValid && (
               <div
                 style={{
                   marginBottom:
                     "20px",
-
                   padding:
                     "14px 16px",
-
                   border:
                     "1px solid #e2e8f0",
-
                   borderRadius:
                     "9px",
-
                   background:
                     "#f8fafc",
                 }}
               >
-
                 <div>
                   Opening Reading:{" "}
-
                   <strong>
                     {openingReading.toFixed(
                       2
@@ -762,7 +1517,6 @@ const NozzleReading = () => {
 
                 <div>
                   Closing Reading:{" "}
-
                   <strong>
                     {closingReading.toFixed(
                       2
@@ -774,13 +1528,11 @@ const NozzleReading = () => {
                   style={{
                     marginTop:
                       "8px",
-
                     fontSize:
                       "16px",
                   }}
                 >
                   Fuel Sold:{" "}
-
                   <strong>
                     {litresSold.toFixed(
                       2
@@ -788,20 +1540,69 @@ const NozzleReading = () => {
                     L
                   </strong>
                 </div>
-
               </div>
-
             )}
 
-          {/* NOTE */}
+          {/* =========================
+              PAYMENT METHOD
+          ========================= */}
 
           <div className="form-group">
 
-            <label>
+            <label
+              htmlFor="payment-method"
+            >
+              Payment Method *
+            </label>
+
+            <select
+              id="payment-method"
+              name="paymentMethod"
+              value={
+                form.paymentMethod
+              }
+              onChange={
+                handleChange
+              }
+              disabled={
+                loading ||
+                saving
+              }
+              required
+            >
+              <option value="cash">
+                Cash
+              </option>
+
+              <option value="upi">
+                UPI
+              </option>
+
+              <option value="card">
+                Card
+              </option>
+
+              <option value="credit">
+                Credit
+              </option>
+            </select>
+
+          </div>
+
+          {/* =========================
+              NOTE
+          ========================= */}
+
+          <div className="form-group">
+
+            <label
+              htmlFor="reading-note"
+            >
               Note
             </label>
 
             <textarea
+              id="reading-note"
               name="note"
               rows="3"
               placeholder="Optional note"
@@ -811,26 +1612,33 @@ const NozzleReading = () => {
               onChange={
                 handleChange
               }
+              maxLength={500}
+              disabled={
+                loading ||
+                saving
+              }
             />
 
           </div>
 
-          {/* SAVE */}
+          {/* =========================
+              SAVE
+          ========================= */}
 
           <button
             type="submit"
             className="primary-button"
             disabled={
-              loading ||
-              saving ||
-              !selectedNozzle
+              !canSubmit
             }
           >
-            <Save size={17} />
+            <Save
+              size={17}
+            />
 
             {saving
               ? "Saving..."
-              : `Save Nozzle ${selectedNozzleNumber} Reading`}
+              : "Save Nozzle Reading"}
           </button>
 
         </form>

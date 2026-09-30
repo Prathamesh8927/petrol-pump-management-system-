@@ -12,7 +12,7 @@ const getJwtSecret = () => {
   const secret = process.env.JWT_SECRET;
 
   if (
-    !secret ||
+    typeof secret !== "string" ||
     secret.trim().length < 32
   ) {
     throw new Error(
@@ -24,7 +24,58 @@ const getJwtSecret = () => {
 };
 
 /* =====================================================
+   JWT EXPIRATION CONFIGURATION
+===================================================== */
+
+const getJwtExpiration = () => {
+  const expiresIn = process.env.JWT_EXPIRES_IN;
+
+  if (
+    typeof expiresIn !== "string" ||
+    !expiresIn.trim()
+  ) {
+    return "7d";
+  }
+
+  return expiresIn.trim();
+};
+
+/* =====================================================
+   EMAIL VALIDATION
+===================================================== */
+
+const isValidEmail = (email) => {
+  if (typeof email !== "string") {
+    return false;
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  if (
+    !normalizedEmail ||
+    normalizedEmail.length > 254
+  ) {
+    return false;
+  }
+
+  const emailRegex =
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  return emailRegex.test(normalizedEmail);
+};
+
+/* =====================================================
    GENERATE JWT
+
+   IMPORTANT:
+   Only userId is stored in JWT.
+
+   Do NOT store:
+   - role
+   - pumpId
+   - permissions
+
+   Those values must always come from MongoDB.
 ===================================================== */
 
 const generateToken = (userId) => {
@@ -34,9 +85,7 @@ const generateToken = (userId) => {
     },
     getJwtSecret(),
     {
-      expiresIn:
-        process.env.JWT_EXPIRES_IN ||
-        "7d",
+      expiresIn: getJwtExpiration(),
       algorithm: "HS256",
     }
   );
@@ -46,15 +95,12 @@ const generateToken = (userId) => {
    LOGIN
 ===================================================== */
 
-export const login = async (
-  req,
-  res
-) => {
+export const login = async (req, res) => {
   try {
     const {
       email,
       password,
-    } = req.body;
+    } = req.body || {};
 
     /* -----------------------------------------------
        VALIDATION
@@ -80,10 +126,7 @@ export const login = async (
        EMAIL VALIDATION
     ------------------------------------------------ */
 
-    const emailRegex =
-      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-    if (!emailRegex.test(normalizedEmail)) {
+    if (!isValidEmail(normalizedEmail)) {
       return res.status(400).json({
         success: false,
         message:
@@ -92,10 +135,27 @@ export const login = async (
     }
 
     /* -----------------------------------------------
+       PASSWORD LENGTH PROTECTION
+
+       Prevents unnecessarily expensive bcrypt
+       operations on extremely large input.
+    ------------------------------------------------ */
+
+    if (password.length > 128) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid email or password.",
+      });
+    }
+
+    /* -----------------------------------------------
        FIND USER
-       
+
        Password has select:false in User.js.
        Therefore +password is mandatory.
+
+       Pump status is loaded for validation.
     ------------------------------------------------ */
 
     const user =
@@ -214,6 +274,10 @@ export const login = async (
 
     /* -----------------------------------------------
        PUMP VALIDATION
+
+       Superadmin does not require a pump.
+
+       All other users MUST have a pumpId.
     ------------------------------------------------ */
 
     if (
@@ -234,10 +298,13 @@ export const login = async (
     }
 
     /* -----------------------------------------------
-       PASSWORD VALIDATION
+       PASSWORD HASH VALIDATION
     ------------------------------------------------ */
 
-    if (!user.password) {
+    if (
+      typeof user.password !== "string" ||
+      !user.password
+    ) {
       console.error(
         `AUTH SECURITY: User ${user._id} has no password hash`
       );
@@ -248,6 +315,10 @@ export const login = async (
           "Invalid email or password.",
       });
     }
+
+    /* -----------------------------------------------
+       PASSWORD VALIDATION
+    ------------------------------------------------ */
 
     const passwordMatched =
       await bcrypt.compare(
@@ -265,11 +336,14 @@ export const login = async (
 
     /* -----------------------------------------------
        PUMP STATUS
+
+       Non-superadmin users cannot log into an
+       inactive pump.
     ------------------------------------------------ */
 
     if (
       role !== "superadmin" &&
-      user.pumpId?.active === false
+      user.pumpId?.active !== true
     ) {
       return res.status(403).json({
         success: false,
@@ -281,6 +355,8 @@ export const login = async (
 
     /* -----------------------------------------------
        GENERATE TOKEN
+
+       JWT contains only userId.
     ------------------------------------------------ */
 
     const token =
@@ -293,9 +369,7 @@ export const login = async (
     return res.status(200).json({
       success: true,
       message: "Login successful",
-
       token,
-
       user: {
         id: user._id,
         name: user.name,
@@ -312,22 +386,43 @@ export const login = async (
       error
     );
 
+    /* -----------------------------------------------
+       JWT CONFIGURATION ERROR
+    ------------------------------------------------ */
+
+    if (
+      error?.message?.includes(
+        "JWT_SECRET"
+      )
+    ) {
+      return res.status(500).json({
+        success: false,
+        message:
+          "Authentication configuration error.",
+        code: "AUTH_CONFIG_ERROR",
+      });
+    }
+
     return res.status(500).json({
       success: false,
       message:
         "Login failed.",
+      code: "LOGIN_ERROR",
     });
   }
 };
 
 /* =====================================================
    REGISTER
+
+   Registration creates a pending request only.
+
+   IMPORTANT:
+   User/Pump creation should happen only after
+   Super Admin approval.
 ===================================================== */
 
-export const register = async (
-  req,
-  res
-) => {
+export const register = async (req, res) => {
   try {
     const {
       name,
@@ -343,7 +438,7 @@ export const register = async (
       state,
       pincode,
       plan,
-    } = req.body;
+    } = req.body || {};
 
     /* -----------------------------------------------
        BASIC VALIDATION
@@ -390,6 +485,34 @@ export const register = async (
     }
 
     /* -----------------------------------------------
+       FIELD LENGTH PROTECTION
+    ------------------------------------------------ */
+
+    if (cleanName.length > 100) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Name is too long.",
+      });
+    }
+
+    if (cleanPumpName.length > 200) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Pump name is too long.",
+      });
+    }
+
+    if (cleanPhone.length > 30) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Phone number is too long.",
+      });
+    }
+
+    /* -----------------------------------------------
        PASSWORD VALIDATION
     ------------------------------------------------ */
 
@@ -413,14 +536,7 @@ export const register = async (
        EMAIL VALIDATION
     ------------------------------------------------ */
 
-    const emailRegex =
-      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-    if (
-      !emailRegex.test(
-        normalizedEmail
-      )
-    ) {
+    if (!isValidEmail(normalizedEmail)) {
       return res.status(400).json({
         success: false,
         message:
@@ -435,7 +551,7 @@ export const register = async (
     const existingUser =
       await User.findOne({
         email: normalizedEmail,
-      });
+      }).select("_id");
 
     if (existingUser) {
       return res.status(409).json({
@@ -454,7 +570,7 @@ export const register = async (
       await RegistrationRequest.findOne({
         email: normalizedEmail,
         status: "pending",
-      });
+      }).select("_id");
 
     if (existingPending) {
       return res.status(409).json({
@@ -468,8 +584,12 @@ export const register = async (
 
     /* -----------------------------------------------
        HASH PASSWORD
-       
+
        RegistrationRequest stores the hash.
+
+       Super Admin approval should transfer this
+       already-hashed password to the User document
+       rather than hashing it again.
     ------------------------------------------------ */
 
     const passwordHash =
@@ -500,52 +620,42 @@ export const register = async (
           cleanPumpName,
 
         companyName:
-          typeof companyName ===
-          "string"
+          typeof companyName === "string"
             ? companyName.trim()
             : "",
 
         dealerCode:
-          typeof dealerCode ===
-          "string"
+          typeof dealerCode === "string"
             ? dealerCode.trim()
             : "",
 
         gstin:
-          typeof gstin ===
-          "string"
-            ? gstin
-                .trim()
-                .toUpperCase()
+          typeof gstin === "string"
+            ? gstin.trim().toUpperCase()
             : "",
 
         address:
-          typeof address ===
-          "string"
+          typeof address === "string"
             ? address.trim()
             : "",
 
         city:
-          typeof city ===
-          "string"
+          typeof city === "string"
             ? city.trim()
             : "",
 
         state:
-          typeof state ===
-          "string"
+          typeof state === "string"
             ? state.trim()
             : "",
 
         pincode:
-          typeof pincode ===
-          "string"
+          typeof pincode === "string"
             ? pincode.trim()
             : "",
 
         plan:
-          typeof plan ===
-            "string" &&
+          typeof plan === "string" &&
           plan.trim()
             ? plan.trim()
             : "standard",
@@ -578,14 +688,14 @@ export const register = async (
     ------------------------------------------------ */
 
     if (
-      error.name ===
+      error?.name ===
       "ValidationError"
     ) {
       return res.status(400).json({
         success: false,
         message:
           Object.values(
-            error.errors
+            error.errors || {}
           )
             .map(
               (item) =>
@@ -599,9 +709,13 @@ export const register = async (
        DUPLICATE KEY
     ------------------------------------------------ */
 
-    if (error.code === 11000) {
+    if (
+      error?.code === 11000
+    ) {
       return res.status(409).json({
         success: false,
+        code:
+          "REGISTRATION_EXISTS",
         message:
           "A registration request already exists for this email.",
       });
@@ -611,6 +725,8 @@ export const register = async (
       success: false,
       message:
         "Unable to submit registration request.",
+      code:
+        "REGISTRATION_ERROR",
     });
   }
 };
@@ -619,10 +735,7 @@ export const register = async (
    GET CURRENT USER
 ===================================================== */
 
-export const getMe = async (
-  req,
-  res
-) => {
+export const getMe = async (req, res) => {
   try {
     const userId =
       req.user?._id ||
@@ -633,8 +746,16 @@ export const getMe = async (
         success: false,
         message:
           "Authentication required.",
+        code:
+          "AUTHENTICATION_REQUIRED",
       });
     }
+
+    /* -----------------------------------------------
+       LOAD CURRENT USER
+
+       Password is explicitly excluded.
+    ------------------------------------------------ */
 
     const user =
       await User.findById(userId)
@@ -649,8 +770,14 @@ export const getMe = async (
         success: false,
         message:
           "User not found.",
+        code:
+          "USER_NOT_FOUND",
       });
     }
+
+    /* -----------------------------------------------
+       ACCOUNT STATUS
+    ------------------------------------------------ */
 
     if (user.active !== true) {
       return res.status(403).json({
@@ -661,6 +788,37 @@ export const getMe = async (
           "Your account is inactive.",
       });
     }
+
+    /* -----------------------------------------------
+       PUMP STATUS
+
+       authMiddleware already checks this for normal
+       authenticated requests, but keeping this check
+       here protects the endpoint if middleware usage
+       changes later.
+    ------------------------------------------------ */
+
+    const role =
+      String(user.role || "")
+        .trim()
+        .toLowerCase();
+
+    if (
+      role !== "superadmin" &&
+      user.pumpId?.active !== true
+    ) {
+      return res.status(403).json({
+        success: false,
+        code:
+          "PUMP_DISABLED",
+        message:
+          "This petrol pump account is currently disabled.",
+      });
+    }
+
+    /* -----------------------------------------------
+       RESPONSE
+    ------------------------------------------------ */
 
     return res.status(200).json({
       success: true,
@@ -676,6 +834,8 @@ export const getMe = async (
       success: false,
       message:
         "Unable to load user.",
+      code:
+        "GET_ME_ERROR",
     });
   }
 };

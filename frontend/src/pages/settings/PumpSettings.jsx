@@ -110,7 +110,7 @@ const PumpSettings = () => {
           await getPumpSettings();
 
         const settings =
-          data?.settings || {};
+          data?.pump || {};
 
         setForm({
           ...DEFAULT_FORM,

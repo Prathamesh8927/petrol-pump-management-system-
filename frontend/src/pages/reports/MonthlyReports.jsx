@@ -540,11 +540,12 @@ const MonthlyReport = () => {
             "/settings/pump"
           );
 
-        const settings =
-          response?.settings ||
-          response?.data?.settings ||
-          response?.data ||
-          {};
+const settings =
+  response?.data?.pump ||
+  response?.data?.settings ||
+  response?.pump ||
+  response?.settings ||
+  {};
 
         const logoUrl =
           getPumpLogo(
@@ -1095,10 +1096,11 @@ const MonthlyReport = () => {
             );
 
           const settings =
-            response?.settings ||
-            response?.data?.settings ||
-            response?.data ||
-            {};
+  response?.data?.pump ||
+  response?.data?.settings ||
+  response?.pump ||
+  response?.settings ||
+  {};
 
           const logoUrl =
             getPumpLogo(

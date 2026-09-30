@@ -621,10 +621,11 @@ const DailyReport = () => {
           );
 
         const settings =
-          response?.settings ||
-          response?.data?.settings ||
-          response?.data ||
-          {};
+  response?.data?.pump ||
+  response?.data?.settings ||
+  response?.pump ||
+  response?.settings ||
+  {};
 
         const logoUrl =
           getPumpLogo(
@@ -1455,10 +1456,11 @@ const DailyReport = () => {
 
 
           const settings =
-            response?.settings ||
-            response?.data?.settings ||
-            response?.data ||
-            {};
+  response?.data?.pump ||
+  response?.data?.settings ||
+  response?.pump ||
+  response?.settings ||
+  {};
 
 
           const logoUrl =

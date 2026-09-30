@@ -96,6 +96,21 @@ const userSchema = new mongoose.Schema(
    DETECT BCRYPT HASH
 ===================================================== */
 
+/*
+   Valid bcrypt formats:
+
+   $2a$...
+   $2b$...
+   $2y$...
+
+   This prevents already-hashed passwords from being
+   hashed again.
+
+   IMPORTANT:
+   The previous regex contained escaped formatting
+   characters and was not a valid bcrypt detector.
+*/
+
 const isBcryptHash = (value) => {
   if (typeof value !== "string") {
     return false;
@@ -109,16 +124,24 @@ const isBcryptHash = (value) => {
 ===================================================== */
 
 /*
- * IMPORTANT:
- *
- * RegistrationRequest stores an already-hashed password.
- *
- * When Super Admin approves the request, that hash can
- * be assigned to User.
- *
- * Therefore we must NOT hash an existing bcrypt hash
- * again.
- */
+   IMPORTANT:
+
+   RegistrationRequest may already contain a bcrypt
+   password hash.
+
+   When Super Admin approves the request, that hash
+   may be assigned directly to User.
+
+   Therefore:
+
+   Plain password
+       ↓
+   bcrypt hash
+
+   Existing bcrypt hash
+       ↓
+   DO NOT hash again
+*/
 
 userSchema.pre("save", async function () {
   if (!this.isModified("password")) {
@@ -141,22 +164,21 @@ userSchema.pre("save", async function () {
    CHECK PASSWORD
 ===================================================== */
 
-userSchema.methods.matchPassword = async function (
-  enteredPassword
-) {
-  if (
-    typeof enteredPassword !== "string" ||
-    !enteredPassword ||
-    !this.password
-  ) {
-    return false;
-  }
+userSchema.methods.matchPassword =
+  async function (enteredPassword) {
+    if (
+      typeof enteredPassword !== "string" ||
+      !enteredPassword ||
+      !this.password
+    ) {
+      return false;
+    }
 
-  return bcrypt.compare(
-    enteredPassword,
-    this.password
-  );
-};
+    return bcrypt.compare(
+      enteredPassword,
+      this.password
+    );
+  };
 
 /* =====================================================
    MODEL

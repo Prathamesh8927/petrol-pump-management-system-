@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useState,
 } from "react";
@@ -19,47 +20,82 @@ import {
   getDailySales,
 } from "../../services/salesService";
 
+const getToday = () => {
+  const now =
+    new Date();
+
+  const year =
+    now.getFullYear();
+
+  const month =
+    String(
+      now.getMonth() + 1
+    ).padStart(2, "0");
+
+  const day =
+    String(
+      now.getDate()
+    ).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+};
+
+const EMPTY_SUMMARY = {
+  totalSale: 0,
+  totalLitres: 0,
+  petrolSale: 0,
+  dieselSale: 0,
+  petrolLitres: 0,
+  dieselLitres: 0,
+  cash: 0,
+  upi: 0,
+  card: 0,
+  credit: 0,
+};
+
+const isValidDate = (
+  value
+) => {
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(
+      value
+    )
+  ) {
+    return false;
+  }
+
+  const [
+    year,
+    month,
+    day,
+  ] = value
+    .split("-")
+    .map(Number);
+
+  const date =
+    new Date(
+      year,
+      month - 1,
+      day
+    );
+
+  return (
+    date.getFullYear() ===
+      year &&
+    date.getMonth() ===
+      month - 1 &&
+    date.getDate() ===
+      day
+  );
+};
+
 const DailySales = () => {
-  /* =====================================================
-     DATE
-  ===================================================== */
-
-  const getToday = () => {
-    const now =
-      new Date();
-
-    const year =
-      now.getFullYear();
-
-    const month =
-      String(
-        now.getMonth() + 1
-      ).padStart(
-        2,
-        "0"
-      );
-
-    const day =
-      String(
-        now.getDate()
-      ).padStart(
-        2,
-        "0"
-      );
-
-    return `${year}-${month}-${day}`;
-  };
-
   const [
     date,
     setDate,
   ] = useState(
     getToday()
   );
-
-  /* =====================================================
-     SALES
-  ===================================================== */
 
   const [
     sales,
@@ -69,30 +105,14 @@ const DailySales = () => {
   const [
     summary,
     setSummary,
-  ] = useState({
-    totalSale: 0,
-    totalLitres: 0,
-
-    petrolSale: 0,
-    dieselSale: 0,
-
-    petrolLitres: 0,
-    dieselLitres: 0,
-
-    cash: 0,
-    upi: 0,
-    card: 0,
-    credit: 0,
-  });
+  ] = useState(
+    EMPTY_SUMMARY
+  );
 
   const [
     loading,
     setLoading,
   ] = useState(true);
-
-  /* =====================================================
-     HELPERS
-  ===================================================== */
 
   const money = (
     value
@@ -104,7 +124,6 @@ const DailySales = () => {
       {
         minimumFractionDigits:
           2,
-
         maximumFractionDigits:
           2,
       }
@@ -120,7 +139,6 @@ const DailySales = () => {
       {
         minimumFractionDigits:
           2,
-
         maximumFractionDigits:
           2,
       }
@@ -159,7 +177,9 @@ const DailySales = () => {
         parsed.getTime()
       )
     ) {
-      return value;
+      return String(
+        value
+      );
     }
 
     return parsed.toLocaleDateString(
@@ -175,172 +195,148 @@ const DailySales = () => {
         value || ""
       ).toLowerCase();
 
-    if (
-      payment === "upi"
-    ) {
-      return "UPI";
-    }
+    switch (payment) {
+      case "upi":
+        return "UPI";
 
-    if (
-      payment === "card"
-    ) {
-      return "Card";
-    }
+      case "card":
+        return "Card";
 
-    if (
-      payment === "credit"
-    ) {
-      return "Credit";
-    }
+      case "credit":
+        return "Credit";
 
-    return "Cash";
+      case "cash":
+      default:
+        return "Cash";
+    }
   };
 
-  /* =====================================================
-     LOAD DAILY SALES
-  ===================================================== */
-
   const loadSales =
-    async () => {
-      try {
-        setLoading(true);
-
-        const response =
-          await getDailySales(
+    useCallback(
+      async () => {
+        if (
+          !isValidDate(
             date
+          )
+        ) {
+          toast.error(
+            "Please select a valid date."
           );
 
-        console.log(
-          "DAILY SALES RESPONSE:",
-          response
-        );
+          return;
+        }
 
-        const saleList =
-          Array.isArray(
-            response?.sales
-          )
-            ? response.sales
-            : [];
+        try {
+          setLoading(true);
 
-        const data =
-          response?.summary ||
-          {};
+          const response =
+            await getDailySales(
+              date
+            );
 
-        setSales(
-          saleList
-        );
+          const saleList =
+            Array.isArray(
+              response?.sales
+            )
+              ? response.sales
+              : [];
 
-        setSummary({
-          totalSale:
-            Number(
-              data.totalSale ||
-                0
-            ),
+          const data =
+            response?.summary ||
+            {};
 
-          totalLitres:
-            Number(
-              data.totalLitres ||
-                0
-            ),
+          setSales(
+            saleList
+          );
 
-          petrolSale:
-            Number(
-              data.petrolSale ||
-                0
-            ),
+          setSummary({
+            totalSale:
+              Number(
+                data.totalSale ??
+                  0
+              ),
 
-          dieselSale:
-            Number(
-              data.dieselSale ||
-                0
-            ),
+            totalLitres:
+              Number(
+                data.totalLitres ??
+                  0
+              ),
 
-          petrolLitres:
-            Number(
-              data.petrolLitres ||
-                0
-            ),
+            petrolSale:
+              Number(
+                data.petrolSale ??
+                  0
+              ),
 
-          dieselLitres:
-            Number(
-              data.dieselLitres ||
-                0
-            ),
+            dieselSale:
+              Number(
+                data.dieselSale ??
+                  0
+              ),
 
-          cash:
-            Number(
-              data.cash ||
-                0
-            ),
+            petrolLitres:
+              Number(
+                data.petrolLitres ??
+                  0
+              ),
 
-          upi:
-            Number(
-              data.upi ||
-                0
-            ),
+            dieselLitres:
+              Number(
+                data.dieselLitres ??
+                  0
+              ),
 
-          card:
-            Number(
-              data.card ||
-                0
-            ),
+            cash:
+              Number(
+                data.cash ??
+                  0
+              ),
 
-          credit:
-            Number(
-              data.credit ||
-                0
-            ),
-        });
-      } catch (error) {
-        console.error(
-          "LOAD DAILY SALES ERROR:",
-          error
-        );
+            upi:
+              Number(
+                data.upi ??
+                  0
+              ),
 
-        console.error(
-          "SERVER RESPONSE:",
-          error.response?.data
-        );
+            card:
+              Number(
+                data.card ??
+                  0
+              ),
 
-        setSales([]);
+            credit:
+              Number(
+                data.credit ??
+                  0
+              ),
+          });
+        } catch (error) {
+          console.error(
+            "LOAD DAILY SALES ERROR:",
+            error
+          );
 
-        setSummary({
-          totalSale: 0,
-          totalLitres: 0,
+          setSales([]);
 
-          petrolSale: 0,
-          dieselSale: 0,
+          setSummary(
+            EMPTY_SUMMARY
+          );
 
-          petrolLitres: 0,
-          dieselLitres: 0,
-
-          cash: 0,
-          upi: 0,
-          card: 0,
-          credit: 0,
-        });
-
-        toast.error(
-          error.response?.data
-            ?.message ||
-            "Unable to load daily sales"
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
-
-  /* =====================================================
-     REFRESH WHEN DATE CHANGES
-  ===================================================== */
+          toast.error(
+            error.response?.data
+              ?.message ||
+              "Unable to load daily sales"
+          );
+        } finally {
+          setLoading(false);
+        }
+      },
+      [date]
+    );
 
   useEffect(() => {
     loadSales();
-  }, [date]);
-
-  /* =====================================================
-     REFRESH WHEN RETURNING TO PAGE
-  ===================================================== */
+  }, [loadSales]);
 
   useEffect(() => {
     const handleFocus =
@@ -359,21 +355,14 @@ const DailySales = () => {
         handleFocus
       );
     };
-  }, [date]);
-
-  /* =====================================================
-     UI
-  ===================================================== */
+  }, [loadSales]);
 
   return (
     <div className="page-container">
 
-      {/* HEADER */}
-
       <div className="page-header">
 
         <div>
-
           <h1>
             Daily Sales
           </h1>
@@ -383,19 +372,18 @@ const DailySales = () => {
             sales for the selected
             date.
           </p>
-
         </div>
 
         <div
           style={{
             display:
               "flex",
-
             gap:
               "10px",
-
             alignItems:
               "center",
+            flexWrap:
+              "wrap",
           }}
         >
 
@@ -404,10 +392,10 @@ const DailySales = () => {
             value={date}
             onChange={(event) =>
               setDate(
-                event.target
-                  .value
+                event.target.value
               )
             }
+            aria-label="Sales date"
           />
 
           <button
@@ -434,10 +422,6 @@ const DailySales = () => {
         </div>
 
       </div>
-
-      {/* =================================================
-          MAIN SUMMARY
-      ================================================= */}
 
       <div className="stats-grid">
 
@@ -533,10 +517,6 @@ const DailySales = () => {
 
       </div>
 
-      {/* =================================================
-          PAYMENT SUMMARY
-      ================================================= */}
-
       <div
         className="content-panel"
         style={{
@@ -548,7 +528,6 @@ const DailySales = () => {
         <div className="content-panel-header">
 
           <div>
-
             <h2>
               Payment Summary
             </h2>
@@ -557,7 +536,6 @@ const DailySales = () => {
               Collection by payment
               method.
             </p>
-
           </div>
 
         </div>
@@ -648,10 +626,6 @@ const DailySales = () => {
 
       </div>
 
-      {/* =================================================
-          SALES TABLE
-      ================================================= */}
-
       <div
         className="content-panel"
         style={{
@@ -663,7 +637,6 @@ const DailySales = () => {
         <div className="content-panel-header">
 
           <div>
-
             <h2>
               Sales Transactions
             </h2>
@@ -675,7 +648,6 @@ const DailySales = () => {
                 : "s"}{" "}
               found.
             </p>
-
           </div>
 
         </div>
@@ -688,9 +660,7 @@ const DailySales = () => {
 
               <tr>
 
-                <th>
-                  #
-                </th>
+                <th>#</th>
 
                 <th>
                   Date
@@ -736,13 +706,7 @@ const DailySales = () => {
 
                   <td
                     colSpan="9"
-                    style={{
-                      textAlign:
-                        "center",
-
-                      padding:
-                        "30px",
-                    }}
+                    className="empty-table"
                   >
                     Loading sales...
                   </td>
@@ -756,18 +720,13 @@ const DailySales = () => {
 
                   <td
                     colSpan="9"
-                    style={{
-                      textAlign:
-                        "center",
-
-                      padding:
-                        "30px",
-                    }}
+                    className="empty-table"
                   >
                     No sales found for{" "}
                     {formatDate(
                       date
-                    )}.
+                    )}
+                    .
                   </td>
 
                 </tr>

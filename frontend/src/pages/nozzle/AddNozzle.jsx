@@ -28,10 +28,14 @@ const AddNozzle = () => {
     setFormData,
   ] = useState({
     nozzleNumber: "",
-    name: "",
     fuelType: "petrol",
+    openingReading: "",
     currentReading: "",
   });
+
+  /* =====================================
+     FORM CHANGE
+  ===================================== */
 
   const handleChange =
     (event) => {
@@ -48,38 +52,134 @@ const AddNozzle = () => {
       );
     };
 
+  /* =====================================
+     SUBMIT
+  ===================================== */
+
   const handleSubmit =
     async (event) => {
       event.preventDefault();
+
+      if (loading) {
+        return;
+      }
+
+      const nozzleNumber =
+        String(
+          formData.nozzleNumber ||
+            ""
+        ).trim();
+
+      const openingReading =
+        Number(
+          formData.openingReading
+        );
+
+      const currentReading =
+        Number(
+          formData.currentReading
+        );
+
+      if (!nozzleNumber) {
+        toast.error(
+          "Nozzle number is required."
+        );
+
+        return;
+      }
+
+      if (
+        nozzleNumber.length >
+        50
+      ) {
+        toast.error(
+          "Nozzle number is too long."
+        );
+
+        return;
+      }
+
+      if (
+        formData.fuelType !==
+          "petrol" &&
+        formData.fuelType !==
+          "diesel"
+      ) {
+        toast.error(
+          "Please select a valid fuel type."
+        );
+
+        return;
+      }
+
+      if (
+        !Number.isFinite(
+          openingReading
+        ) ||
+        openingReading < 0
+      ) {
+        toast.error(
+          "Enter a valid opening reading."
+        );
+
+        return;
+      }
+
+      if (
+        !Number.isFinite(
+          currentReading
+        ) ||
+        currentReading < 0
+      ) {
+        toast.error(
+          "Enter a valid current reading."
+        );
+
+        return;
+      }
+
+      if (
+        currentReading <
+        openingReading
+      ) {
+        toast.error(
+          "Current reading cannot be lower than opening reading."
+        );
+
+        return;
+      }
 
       try {
         setLoading(true);
 
         await addNozzle({
-          nozzleNumber:
-            formData.nozzleNumber.trim(),
-
-          name:
-            formData.name.trim(),
+          nozzleNumber,
 
           fuelType:
             formData.fuelType,
 
-          currentReading:
-            Number(
-              formData.currentReading ||
-                0
-            ),
+          openingReading,
+
+          currentReading,
+
+          status: "active",
+
+          active: true,
         });
 
         toast.success(
-          "Nozzle added successfully"
+          "Nozzle added successfully."
         );
 
         navigate(
           "/nozzle"
         );
       } catch (error) {
+        console.error(
+          "ADD NOZZLE ERROR:",
+          error
+        );
+
         toast.error(
           error.response?.data
             ?.message ||
@@ -92,6 +192,10 @@ const AddNozzle = () => {
 
   return (
     <div className="page-container">
+
+      {/* =============================
+          BREADCRUMB
+      ============================= */}
 
       <Breadcrumbs
         items={[
@@ -108,6 +212,10 @@ const AddNozzle = () => {
         ]}
       />
 
+      {/* =============================
+          HEADER
+      ============================= */}
+
       <div className="page-header">
 
         <div>
@@ -123,12 +231,18 @@ const AddNozzle = () => {
 
       </div>
 
+      {/* =============================
+          FORM PANEL
+      ============================= */}
+
       <div className="content-panel">
 
         <div className="content-panel-header">
+
           <h2>
             Nozzle Information
           </h2>
+
         </div>
 
         <div className="content-panel-body">
@@ -138,26 +252,108 @@ const AddNozzle = () => {
             onSubmit={
               handleSubmit
             }
+            noValidate
           >
+
+            {/* =====================
+                NOZZLE NUMBER
+            ===================== */}
+
+            <div className="form-group">
+
+              <label
+                htmlFor="nozzle-number"
+              >
+                Nozzle Number *
+              </label>
+
+              <input
+                id="nozzle-number"
+                type="text"
+                name="nozzleNumber"
+                value={
+                  formData.nozzleNumber
+                }
+                onChange={
+                  handleChange
+                }
+                placeholder="Example: N1"
+                maxLength={50}
+                disabled={
+                  loading
+                }
+                required
+              />
+
+            </div>
+
+            {/* =====================
+                FUEL TYPE
+            ===================== */}
+
+            <div className="form-group">
+
+              <label
+                htmlFor="nozzle-fuel-type"
+              >
+                Fuel Type *
+              </label>
+
+              <select
+                id="nozzle-fuel-type"
+                name="fuelType"
+                value={
+                  formData.fuelType
+                }
+                onChange={
+                  handleChange
+                }
+                disabled={
+                  loading
+                }
+                required
+              >
+                <option value="petrol">
+                  Petrol
+                </option>
+
+                <option value="diesel">
+                  Diesel
+                </option>
+              </select>
+
+            </div>
+
+            {/* =====================
+                READINGS
+            ===================== */}
 
             <div className="form-row">
 
               <div className="form-group">
 
-                <label>
-                  Nozzle Number
+                <label
+                  htmlFor="opening-reading"
+                >
+                  Opening Meter Reading *
                 </label>
 
                 <input
-                  type="text"
-                  name="nozzleNumber"
+                  id="opening-reading"
+                  type="number"
+                  name="openingReading"
                   value={
-                    formData.nozzleNumber
+                    formData.openingReading
                   }
                   onChange={
                     handleChange
                   }
-                  placeholder="Example: N1"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  disabled={
+                    loading
+                  }
                   required
                 />
 
@@ -165,73 +361,28 @@ const AddNozzle = () => {
 
               <div className="form-group">
 
-                <label>
-                  Nozzle Name
-                </label>
-
-                <input
-                  type="text"
-                  name="name"
-                  value={
-                    formData.name
-                  }
-                  onChange={
-                    handleChange
-                  }
-                  placeholder="Example: Petrol Nozzle 1"
-                />
-
-              </div>
-
-            </div>
-
-            <div className="form-row">
-
-              <div className="form-group">
-
-                <label>
-                  Fuel Type
-                </label>
-
-                <select
-                  name="fuelType"
-                  value={
-                    formData.fuelType
-                  }
-                  onChange={
-                    handleChange
-                  }
+                <label
+                  htmlFor="current-reading"
                 >
-
-                  <option value="petrol">
-                    Petrol
-                  </option>
-
-                  <option value="diesel">
-                    Diesel
-                  </option>
-
-                </select>
-
-              </div>
-
-              <div className="form-group">
-
-                <label>
-                  Initial Meter Reading
+                  Current Meter Reading *
                 </label>
 
                 <input
+                  id="current-reading"
                   type="number"
                   name="currentReading"
-                  min="0"
-                  step="0.01"
                   value={
                     formData.currentReading
                   }
                   onChange={
                     handleChange
                   }
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  disabled={
+                    loading
+                  }
                   required
                 />
 
@@ -239,17 +390,40 @@ const AddNozzle = () => {
 
             </div>
 
-            <button
-              type="submit"
-              className="primary-button"
-              disabled={
-                loading
-              }
-            >
-              {loading
-                ? "Adding..."
-                : "Add Nozzle"}
-            </button>
+            {/* =====================
+                ACTIONS
+            ===================== */}
+
+            <div className="modal-actions">
+
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() =>
+                  navigate(
+                    "/nozzle"
+                  )
+                }
+                disabled={
+                  loading
+                }
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                className="primary-button"
+                disabled={
+                  loading
+                }
+              >
+                {loading
+                  ? "Adding..."
+                  : "Add Nozzle"}
+              </button>
+
+            </div>
 
           </form>
 

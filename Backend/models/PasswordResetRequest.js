@@ -78,8 +78,8 @@ const passwordResetRequestSchema =
 
       /* =====================================================
          SECURE RESET TOKEN
-         
-         Store ONLY the SHA-256 hash of the token.
+
+         Store ONLY the SHA-256 hash.
          Never store the raw reset token.
       ===================================================== */
 
@@ -87,7 +87,6 @@ const passwordResetRequestSchema =
         type: String,
         default: null,
         select: false,
-        index: true,
       },
 
       resetTokenExpiresAt: {
@@ -135,14 +134,16 @@ passwordResetRequestSchema.index({
 });
 
 /*
-  Token lookup is normally performed using the hash.
-
-  Sparse unique index allows multiple old requests with
-  null token hashes while guaranteeing that two active
-  requests cannot accidentally receive the same hash.
-*/
+ * Token lookup is performed using the hash.
+ *
+ * Sparse unique index allows multiple old requests
+ * with null token hashes while preventing duplicate
+ * non-null token hashes.
+ */
 passwordResetRequestSchema.index(
-  { resetTokenHash: 1 },
+  {
+    resetTokenHash: 1,
+  },
   {
     unique: true,
     sparse: true,

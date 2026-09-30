@@ -14,8 +14,7 @@ import api from "../../services/api";
 import "./Login.css";
 
 const ForgotPassword = () => {
-  const navigate =
-    useNavigate();
+  const navigate = useNavigate();
 
   const [email, setEmail] =
     useState("");
@@ -25,7 +24,7 @@ const ForgotPassword = () => {
 
   const [requestId, setRequestId] =
     useState(
-      localStorage.getItem(
+      sessionStorage.getItem(
         "passwordResetRequestId"
       ) || ""
     );
@@ -34,161 +33,199 @@ const ForgotPassword = () => {
     useState("");
 
   /* ======================================================
-     CREATE REQUEST
+     CREATE PASSWORD RESET REQUEST
   ====================================================== */
 
-  const handleSubmit =
-    async (event) => {
-      event.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
 
-      const cleanEmail =
-        email.trim().toLowerCase();
+    if (loading) return;
 
-      if (!cleanEmail) {
-        toast.error(
-          "Enter your registered email."
+    const cleanEmail =
+      email.trim().toLowerCase();
+
+    if (!cleanEmail) {
+      toast.error(
+        "Enter your registered email."
+      );
+      return;
+    }
+
+    if (cleanEmail.length > 254) {
+      toast.error(
+        "Email address is too long."
+      );
+      return;
+    }
+
+    const emailRegex =
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailRegex.test(cleanEmail)) {
+      toast.error(
+        "Enter a valid email address."
+      );
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const response =
+        await api.post(
+          "/password-reset/request",
+          {
+            email: cleanEmail,
+          }
         );
-        return;
+
+      const data =
+        response.data || {};
+
+      if (data.requestId) {
+        sessionStorage.setItem(
+          "passwordResetRequestId",
+          data.requestId
+        );
+
+        setRequestId(
+          data.requestId
+        );
       }
 
-      try {
-        setLoading(true);
+      setStatus(
+        data.status || "pending"
+      );
 
-        const response =
-          await api.post(
-            "/password-reset/request",
-            {
-              email: cleanEmail,
-            }
-          );
-
-        const data =
-          response.data;
-
-        if (data.requestId) {
-          localStorage.setItem(
-            "passwordResetRequestId",
-            data.requestId
-          );
-
-          setRequestId(
-            data.requestId
-          );
-        }
-
-        setStatus(
-          data.status || "pending"
-        );
-
-        toast.success(
-          data.message ||
-            "Password reset request submitted."
-        );
-      } catch (error) {
-        toast.error(
-          error.response?.data
-            ?.message ||
-            "Unable to submit request."
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
+      toast.success(
+        data.message ||
+          "Password reset request submitted."
+      );
+    } catch (error) {
+      toast.error(
+        error.response?.data?.message ||
+          "Unable to submit request."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   /* ======================================================
-     CHECK STATUS
+     CHECK PASSWORD RESET STATUS
   ====================================================== */
 
-  const checkStatus =
-    async () => {
-      if (!requestId) {
-        toast.error(
-          "No password reset request found."
+  const checkStatus = async () => {
+    if (loading) return;
+
+    if (!requestId) {
+      toast.error(
+        "No password reset request found."
+      );
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const response =
+        await api.get(
+          `/password-reset/status/${requestId}`
         );
+
+      const request =
+        response.data?.request;
+
+      if (!request) {
+        throw new Error(
+          "Request information unavailable."
+        );
+      }
+
+      const currentStatus =
+        String(
+          request.status || ""
+        ).toLowerCase();
+
+      setStatus(
+        currentStatus
+      );
+
+      if (
+        currentStatus ===
+        "approved"
+      ) {
+        toast.success(
+          "Request approved. You can now set a new password."
+        );
+
+        navigate(
+          `/reset-password/${requestId}`
+        );
+
         return;
       }
 
-      try {
-        setLoading(true);
-
-        const response =
-          await api.get(
-            `/password-reset/status/${requestId}`
-          );
-
-        const request =
-          response.data?.request;
-
-        if (!request) {
-          throw new Error(
-            "Request information unavailable."
-          );
-        }
-
-        setStatus(
-          request.status
-        );
-
-        if (
-          request.status ===
-          "approved"
-        ) {
-          toast.success(
-            "Request approved. You can now set a new password."
-          );
-
-          navigate(
-            `/reset-password/${requestId}`
-          );
-
-          return;
-        }
-
-        if (
-          request.status ===
-          "rejected"
-        ) {
-          toast.error(
-            request.rejectionReason ||
-              "Your request was rejected."
-          );
-
-          return;
-        }
-
-        if (
-          request.status ===
-          "completed"
-        ) {
-          toast.success(
-            "This password reset request has already been completed."
-          );
-
-          return;
-        }
-
-        toast(
-          "Your request is still waiting for Super Admin approval."
-        );
-      } catch (error) {
+      if (
+        currentStatus ===
+        "rejected"
+      ) {
         toast.error(
-          error.response?.data
-            ?.message ||
-            error.message ||
-            "Unable to check request status."
+          request.rejectionReason ||
+            "Your request was rejected."
         );
-      } finally {
-        setLoading(false);
+
+        return;
       }
-    };
+
+      if (
+        currentStatus ===
+        "completed"
+      ) {
+        toast.success(
+          "This password reset request has already been completed."
+        );
+
+        return;
+      }
+
+      toast(
+        "Your request is still waiting for Super Admin approval."
+      );
+    } catch (error) {
+      toast.error(
+        error.response?.data?.message ||
+          error.message ||
+          "Unable to check request status."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ======================================================
+     CLEAR SAVED RESET REQUEST
+  ====================================================== */
+
+  const clearRequest = () => {
+    sessionStorage.removeItem(
+      "passwordResetRequestId"
+    );
+
+    setRequestId("");
+    setStatus("");
+    setEmail("");
+
+    toast.success(
+      "Saved reset request cleared."
+    );
+  };
 
   return (
     <div className="login-page">
-
       <div className="login-card">
 
         <div className="login-header">
-
           <h1>
             ShivShambho
           </h1>
@@ -196,22 +233,24 @@ const ForgotPassword = () => {
           <p>
             Forgot Password
           </p>
-
         </div>
 
         <form
           onSubmit={
             handleSubmit
           }
+          noValidate
         >
-
           <div className="form-group">
 
-            <label>
+            <label
+              htmlFor="forgot-password-email"
+            >
               Registered Email
             </label>
 
             <input
+              id="forgot-password-email"
               type="email"
               value={email}
               onChange={(event) =>
@@ -221,6 +260,7 @@ const ForgotPassword = () => {
               }
               placeholder="Enter your registered email"
               autoComplete="email"
+              maxLength={254}
               disabled={loading}
               required
             />
@@ -239,7 +279,6 @@ const ForgotPassword = () => {
               ? "Submitting..."
               : "Request Password Change"}
           </button>
-
         </form>
 
         {requestId && (
@@ -248,7 +287,6 @@ const ForgotPassword = () => {
               marginTop: "20px",
             }}
           >
-
             <button
               type="button"
               className="primary-button"
@@ -265,6 +303,26 @@ const ForgotPassword = () => {
                 : "Check Approval Status"}
             </button>
 
+            <button
+              type="button"
+              onClick={
+                clearRequest
+              }
+              disabled={loading}
+              style={{
+                width: "100%",
+                marginTop: "10px",
+                padding: "10px",
+                background: "transparent",
+                border: "1px solid #d1d5db",
+                borderRadius: "8px",
+                cursor: loading
+                  ? "not-allowed"
+                  : "pointer",
+              }}
+            >
+              Use Another Email
+            </button>
           </div>
         )}
 
@@ -280,13 +338,14 @@ const ForgotPassword = () => {
                   ? "#dcfce7"
                   : status === "rejected"
                   ? "#fee2e2"
+                  : status === "completed"
+                  ? "#e0f2fe"
                   : "#fef3c7",
             }}
           >
             Status:{" "}
             <strong>
-              {status
-                .toUpperCase()}
+              {status.toUpperCase()}
             </strong>
           </div>
         )}
@@ -306,7 +365,6 @@ const ForgotPassword = () => {
         </div>
 
       </div>
-
     </div>
   );
 };

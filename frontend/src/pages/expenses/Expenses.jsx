@@ -1,9 +1,7 @@
+import AddExpense from "./AddExpense";
+
 const Expenses = () => {
-  return (
-    <div>
-      <h1>Expenses</h1>
-    </div>
-  );
+  return <AddExpense />;
 };
 
 export default Expenses;

@@ -7,12 +7,14 @@ const saleSchema = new mongoose.Schema(
       ref: "Pump",
       required: true,
       index: true,
+      immutable: true,
     },
 
     nozzleId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Nozzle",
       default: null,
+      index: true,
     },
 
     readingId: {
@@ -25,6 +27,8 @@ const saleSchema = new mongoose.Schema(
       type: String,
       enum: ["petrol", "diesel"],
       required: true,
+      lowercase: true,
+      trim: true,
     },
 
     quantity: {
@@ -54,12 +58,15 @@ const saleSchema = new mongoose.Schema(
         "credit",
       ],
       default: "cash",
+      lowercase: true,
+      trim: true,
     },
 
     saleDate: {
       type: String,
       required: true,
       index: true,
+      match: /^\d{4}-\d{2}-\d{2}$/,
     },
 
     source: {
@@ -69,22 +76,27 @@ const saleSchema = new mongoose.Schema(
         "nozzle",
       ],
       default: "nozzle",
+      lowercase: true,
+      trim: true,
     },
 
     note: {
       type: String,
       default: "",
       trim: true,
+      maxlength: 1000,
     },
 
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,
+      index: true,
     },
   },
   {
     timestamps: true,
+    strict: true,
   }
 );
 
@@ -92,29 +104,29 @@ const saleSchema = new mongoose.Schema(
    INDEXES
 ===================================================== */
 
-/*
-  Optimizes pump-specific sales
-  history and dashboard queries.
-*/
 saleSchema.index({
   pumpId: 1,
   saleDate: -1,
 });
 
-/*
-  Optimizes manual-sale queries:
-  pumpId + saleDate + source
-*/
 saleSchema.index({
   pumpId: 1,
   saleDate: 1,
   source: 1,
 });
 
+saleSchema.index({
+  pumpId: 1,
+  nozzleId: 1,
+  saleDate: -1,
+});
+
 /*
-  Unique only when readingId exists.
-  Manual sales may have no readingId.
-*/
+ * A nozzle reading should generate at most
+ * one Sale.
+ *
+ * Manual sales can have no readingId.
+ */
 saleSchema.index(
   {
     readingId: 1,
@@ -124,6 +136,16 @@ saleSchema.index(
     sparse: true,
   }
 );
+
+saleSchema.index({
+  pumpId: 1,
+  createdBy: 1,
+  createdAt: -1,
+});
+
+/* =====================================================
+   MODEL
+===================================================== */
 
 const Sale =
   mongoose.models.Sale ||
