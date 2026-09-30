@@ -1702,27 +1702,13 @@ const ReadingHistory = () => {
           39
         );
 
-        const headerLogoAdded =
-          addPdfImageSafe(
-            doc,
-            pumpLogoData,
-            13,
-            12,
-            24,
-            24
-          );
-
-        doc.setFont(
-          "helvetica",
-          "bold"
-        );
-
-        doc.setFontSize(13);
-
-        doc.text(
-          "SHIVSHAMBHO",
-          headerLogoAdded ? 42 : 14,
-          18
+        addPdfImageSafe(
+          doc,
+          pumpLogoData,
+          13,
+          12,
+          24,
+          24
         );
 
         doc.setFont(
@@ -2183,7 +2169,7 @@ const ReadingHistory = () => {
            TABLE
         ========================================== */
 
-        const tableData =
+        const tableRows =
           reportReadings.map(
             (
               reading,
@@ -2239,20 +2225,52 @@ const ReadingHistory = () => {
             ]
           );
 
-        autoTable(
-          doc,
-          {
-            startY:
-              tableStartY,
+        const tableChunks = [];
 
-            margin: {
-              left: 10,
-              right: 10,
-              bottom: 22,
-            },
+        for (
+          let index = 0;
+          index < tableRows.length;
+          index += 25
+        ) {
+          tableChunks.push(
+            tableRows.slice(
+              index,
+              index + 25
+            )
+          );
+        }
 
-            tableWidth:
-              pageWidth - 20,
+        tableChunks.forEach(
+          (chunk, chunkIndex) => {
+            if (chunkIndex > 0) {
+              doc.addPage();
+            }
+
+            const chunkStartY =
+              chunkIndex === 0
+                ? tableStartY
+                : 18;
+
+            autoTable(
+              doc,
+              {
+                startY:
+                  chunkStartY,
+
+                margin: {
+                  left: 10,
+                  right: 10,
+                  bottom: 22,
+                },
+
+                tableWidth:
+                  pageWidth - 20,
+
+                pageBreak:
+                  "avoid",
+
+                rowPageBreak:
+                  "avoid",
 
             head: [
               [
@@ -2271,8 +2289,8 @@ const ReadingHistory = () => {
               ],
             ],
 
-            body:
-              tableData,
+                body:
+                  chunk,
 
             theme:
               "grid",
@@ -2361,7 +2379,7 @@ const ReadingHistory = () => {
               5: {
                 cellWidth: 18,
                 overflow:
-                  "linebreak",
+                  "ellipsize",
               },
 
               6: {
@@ -2395,12 +2413,12 @@ const ReadingHistory = () => {
               11: {
                 cellWidth: 19,
                 overflow:
-                  "linebreak",
+                  "ellipsize",
               },
             },
 
-            didDrawPage:
-              (data) => {
+                didDrawPage:
+                  (data) => {
                 const footerY =
                   pageHeight - 14;
 
@@ -2491,7 +2509,9 @@ const ReadingHistory = () => {
                     align: "right",
                   }
                 );
-              },
+                  },
+              }
+            );
           }
         );
 
