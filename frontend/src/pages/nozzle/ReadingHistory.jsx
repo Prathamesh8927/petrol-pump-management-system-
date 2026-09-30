@@ -1590,13 +1590,17 @@ const ReadingHistory = () => {
         const doc =
           new jsPDF({
             orientation:
-              "landscape",
+              "portrait",
             unit: "mm",
             format: "a4",
+            compress: true,
           });
 
         const pageWidth =
           doc.internal.pageSize.getWidth();
+
+        const pageHeight =
+          doc.internal.pageSize.getHeight();
 
         const pumpLogoSource =
           getPumpLogo(pumpSettings);
@@ -1675,34 +1679,37 @@ const ReadingHistory = () => {
            HEADER
         ========================================== */
 
-        doc.setFillColor(
-          15,
-          61,
-          86
+        doc.setDrawColor(
+          203,
+          213,
+          225
+        );
+
+        doc.setLineWidth(
+          0.35
         );
 
         doc.rect(
-          0,
-          0,
-          pageWidth,
-          12,
-          "F"
+          5,
+          5,
+          pageWidth - 10,
+          pageHeight - 10
         );
 
         doc.setTextColor(
-          255,
-          255,
-          255
+          17,
+          24,
+          39
         );
 
         const headerLogoAdded =
           addPdfImageSafe(
             doc,
             pumpLogoData,
-            14,
-            1.5,
-            9,
-            9
+            13,
+            12,
+            24,
+            24
           );
 
         doc.setFont(
@@ -1714,8 +1721,8 @@ const ReadingHistory = () => {
 
         doc.text(
           "SHIVSHAMBHO",
-          headerLogoAdded ? 26 : 14,
-          8
+          headerLogoAdded ? 42 : 14,
+          18
         );
 
         doc.setFont(
@@ -1736,7 +1743,7 @@ const ReadingHistory = () => {
             .filter(Boolean)
             .join(" | "),
           pageWidth / 2,
-          8,
+          12,
           {
             align: "center",
             maxWidth: 105,
@@ -1753,7 +1760,7 @@ const ReadingHistory = () => {
         doc.text(
           "NOZZLE READING REPORT",
           pageWidth - 14,
-          8,
+          12,
           {
             align: "right",
           }
@@ -1774,8 +1781,11 @@ const ReadingHistory = () => {
 
         doc.text(
           pumpName,
-          14,
-          23
+          pageWidth / 2,
+          19,
+          {
+            align: "center",
+          }
         );
 
         doc.setFont(
@@ -1789,9 +1799,12 @@ const ReadingHistory = () => {
 
         if (companyName) {
           doc.text(
-            `Dealer: ${companyName}`,
-            14,
-            infoY
+            `DEALER - ${companyName.toUpperCase()}`,
+            pageWidth / 2,
+            24,
+            {
+              align: "center",
+            }
           );
 
           infoY += 5;
@@ -1808,57 +1821,44 @@ const ReadingHistory = () => {
             ]
               .filter(Boolean)
               .join(" | "),
-            14,
-            infoY,
+            pageWidth / 2,
+            30,
             {
-              maxWidth: 145,
+              align: "center",
+              maxWidth: 150,
             }
           );
 
           infoY += 5;
         }
 
-        if (ownerName) {
+        const headerContact =
+          [
+            ownerName
+              ? `Owner: ${ownerName}`
+              : "",
+            phone
+              ? `PH ${phone}`
+              : "",
+            email
+              ? `Email: ${email}`
+              : "",
+            gstin
+              ? `GSTIN-${gstin}`
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" | ");
+
+        if (headerContact) {
+          doc.setFontSize(7);
           doc.text(
-            `Owner: ${ownerName}`,
-            14,
-            infoY
-          );
-
-          infoY += 5;
-        }
-
-        if (gstin) {
-          doc.text(
-            `GSTIN: ${gstin}`,
-            14,
-            infoY
-          );
-        }
-
-        if (
-          phone ||
-          email
-        ) {
-          const rightInfo =
-            [
-              phone
-                ? `Phone: ${phone}`
-                : "",
-              email
-                ? `Email: ${email}`
-                : "",
-            ]
-              .filter(Boolean)
-              .join(" | ");
-
-          doc.text(
-            rightInfo,
-            pageWidth - 14,
-            29,
+            headerContact,
+            pageWidth / 2,
+            39,
             {
-              align: "right",
-              maxWidth: 105,
+              align: "center",
+              maxWidth: 175,
             }
           );
         }
@@ -1872,10 +1872,10 @@ const ReadingHistory = () => {
 
         doc.text(
           reportTitle,
-          pageWidth - 14,
-          39,
+          pageWidth / 2,
+          43,
           {
-            align: "right",
+            align: "center",
           }
         );
 
@@ -1886,13 +1886,86 @@ const ReadingHistory = () => {
 
         doc.setFontSize(8.5);
 
+        doc.setFillColor(
+          234,
+          242,
+          246
+        );
+
+        doc.setDrawColor(
+          203,
+          213,
+          225
+        );
+
+        doc.rect(
+          10,
+          48,
+          pageWidth - 20,
+          19,
+          "FD"
+        );
+
+        doc.setFont(
+          "helvetica",
+          "bold"
+        );
+
+        doc.setFontSize(6);
+
+        doc.setTextColor(
+          100,
+          116,
+          139
+        );
+
+        doc.text(
+          "REPORT TYPE",
+          15,
+          55
+        );
+
+        doc.text(
+          "REPORT PERIOD",
+          75,
+          55
+        );
+
+        doc.text(
+          "GENERATED ON",
+          150,
+          55
+        );
+
+        doc.setFont(
+          "helvetica",
+          "normal"
+        );
+
+        doc.setFontSize(7);
+
+        doc.setTextColor(
+          17,
+          24,
+          39
+        );
+
+        doc.text(
+          reportTitle,
+          15,
+          62
+        );
+
         doc.text(
           periodLabel,
-          pageWidth - 14,
-          45,
-          {
-            align: "right",
-          }
+          75,
+          62
+        );
+
+        doc.text(
+          formatDate(new Date()),
+          150,
+          62
         );
 
         /* ==========================================
@@ -1901,7 +1974,7 @@ const ReadingHistory = () => {
 
         const summaryY =
           Math.max(
-            52,
+            75,
             infoY + 8
           );
 
@@ -2127,6 +2200,15 @@ const ReadingHistory = () => {
             startY:
               summaryY + 27,
 
+            margin: {
+              left: 10,
+              right: 10,
+              bottom: 22,
+            },
+
+            tableWidth:
+              pageWidth - 20,
+
             head: [
               [
                 "#",
@@ -2154,9 +2236,9 @@ const ReadingHistory = () => {
               font:
                 "helvetica",
               fontSize:
-                7,
+                5.5,
               cellPadding:
-                2.5,
+                1.3,
               textColor:
                 [
                   17,
@@ -2173,6 +2255,8 @@ const ReadingHistory = () => {
                 0.15,
               valign:
                 "middle",
+              overflow:
+                "ellipsize",
             },
 
             headStyles: {
@@ -2191,7 +2275,9 @@ const ReadingHistory = () => {
               fontStyle:
                 "bold",
               fontSize:
-                7,
+                5.2,
+              halign:
+                "center",
             },
 
             alternateRowStyles: {
@@ -2208,32 +2294,27 @@ const ReadingHistory = () => {
                 halign:
                   "center",
                 cellWidth:
-                  8,
+                  5,
               },
 
               1: {
-                cellWidth:
-                  22,
+                cellWidth: 14,
               },
 
               2: {
-                cellWidth:
-                  18,
+                cellWidth: 12,
               },
 
               3: {
-                cellWidth:
-                  18,
+                cellWidth: 12,
               },
 
               4: {
-                cellWidth:
-                  20,
+                cellWidth: 13,
               },
 
               5: {
-                cellWidth:
-                  30,
+                cellWidth: 18,
                 overflow:
                   "linebreak",
               },
@@ -2241,39 +2322,33 @@ const ReadingHistory = () => {
               6: {
                 halign:
                   "right",
-                cellWidth:
-                  22,
+                cellWidth: 15,
               },
 
               7: {
                 halign:
                   "right",
-                cellWidth:
-                  22,
+                cellWidth: 15,
               },
 
               8: {
                 halign:
                   "right",
-                cellWidth:
-                  24,
+                cellWidth: 18,
               },
 
               9: {
                 halign:
                   "right",
-                cellWidth:
-                  27,
+                cellWidth: 20,
               },
 
               10: {
-                cellWidth:
-                  20,
+                cellWidth: 14,
               },
 
               11: {
-                cellWidth:
-                  30,
+                cellWidth: 19,
                 overflow:
                   "linebreak",
               },
@@ -2281,8 +2356,8 @@ const ReadingHistory = () => {
 
             didDrawPage:
               (data) => {
-                const pageHeight =
-                  doc.internal.pageSize.getHeight();
+                const footerY =
+                  pageHeight - 14;
 
                 doc.setDrawColor(
                   203,
@@ -2292,9 +2367,9 @@ const ReadingHistory = () => {
 
                 doc.line(
                   14,
-                  pageHeight - 15,
+                  footerY - 7,
                   pageWidth - 14,
-                  pageHeight - 15
+                  footerY - 7
                 );
 
                 doc.setTextColor(
@@ -2310,52 +2385,63 @@ const ReadingHistory = () => {
                   "normal"
                 );
 
-                const footerText =
-                  `Shivshambho | ${pumpName}`;
-
                 const footerLogoWidth =
-                  9;
-
-                const footerGap =
-                  3;
-
-                const footerTextWidth =
-                  doc.getTextWidth(
-                    footerText
-                  );
-
-                const footerGroupWidth =
-                  footerLogoWidth +
-                  footerGap +
-                  footerTextWidth;
-
-                const footerStartX =
-                  (
-                    pageWidth -
-                    footerGroupWidth
-                  ) / 2;
-
-                doc.text(
-                  footerText,
-                  footerStartX +
-                    footerLogoWidth +
-                    footerGap,
-                  pageHeight - 9
-                );
+                  14;
 
                 addPdfImageSafe(
                   doc,
                   shivshambhoLogoData,
-                  footerStartX,
-                  pageHeight - 13,
+                  pageWidth / 2 - 31,
+                  footerY - 6,
                   footerLogoWidth,
-                  9
+                  14
+                );
+
+                doc.setFont(
+                  "helvetica",
+                  "bold"
+                );
+
+                doc.setFontSize(7);
+
+                doc.setTextColor(
+                  15,
+                  61,
+                  86
                 );
 
                 doc.text(
-                  `Page ${data.pageNumber}`,
-                  pageWidth - 14,
-                  pageHeight - 9,
+                  "SHIVSHAMBHO",
+                  pageWidth / 2 - 18,
+                  footerY + 2
+                );
+
+                doc.setFont(
+                  "helvetica",
+                  "normal"
+                );
+
+                doc.setFontSize(5.5);
+
+                doc.setTextColor(
+                  100,
+                  116,
+                  139
+                );
+
+                doc.text(
+                  `Petrol Pump Management System | ${pumpName}`,
+                  pageWidth / 2,
+                  footerY + 6,
+                  {
+                    align: "center",
+                  }
+                );
+
+                doc.text(
+                  `Page ${data.pageNumber} of ${doc.internal.getNumberOfPages()}`,
+                  pageWidth - 8,
+                  footerY + 2,
                   {
                     align: "right",
                   }
