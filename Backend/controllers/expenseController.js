@@ -30,6 +30,21 @@ const VALID_PAYMENT_METHODS = [
 ];
 
 /* =====================================================
+   SHIFT HELPERS
+===================================================== */
+
+/*
+ * Shift time is stored as HH:mm.
+ *
+ * Examples:
+ * 06:00
+ * 14:00
+ * 22:00
+ */
+const SHIFT_TIME_REGEX =
+  /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+
+/* =====================================================
    ADD EXPENSE
 ===================================================== */
 
@@ -63,7 +78,8 @@ export const addExpense = async (
       });
     }
 
-    const amountValue = Number(amount);
+    const amountValue =
+      Number(amount);
 
     if (
       !Number.isFinite(amountValue) ||
@@ -98,21 +114,25 @@ export const addExpense = async (
       await Expense.create({
         pumpId: req.user.pumpId,
 
-        title: title.trim(),
+        title:
+          title.trim(),
 
         category,
 
-        amount: amountValue,
+        amount:
+          amountValue,
 
         paymentMethod,
 
         expenseDate,
 
-        note: String(
-          note || ""
-        ).trim(),
+        note:
+          String(
+            note || ""
+          ).trim(),
 
-        createdBy: req.user._id,
+        createdBy:
+          req.user._id,
       });
 
     return res.status(201).json({
@@ -135,7 +155,8 @@ export const addExpense = async (
       message:
         "Unable to add expense",
 
-      error: error.message,
+      error:
+        error.message,
     });
   }
 };
@@ -159,7 +180,8 @@ export const getExpenses =
       };
 
       if (category) {
-        filter.category = category;
+        filter.category =
+          category;
       }
 
       if (from || to) {
@@ -193,7 +215,10 @@ export const getExpenses =
 
       const totalExpense =
         expenses.reduce(
-          (total, expense) =>
+          (
+            total,
+            expense
+          ) =>
             total +
             Number(
               expense.amount || 0
@@ -223,7 +248,8 @@ export const getExpenses =
         message:
           "Unable to load expenses",
 
-        error: error.message,
+        error:
+          error.message,
       });
     }
   };
@@ -251,6 +277,7 @@ export const deleteExpense =
       if (!pumpId) {
         return res.status(403).json({
           success: false,
+
           message:
             "Pump access is required",
         });
@@ -259,6 +286,7 @@ export const deleteExpense =
       if (!deletedBy) {
         return res.status(401).json({
           success: false,
+
           message:
             "Authenticated user not found",
         });
@@ -271,6 +299,7 @@ export const deleteExpense =
       ) {
         return res.status(400).json({
           success: false,
+
           message:
             "Invalid expense ID",
         });
@@ -293,7 +322,9 @@ export const deleteExpense =
             await Expense.findOne({
               _id: id,
               pumpId,
-            }).session(session);
+            }).session(
+              session
+            );
 
           if (!expense) {
             throw new Error(
@@ -302,7 +333,8 @@ export const deleteExpense =
           }
 
           await createDeletedRecord({
-            document: expense,
+            document:
+              expense,
 
             originalCollection:
               Expense.collection.name,
@@ -324,12 +356,17 @@ export const deleteExpense =
 
           const deleted =
             await Expense.deleteOne({
-              _id: expense._id,
+              _id:
+                expense._id,
+
               pumpId,
-            }).session(session);
+            }).session(
+              session
+            );
 
           if (
-            deleted.deletedCount !== 1
+            deleted.deletedCount !==
+            1
           ) {
             throw new Error(
               "Expense deletion failed"
@@ -356,6 +393,7 @@ export const deleteExpense =
       ) {
         return res.status(404).json({
           success: false,
+
           message:
             "Expense not found",
         });
@@ -367,7 +405,8 @@ export const deleteExpense =
         message:
           "Unable to delete expense",
 
-        error: error.message,
+        error:
+          error.message,
       });
     } finally {
       await session.endSession();
@@ -388,7 +427,18 @@ export const addEmployee =
         salary,
         joiningDate,
         note = "",
+
+        /*
+         * Shift details
+         */
+        shiftName = "",
+        shiftStartTime = "",
+        shiftEndTime = "",
       } = req.body;
+
+      /* ---------------------------------------------
+         BASIC VALIDATION
+      --------------------------------------------- */
 
       if (!name?.trim()) {
         return res.status(400).json({
@@ -425,6 +475,81 @@ export const addEmployee =
         });
       }
 
+      /* ---------------------------------------------
+         NORMALIZE SHIFT DETAILS
+      --------------------------------------------- */
+
+      const normalizedShiftName =
+        String(
+          shiftName || ""
+        ).trim();
+
+      const normalizedShiftStartTime =
+        String(
+          shiftStartTime || ""
+        ).trim();
+
+      const normalizedShiftEndTime =
+        String(
+          shiftEndTime || ""
+        ).trim();
+
+      /* ---------------------------------------------
+         SHIFT TIME VALIDATION
+      --------------------------------------------- */
+
+      if (
+        normalizedShiftStartTime &&
+        !SHIFT_TIME_REGEX.test(
+          normalizedShiftStartTime
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            "Invalid shift start time. Use HH:mm format.",
+        });
+      }
+
+      if (
+        normalizedShiftEndTime &&
+        !SHIFT_TIME_REGEX.test(
+          normalizedShiftEndTime
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            "Invalid shift end time. Use HH:mm format.",
+        });
+      }
+
+      /*
+       * If one time is provided,
+       * the other one must also be provided.
+       */
+      if (
+        Boolean(
+          normalizedShiftStartTime
+        ) !==
+        Boolean(
+          normalizedShiftEndTime
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            "Both shift start time and shift end time are required.",
+        });
+      }
+
+      /* ---------------------------------------------
+         CREATE EMPLOYEE
+      --------------------------------------------- */
+
       const employee =
         await Employee.create({
           pumpId:
@@ -456,6 +581,16 @@ export const addEmployee =
             String(
               note || ""
             ).trim(),
+
+          /* Shift details */
+          shiftName:
+            normalizedShiftName,
+
+          shiftStartTime:
+            normalizedShiftStartTime,
+
+          shiftEndTime:
+            normalizedShiftEndTime,
         });
 
       return res.status(201).json({
@@ -565,6 +700,7 @@ export const updateEmployee =
       ) {
         return res.status(400).json({
           success: false,
+
           message:
             "Invalid employee ID",
         });
@@ -595,16 +731,43 @@ export const updateEmployee =
         joiningDate,
         status,
         note,
+
+        /*
+         * Shift details
+         */
+        shiftName,
+        shiftStartTime,
+        shiftEndTime,
       } = req.body;
+
+      /* ---------------------------------------------
+         NAME
+      --------------------------------------------- */
 
       if (
         name !== undefined
       ) {
-        employee.name =
+        const normalizedName =
           String(
             name
           ).trim();
+
+        if (!normalizedName) {
+          return res.status(400).json({
+            success: false,
+
+            message:
+              "Employee name is required",
+          });
+        }
+
+        employee.name =
+          normalizedName;
       }
+
+      /* ---------------------------------------------
+         PHONE
+      --------------------------------------------- */
 
       if (
         phone !== undefined
@@ -615,6 +778,10 @@ export const updateEmployee =
           ).trim();
       }
 
+      /* ---------------------------------------------
+         DESIGNATION
+      --------------------------------------------- */
+
       if (
         designation !==
         undefined
@@ -624,6 +791,10 @@ export const updateEmployee =
             designation
           ).trim();
       }
+
+      /* ---------------------------------------------
+         SALARY
+      --------------------------------------------- */
 
       if (
         salary !== undefined
@@ -651,6 +822,10 @@ export const updateEmployee =
           salaryValue;
       }
 
+      /* ---------------------------------------------
+         JOINING DATE
+      --------------------------------------------- */
+
       if (
         joiningDate !==
         undefined
@@ -658,6 +833,10 @@ export const updateEmployee =
         employee.joiningDate =
           joiningDate;
       }
+
+      /* ---------------------------------------------
+         STATUS
+      --------------------------------------------- */
 
       if (
         status !== undefined
@@ -682,6 +861,10 @@ export const updateEmployee =
           status;
       }
 
+      /* ---------------------------------------------
+         NOTE
+      --------------------------------------------- */
+
       if (
         note !== undefined
       ) {
@@ -689,6 +872,111 @@ export const updateEmployee =
           String(
             note
           ).trim();
+      }
+
+      /* ---------------------------------------------
+         SHIFT NAME
+      --------------------------------------------- */
+
+      if (
+        shiftName !== undefined
+      ) {
+        employee.shiftName =
+          String(
+            shiftName || ""
+          ).trim();
+      }
+
+      /* ---------------------------------------------
+         SHIFT START TIME
+      --------------------------------------------- */
+
+      if (
+        shiftStartTime !==
+        undefined
+      ) {
+        employee.shiftStartTime =
+          String(
+            shiftStartTime || ""
+          ).trim();
+      }
+
+      /* ---------------------------------------------
+         SHIFT END TIME
+      --------------------------------------------- */
+
+      if (
+        shiftEndTime !==
+        undefined
+      ) {
+        employee.shiftEndTime =
+          String(
+            shiftEndTime || ""
+          ).trim();
+      }
+
+      /* ---------------------------------------------
+         FINAL SHIFT VALIDATION
+      --------------------------------------------- */
+
+      const finalShiftStartTime =
+        String(
+          employee.shiftStartTime ||
+            ""
+        ).trim();
+
+      const finalShiftEndTime =
+        String(
+          employee.shiftEndTime ||
+            ""
+        ).trim();
+
+      if (
+        finalShiftStartTime &&
+        !SHIFT_TIME_REGEX.test(
+          finalShiftStartTime
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            "Invalid shift start time. Use HH:mm format.",
+        });
+      }
+
+      if (
+        finalShiftEndTime &&
+        !SHIFT_TIME_REGEX.test(
+          finalShiftEndTime
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            "Invalid shift end time. Use HH:mm format.",
+        });
+      }
+
+      /*
+       * Both shift times must be present
+       * or both must be empty.
+       */
+      if (
+        Boolean(
+          finalShiftStartTime
+        ) !==
+        Boolean(
+          finalShiftEndTime
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            "Both shift start time and shift end time are required.",
+        });
       }
 
       await employee.save();
@@ -742,6 +1030,7 @@ export const deleteEmployee =
       if (!pumpId) {
         return res.status(403).json({
           success: false,
+
           message:
             "Pump access is required",
         });
@@ -750,6 +1039,7 @@ export const deleteEmployee =
       if (!deletedBy) {
         return res.status(401).json({
           success: false,
+
           message:
             "Authenticated user not found",
         });
@@ -762,6 +1052,7 @@ export const deleteEmployee =
       ) {
         return res.status(400).json({
           success: false,
+
           message:
             "Invalid employee ID",
         });
@@ -773,7 +1064,9 @@ export const deleteEmployee =
             await Employee.findOne({
               _id: id,
               pumpId,
-            }).session(session);
+            }).session(
+              session
+            );
 
           if (!employee) {
             throw new Error(
@@ -782,7 +1075,8 @@ export const deleteEmployee =
           }
 
           await createDeletedRecord({
-            document: employee,
+            document:
+              employee,
 
             originalCollection:
               Employee.collection.name,
@@ -804,12 +1098,17 @@ export const deleteEmployee =
 
           const deleted =
             await Employee.deleteOne({
-              _id: employee._id,
+              _id:
+                employee._id,
+
               pumpId,
-            }).session(session);
+            }).session(
+              session
+            );
 
           if (
-            deleted.deletedCount !== 1
+            deleted.deletedCount !==
+            1
           ) {
             throw new Error(
               "Employee deletion failed"

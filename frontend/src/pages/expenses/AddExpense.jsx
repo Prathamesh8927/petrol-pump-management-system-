@@ -40,7 +40,10 @@ const getToday = () => {
 };
 
 const isValidDate = (value) => {
-  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+  if (
+    !value ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(value)
+  ) {
     return false;
   }
 
@@ -77,6 +80,41 @@ const isValidPhone = (value) => {
   return /^[0-9+\-\s()]{7,20}$/.test(
     value.trim()
   );
+};
+
+/* =====================================
+   SHIFT VALIDATION
+===================================== */
+
+const isValidTime = (value) => {
+  if (!value) {
+    return false;
+  }
+
+  return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(
+    value
+  );
+};
+
+const formatTime = (value) => {
+  if (!isValidTime(value)) {
+    return value || "-";
+  }
+
+  const [hours, minutes] =
+    value.split(":").map(Number);
+
+  const period =
+    hours >= 12 ? "PM" : "AM";
+
+  const displayHour =
+    hours % 12 || 12;
+
+  return `${String(
+    displayHour
+  ).padStart(2, "0")}:${String(
+    minutes
+  ).padStart(2, "0")} ${period}`;
 };
 
 const formatMoney = (value) => {
@@ -145,6 +183,14 @@ const AddExpense = () => {
       designation: "",
       salary: "",
       joiningDate: today,
+
+      /* ==========================
+         SHIFT
+      ========================== */
+
+      shiftName: "",
+      shiftStartTime: "",
+      shiftEndTime: "",
     });
 
   const resetExpenseForm = useCallback(() => {
@@ -165,6 +211,10 @@ const AddExpense = () => {
       designation: "",
       salary: "",
       joiningDate: getToday(),
+
+      shiftName: "",
+      shiftStartTime: "",
+      shiftEndTime: "",
     });
   }, []);
 
@@ -254,6 +304,10 @@ const AddExpense = () => {
     };
   }, [loadEmployees]);
 
+  /* =====================================
+     EXPENSE
+  ===================================== */
+
   const handleExpenseChange = (event) => {
     const { name, value } = event.target;
 
@@ -299,7 +353,11 @@ const AddExpense = () => {
       return;
     }
 
-    if (!isValidDate(expenseForm.expenseDate)) {
+    if (
+      !isValidDate(
+        expenseForm.expenseDate
+      )
+    ) {
       toast.error(
         "Enter a valid expense date."
       );
@@ -348,6 +406,10 @@ const AddExpense = () => {
     }
   };
 
+  /* =====================================
+     EMPLOYEE
+  ===================================== */
+
   const handleEmployeeChange = (event) => {
     const { name, value } = event.target;
 
@@ -371,9 +433,22 @@ const AddExpense = () => {
     const designation =
       employeeForm.designation.trim();
 
+    const shiftName =
+      employeeForm.shiftName.trim();
+
     const salary = Number(
       employeeForm.salary
     );
+
+    const shiftStartTime =
+      employeeForm.shiftStartTime;
+
+    const shiftEndTime =
+      employeeForm.shiftEndTime;
+
+    /* ==========================
+       BASIC VALIDATION
+    ========================== */
 
     if (!name) {
       toast.error(
@@ -424,6 +499,72 @@ const AddExpense = () => {
       return;
     }
 
+    /* ==========================
+       SHIFT VALIDATION
+    ========================== */
+
+    if (shiftName.length > 100) {
+      toast.error(
+        "Shift name must be 100 characters or less."
+      );
+      return;
+    }
+
+    const hasShiftName =
+      Boolean(shiftName);
+
+    const hasStartTime =
+      Boolean(shiftStartTime);
+
+    const hasEndTime =
+      Boolean(shiftEndTime);
+
+    /*
+     * Either all shift information
+     * should be provided or none.
+     */
+
+    if (
+      hasShiftName ||
+      hasStartTime ||
+      hasEndTime
+    ) {
+      if (!hasShiftName) {
+        toast.error(
+          "Shift name is required."
+        );
+        return;
+      }
+
+      if (!hasStartTime) {
+        toast.error(
+          "Shift start time is required."
+        );
+        return;
+      }
+
+      if (!hasEndTime) {
+        toast.error(
+          "Shift end time is required."
+        );
+        return;
+      }
+
+      if (!isValidTime(shiftStartTime)) {
+        toast.error(
+          "Enter a valid shift start time."
+        );
+        return;
+      }
+
+      if (!isValidTime(shiftEndTime)) {
+        toast.error(
+          "Enter a valid shift end time."
+        );
+        return;
+      }
+    }
+
     try {
       setEmployeeLoading(true);
 
@@ -434,6 +575,10 @@ const AddExpense = () => {
         salary,
         joiningDate:
           employeeForm.joiningDate,
+
+        shiftName,
+        shiftStartTime,
+        shiftEndTime,
       });
 
       if (!mountedRef.current) {
@@ -463,6 +608,10 @@ const AddExpense = () => {
       }
     }
   };
+
+  /* =====================================
+     DELETE EMPLOYEE
+  ===================================== */
 
   const handleDeleteEmployee = async (
     id
@@ -508,6 +657,10 @@ const AddExpense = () => {
       }
     }
   };
+
+  /* =====================================
+     PAY SALARY
+  ===================================== */
 
   const handlePaySalary = async (
     employee
@@ -591,6 +744,10 @@ const AddExpense = () => {
 
   return (
     <div className="page-container">
+      {/* =====================================
+          PAGE HEADER
+      ===================================== */}
+
       <div className="page-header">
         <div>
           <h1>Expenses</h1>
@@ -601,6 +758,10 @@ const AddExpense = () => {
           </p>
         </div>
       </div>
+
+      {/* =====================================
+          SECTION SWITCH
+      ===================================== */}
 
       <div
         style={{
@@ -640,6 +801,10 @@ const AddExpense = () => {
           Employees
         </button>
       </div>
+
+      {/* =====================================
+          EXPENSE SECTION
+      ===================================== */}
 
       {activeSection === "expense" && (
         <div className="content-panel">
@@ -842,6 +1007,10 @@ const AddExpense = () => {
         </div>
       )}
 
+      {/* =====================================
+          EMPLOYEE SECTION
+      ===================================== */}
+
       {activeSection === "employees" && (
         <div className="content-panel">
           <div className="content-panel-header">
@@ -849,7 +1018,7 @@ const AddExpense = () => {
               <h2>Employees</h2>
 
               <p>
-                Manage employees and
+                Manage employees, shifts and
                 salary details.
               </p>
             </div>
@@ -903,6 +1072,8 @@ const AddExpense = () => {
                   <th>Name</th>
                   <th>Designation</th>
                   <th>Phone</th>
+                  <th>Shift</th>
+                  <th>Shift Time</th>
                   <th>Salary</th>
                   <th>Joining Date</th>
                   <th>Status</th>
@@ -915,7 +1086,7 @@ const AddExpense = () => {
                 employees.length === 0 ? (
                   <tr>
                     <td
-                      colSpan="7"
+                      colSpan="9"
                       className="empty-table"
                     >
                       Loading employees...
@@ -925,7 +1096,7 @@ const AddExpense = () => {
                   0 ? (
                   <tr>
                     <td
-                      colSpan="7"
+                      colSpan="9"
                       className="empty-table"
                     >
                       No employees added
@@ -956,6 +1127,28 @@ const AddExpense = () => {
                         <td>
                           {employee.phone ||
                             "-"}
+                        </td>
+
+                        <td>
+                          {employee.shiftName ||
+                            "-"}
+                        </td>
+
+                        <td>
+                          {employee.shiftStartTime &&
+                          employee.shiftEndTime ? (
+                            <span>
+                              {formatTime(
+                                employee.shiftStartTime
+                              )}
+                              {" → "}
+                              {formatTime(
+                                employee.shiftEndTime
+                              )}
+                            </span>
+                          ) : (
+                            "-"
+                          )}
                         </td>
 
                         <td>
@@ -1049,6 +1242,10 @@ const AddExpense = () => {
         </div>
       )}
 
+      {/* =====================================
+          ADD EMPLOYEE MODAL
+      ===================================== */}
+
       {showEmployeeModal && (
         <div
           className="modal-backdrop"
@@ -1075,7 +1272,8 @@ const AddExpense = () => {
                 </h2>
 
                 <p>
-                  Add new pump employee.
+                  Add employee and assign
+                  their working shift.
                 </p>
               </div>
 
@@ -1096,6 +1294,10 @@ const AddExpense = () => {
               onSubmit={handleAddEmployee}
               noValidate
             >
+              {/* ==========================
+                  BASIC EMPLOYEE DETAILS
+              ========================== */}
+
               <div className="form-row">
                 <div className="form-group">
                   <label htmlFor="employee-name">
@@ -1143,9 +1345,8 @@ const AddExpense = () => {
                     Designation
                   </label>
 
-                  <input
+                  <select
                     id="employee-designation"
-                    type="text"
                     name="designation"
                     value={
                       employeeForm.designation
@@ -1153,9 +1354,47 @@ const AddExpense = () => {
                     onChange={
                       handleEmployeeChange
                     }
-                    placeholder="Staff / Manager"
-                    maxLength={100}
-                  />
+                  >
+                    <option value="">
+                      Select Designation
+                    </option>
+
+                    <option value="Manager">
+                      Manager
+                    </option>
+
+                    <option value="Supervisor">
+                      Supervisor
+                    </option>
+
+                    <option value="Nozzle Operator">
+                      Nozzle Operator
+                    </option>
+
+                    <option value="Cashier">
+                      Cashier
+                    </option>
+
+                    <option value="Accountant">
+                      Accountant
+                    </option>
+
+                    <option value="Helper">
+                      Helper
+                    </option>
+
+                    <option value="Cleaner">
+                      Cleaner
+                    </option>
+
+                    <option value="Security">
+                      Security
+                    </option>
+
+                    <option value="Other">
+                      Other
+                    </option>
+                  </select>
                 </div>
 
                 <div className="form-group">
@@ -1198,6 +1437,138 @@ const AddExpense = () => {
                   required
                 />
               </div>
+
+              {/* ==========================
+                  SHIFT DETAILS
+              ========================== */}
+
+              <div
+                style={{
+                  marginTop: "18px",
+                  marginBottom: "12px",
+                }}
+              >
+                <h3
+                  style={{
+                    margin: 0,
+                    fontSize: "16px",
+                  }}
+                >
+                  Shift Details
+                </h3>
+
+                <p
+                  style={{
+                    margin:
+                      "5px 0 0",
+                    fontSize: "13px",
+                    opacity: 0.75,
+                  }}
+                >
+                  Assign the employee to
+                  a shift and define its
+                  working time.
+                </p>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor="employee-shift-name">
+                    Shift Name
+                  </label>
+
+                  <input
+                    id="employee-shift-name"
+                    type="text"
+                    name="shiftName"
+                    value={
+                      employeeForm.shiftName
+                    }
+                    onChange={
+                      handleEmployeeChange
+                    }
+                    placeholder="Morning Shift"
+                    maxLength={100}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="employee-shift-start">
+                    Start Time
+                  </label>
+
+                  <input
+                    id="employee-shift-start"
+                    type="time"
+                    name="shiftStartTime"
+                    value={
+                      employeeForm.shiftStartTime
+                    }
+                    onChange={
+                      handleEmployeeChange
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor="employee-shift-end">
+                    End Time
+                  </label>
+
+                  <input
+                    id="employee-shift-end"
+                    type="time"
+                    name="shiftEndTime"
+                    value={
+                      employeeForm.shiftEndTime
+                    }
+                    onChange={
+                      handleEmployeeChange
+                    }
+                  />
+                </div>
+
+                <div
+                  className="form-group"
+                  style={{
+                    justifyContent:
+                      "flex-end",
+                  }}
+                >
+                  {employeeForm.shiftStartTime &&
+                  employeeForm.shiftEndTime ? (
+                    <div
+                      style={{
+                        padding:
+                          "10px 12px",
+                        borderRadius:
+                          "8px",
+                        background:
+                          "rgba(0,0,0,0.04)",
+                        fontSize:
+                          "13px",
+                      }}
+                    >
+                      <strong>
+                        Shift Time:
+                      </strong>{" "}
+                      {formatTime(
+                        employeeForm.shiftStartTime
+                      )}{" "}
+                      →{" "}
+                      {formatTime(
+                        employeeForm.shiftEndTime
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* ==========================
+                  ACTIONS
+              ========================== */}
 
               <div className="modal-actions">
                 <button

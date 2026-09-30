@@ -36,6 +36,8 @@ import {
 
 import api from "../../services/api";
 
+import shivshambhoLogo from "../../assets/logo.png";
+
 /* =====================================================
    CONSTANTS
 ===================================================== */
@@ -592,6 +594,182 @@ const getPumpPincode = (pump = {}) => {
       pump?.pinCode ||
       ""
   );
+};
+
+/* =====================================================
+   LOGO HELPERS
+===================================================== */
+
+const resolveLogoValue = (value) => {
+  if (!value) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "object") {
+    return (
+      value?.url ||
+      value?.secure_url ||
+      value?.secureUrl ||
+      value?.path ||
+      value?.src ||
+      ""
+    );
+  }
+  return "";
+};
+
+const OIL_PROVIDER_DOMAINS = {
+  "indian oil": "iocl.com",
+  "indianoil": "iocl.com",
+  bpcl: "bharatpetroleum.in",
+  "bharat petroleum": "bharatpetroleum.in",
+  hpcl: "hindustanpetroleum.com",
+  "hindustan petroleum": "hindustanpetroleum.com",
+  nayara: "nayaraenergy.com",
+  "nayara energy": "nayaraenergy.com",
+  reliance: "ril.com",
+  "reliance petroleum": "ril.com",
+  shell: "shell.com",
+  "jio bp": "jiobp.com",
+  "jio-bp": "jiobp.com",
+  "oil india": "oil-india.com",
+  adani: "adani.com",
+  gulf: "gulf.com",
+};
+
+const normalizeOilProvider = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+const getOilProviderName = (pump = {}) =>
+  safeString(
+    pump?.oilCompanyName ||
+      pump?.oilCompany ||
+      pump?.companyName ||
+      pump?.company ||
+      pump?.provider ||
+      ""
+  );
+
+const getOilProviderLogo = (pump = {}) => {
+  const provider = normalizeOilProvider(
+    getOilProviderName(pump)
+  );
+
+  const domain = OIL_PROVIDER_DOMAINS[provider];
+
+  return domain
+    ? `https://www.google.com/s2/favicons?domain=${domain}&sz=128`
+    : "";
+};
+
+const getPumpLogo = (pump = {}) => {
+  const directLogo = resolveLogoValue(
+    pump?.logoUrl ||
+      pump?.logoURL ||
+      pump?.companyLogo ||
+      pump?.pumpLogo ||
+      pump?.logo
+  );
+
+  if (
+    directLogo &&
+    !directLogo.includes("/src/assets/logo.png")
+  ) {
+    return directLogo;
+  }
+
+  return getOilProviderLogo(pump);
+};
+
+const loadImageAsDataURL = async (source) => {
+  if (!source) return "";
+
+  try {
+    const response = await fetch(source, {
+      mode: "cors",
+      cache: "no-cache",
+    });
+
+    if (!response.ok) {
+      throw new Error(`Image request failed: ${response.status}`);
+    }
+
+    const blob = await response.blob();
+
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result || "");
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (directError) {
+    try {
+      const proxyUrl =
+        `https://images.weserv.nl/?url=${encodeURIComponent(source)}`;
+
+      const response = await fetch(proxyUrl, {
+        cache: "no-cache",
+      });
+
+      if (!response.ok) {
+        throw new Error(`Logo proxy request failed: ${response.status}`);
+      }
+
+      const blob = await response.blob();
+
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result || "");
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch (proxyError) {
+      console.warn(
+        "PDF LOGO LOAD ERROR:",
+        proxyError || directError
+      );
+      return "";
+    }
+  }
+};
+
+const getPdfImageFormat = (dataUrl) => {
+  const match = String(dataUrl || "").match(
+    /^data:image\/(png|jpe?g|webp)/i
+  );
+
+  if (!match) return "PNG";
+
+  return /jpe?g/i.test(match[1]) ? "JPEG" : "PNG";
+};
+
+const addPdfImageSafe = (
+  doc,
+  dataUrl,
+  x,
+  y,
+  width,
+  height
+) => {
+  if (!dataUrl) return false;
+
+  try {
+    doc.addImage(
+      dataUrl,
+      getPdfImageFormat(dataUrl),
+      x,
+      y,
+      width,
+      height,
+      undefined,
+      "FAST"
+    );
+    return true;
+  } catch (error) {
+    console.warn("PDF LOGO DRAW ERROR:", error);
+    return false;
+  }
 };
 
 /* =====================================================
@@ -1403,7 +1581,7 @@ const ReadingHistory = () => {
 
   const generateReadingPDF =
     useCallback(
-      (
+      async (
         reportReadings,
         fromDate,
         toDate,
@@ -1419,6 +1597,17 @@ const ReadingHistory = () => {
 
         const pageWidth =
           doc.internal.pageSize.getWidth();
+
+        const pumpLogoSource =
+          getPumpLogo(pumpSettings);
+
+        const [
+          pumpLogoData,
+          shivshambhoLogoData,
+        ] = await Promise.all([
+          loadImageAsDataURL(pumpLogoSource),
+          loadImageAsDataURL(shivshambhoLogo),
+        ]);
 
         const pumpName =
           getPumpName(
@@ -1501,6 +1690,16 @@ const ReadingHistory = () => {
           255
         );
 
+        const headerLogoAdded =
+          addPdfImageSafe(
+            doc,
+            pumpLogoData,
+            14,
+            1.5,
+            9,
+            9
+          );
+
         doc.setFont(
           "helvetica",
           "bold"
@@ -1510,7 +1709,7 @@ const ReadingHistory = () => {
 
         doc.text(
           "SHIVSHAMBHO",
-          14,
+          headerLogoAdded ? 26 : 14,
           8
         );
 
@@ -2068,6 +2267,15 @@ const ReadingHistory = () => {
                   pageHeight - 15
                 );
 
+                addPdfImageSafe(
+                  doc,
+                  shivshambhoLogoData,
+                  14,
+                  pageHeight - 13,
+                  9,
+                  9
+                );
+
                 doc.setTextColor(
                   100,
                   116,
@@ -2082,8 +2290,8 @@ const ReadingHistory = () => {
                 );
 
                 doc.text(
-                  `Petrol Pump Management System | ${pumpName}`,
-                  14,
+                  `Shivshambho | ${pumpName}`,
+                  26,
                   pageHeight - 9
                 );
 
@@ -2132,7 +2340,7 @@ const ReadingHistory = () => {
 
   const runPdfGeneration =
     useCallback(
-      (
+      async (
         from,
         to,
         title
@@ -2146,7 +2354,7 @@ const ReadingHistory = () => {
               to
             );
 
-          generateReadingPDF(
+          await generateReadingPDF(
             filtered,
             from,
             to,

@@ -61,6 +61,39 @@ const employeeSchema = new mongoose.Schema(
       default: "",
       maxlength: 1000,
     },
+
+    /* =================================================
+       SHIFT DETAILS
+    ================================================= */
+
+    shiftName: {
+      type: String,
+      trim: true,
+      default: "",
+      maxlength: 100,
+    },
+
+    /*
+     * Stored as HH:mm.
+     * Example: 06:00
+     */
+    shiftStartTime: {
+      type: String,
+      trim: true,
+      default: "",
+      match: /^(?:[01]\d|2[0-3]):[0-5]\d$/,
+    },
+
+    /*
+     * Stored as HH:mm.
+     * Example: 14:00
+     */
+    shiftEndTime: {
+      type: String,
+      trim: true,
+      default: "",
+      match: /^(?:[01]\d|2[0-3]):[0-5]\d$/,
+    },
   },
   {
     timestamps: true,
@@ -72,28 +105,28 @@ const employeeSchema = new mongoose.Schema(
    INDEXES
 ===================================================== */
 
-/*
- * Employee listing/search for a particular pump.
- */
 employeeSchema.index({
   pumpId: 1,
   name: 1,
 });
 
-/*
- * Active/inactive employee filtering.
- */
 employeeSchema.index({
   pumpId: 1,
   status: 1,
 });
 
-/*
- * Useful for newest employee records.
- */
 employeeSchema.index({
   pumpId: 1,
   createdAt: -1,
+});
+
+/*
+ * Useful for employee + shift filtering.
+ */
+employeeSchema.index({
+  pumpId: 1,
+  shiftName: 1,
+  status: 1,
 });
 
 /* =====================================================

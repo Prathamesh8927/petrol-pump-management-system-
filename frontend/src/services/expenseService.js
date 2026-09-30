@@ -44,6 +44,23 @@ export const deleteExpense = async (id) => {
    EMPLOYEES
 ===================================== */
 
+/*
+ * Employee response includes:
+ *
+ * name
+ * phone
+ * designation
+ * salary
+ * joiningDate
+ * status
+ * note
+ *
+ * Shift details:
+ * shiftName
+ * shiftStartTime
+ * shiftEndTime
+ */
+
 export const getEmployees = async () => {
   const response = await api.get(
     "/expenses/employees"
@@ -52,7 +69,27 @@ export const getEmployees = async () => {
   return response.data;
 };
 
-export const addEmployee = async (data) => {
+/*
+ * Add employee.
+ *
+ * Example data:
+ *
+ * {
+ *   name: "Rahul",
+ *   phone: "9876543210",
+ *   designation: "Nozzle Operator",
+ *   salary: 18000,
+ *   joiningDate: "2026-09-30",
+ *   note: "",
+ *
+ *   shiftName: "Morning",
+ *   shiftStartTime: "06:00",
+ *   shiftEndTime: "14:00"
+ * }
+ */
+export const addEmployee = async (
+  data
+) => {
   const response = await api.post(
     "/expenses/employees",
     data
@@ -61,6 +98,15 @@ export const addEmployee = async (data) => {
   return response.data;
 };
 
+/*
+ * Update employee.
+ *
+ * Shift fields can also be updated:
+ *
+ * shiftName
+ * shiftStartTime
+ * shiftEndTime
+ */
 export const updateEmployee = async (
   id,
   data
@@ -94,6 +140,10 @@ export const deleteEmployee = async (
 
   return response.data;
 };
+
+/* =====================================
+   PAY EMPLOYEE SALARY
+===================================== */
 
 export const paySalary = async (
   id,

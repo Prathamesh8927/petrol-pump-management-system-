@@ -7,6 +7,7 @@ import {
   getExpenses,
   deleteExpense,
 
+  // Employees
   addEmployee,
   getEmployees,
   updateEmployee,
@@ -17,15 +18,22 @@ import {
 const router =
   express.Router();
 
+/* =====================================================
+   AUTHENTICATION
+===================================================== */
+
 router.use(
   authMiddleware
 );
 
-/* ===============================
+/* =====================================================
    EMPLOYEES
+===================================================== */
 
-   Keep before /:id routes.
-================================ */
+/*
+ * Keep employee routes before /:id
+ * expense routes.
+ */
 
 router.get(
   "/employees",
@@ -52,9 +60,9 @@ router.post(
   payEmployeeSalary
 );
 
-/* ===============================
+/* =====================================================
    EXPENSES
-================================ */
+===================================================== */
 
 router.get(
   "/",
@@ -70,5 +78,9 @@ router.delete(
   "/:id",
   deleteExpense
 );
+
+/* =====================================================
+   EXPORT
+===================================================== */
 
 export default router;
