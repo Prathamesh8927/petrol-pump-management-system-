@@ -2418,15 +2418,16 @@ const ReadingHistory = () => {
             },
 
                 didDrawPage:
-                  (data) => {
+                  () => {
                     if (
                       chunkIndex !==
-                        tableChunks.length - 1 ||
-                      data.pageNumber !==
-                        doc.internal.getNumberOfPages()
+                      tableChunks.length - 1
                     ) {
                       return;
                     }
+
+                const pageNumber =
+                  doc.internal.getNumberOfPages();
 
                 const footerY =
                   pageHeight - 14;
@@ -2511,7 +2512,7 @@ const ReadingHistory = () => {
                 );
 
                 doc.text(
-                  `Page ${data.pageNumber} of ${doc.internal.getNumberOfPages()}`,
+                  `Page ${pageNumber} of ${pageNumber}`,
                   pageWidth - 8,
                   footerY + 2,
                   {
