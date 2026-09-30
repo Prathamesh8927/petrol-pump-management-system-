@@ -2031,108 +2031,153 @@ const ReadingHistory = () => {
             0
           );
 
-        const summaryItems = [
-          [
-            "Records",
-            String(
-              reportReadings.length
-            ),
-          ],
-          [
-            "Petrol Sold",
-            `${formatNumber(
-              reportPetrol
-            )} L`,
-          ],
-          [
-            "Diesel Sold",
-            `${formatNumber(
-              reportDiesel
-            )} L`,
-          ],
-          [
-            "Total Sales",
-            formatPdfMoney(
-              reportAmount
-            ),
-          ],
-        ];
+        doc.setFillColor(
+          234,
+          242,
+          246
+        );
 
-        const cardWidth =
-          (
-            pageWidth -
-            28 -
-            18
-          ) / 4;
+        doc.setDrawColor(
+          203,
+          213,
+          225
+        );
 
-        summaryItems.forEach(
-          (
-            item,
-            index
-          ) => {
-            const x =
-              14 +
-              index *
-                (
-                  cardWidth +
-                  6
-                );
+        doc.rect(
+          10,
+          summaryY,
+          pageWidth - 20,
+          8,
+          "FD"
+        );
 
-            doc.setFillColor(
-              244,
-              247,
-              250
-            );
+        doc.setFont(
+          "helvetica",
+          "bold"
+        );
 
-            doc.roundedRect(
-              x,
-              summaryY,
-              cardWidth,
-              18,
-              2,
-              2,
-              "F"
-            );
+        doc.setFontSize(8);
 
-            doc.setTextColor(
-              100,
-              116,
-              139
-            );
+        doc.setTextColor(
+          17,
+          24,
+          39
+        );
 
-            doc.setFontSize(7.5);
+        doc.text(
+          "READING SUMMARY",
+          13,
+          summaryY + 5.5
+        );
 
-            doc.setFont(
-              "helvetica",
-              "normal"
-            );
+        autoTable(
+          doc,
+          {
+            startY:
+              summaryY + 10,
 
-            doc.text(
-              item[0],
-              x + 4,
-              summaryY + 6
-            );
+            margin: {
+              left: 10,
+              right: 10,
+            },
 
-            doc.setTextColor(
-              15,
-              61,
-              86
-            );
+            tableWidth:
+              pageWidth - 20,
 
-            doc.setFont(
-              "helvetica",
-              "bold"
-            );
+            theme: "grid",
 
-            doc.setFontSize(10);
+            head: [[
+              "RECORDS",
+              "PETROL",
+              "DIESEL",
+              "TOTAL SALES",
+            ]],
 
-            doc.text(
-              item[1],
-              x + 4,
-              summaryY + 13
-            );
+            body: [[
+              String(
+                reportReadings.length
+              ),
+              `${formatNumber(
+                reportPetrol
+              )} L`,
+              `${formatNumber(
+                reportDiesel
+              )} L`,
+              formatPdfMoney(
+                reportAmount
+              ),
+            ]],
+
+            styles: {
+              font: "helvetica",
+              fontSize: 6.5,
+              textColor: [17, 24, 39],
+              lineColor: [203, 213, 225],
+              lineWidth: 0.3,
+              cellPadding: 2,
+              halign: "center",
+              valign: "middle",
+            },
+
+            headStyles: {
+              fillColor: [15, 61, 86],
+              textColor: [255, 255, 255],
+              fontStyle: "bold",
+              fontSize: 6,
+              halign: "center",
+            },
+
+            bodyStyles: {
+              fillColor: [255, 255, 255],
+              fontSize: 7,
+            },
           }
         );
+
+        const summaryTableEndY =
+          doc.lastAutoTable.finalY + 7;
+
+        doc.setFillColor(
+          234,
+          242,
+          246
+        );
+
+        doc.setDrawColor(
+          203,
+          213,
+          225
+        );
+
+        doc.rect(
+          10,
+          summaryTableEndY,
+          pageWidth - 20,
+          8,
+          "FD"
+        );
+
+        doc.setFont(
+          "helvetica",
+          "bold"
+        );
+
+        doc.setFontSize(8);
+
+        doc.setTextColor(
+          17,
+          24,
+          39
+        );
+
+        doc.text(
+          "READING TRANSACTION HISTORY",
+          13,
+          summaryTableEndY + 5.5
+        );
+
+        const tableStartY =
+          summaryTableEndY + 9;
 
         /* ==========================================
            TABLE
@@ -2198,7 +2243,7 @@ const ReadingHistory = () => {
           doc,
           {
             startY:
-              summaryY + 27,
+              tableStartY,
 
             margin: {
               left: 10,
