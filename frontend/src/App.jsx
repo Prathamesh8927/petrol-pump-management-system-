@@ -98,7 +98,7 @@ import PendingCredit from "./pages/ledger/PendingCredit";
 import DailyReport from "./pages/reports/DailyReports.jsx";
 import WeeklyReport from "./pages/reports/WeeklyReport";
 import MonthlyReport from "./pages/reports/MonthlyReports.jsx";
-import CustomReport from "./pages/reports/CustomerReport";
+import CustomReport from "./pages/reports/CustomReport.jsx";
 
 /* =====================================================
    SETTINGS
