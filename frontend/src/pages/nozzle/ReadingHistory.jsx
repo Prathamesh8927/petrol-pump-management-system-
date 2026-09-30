@@ -1624,6 +1624,11 @@ const ReadingHistory = () => {
             pumpSettings
           );
 
+        const oilProviderName =
+          getOilProviderName(
+            pumpSettings
+          );
+
         const phone =
           getPumpPhone(
             pumpSettings
@@ -1711,6 +1716,31 @@ const ReadingHistory = () => {
           "SHIVSHAMBHO",
           headerLogoAdded ? 26 : 14,
           8
+        );
+
+        doc.setFont(
+          "helvetica",
+          "normal"
+        );
+
+        doc.setFontSize(8);
+
+        doc.text(
+          [
+            pumpName,
+            oilProviderName &&
+            oilProviderName !== pumpName
+              ? oilProviderName
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" | "),
+          pageWidth / 2,
+          8,
+          {
+            align: "center",
+            maxWidth: 105,
+          }
         );
 
         doc.setFontSize(9);
@@ -2267,15 +2297,6 @@ const ReadingHistory = () => {
                   pageHeight - 15
                 );
 
-                addPdfImageSafe(
-                  doc,
-                  shivshambhoLogoData,
-                  14,
-                  pageHeight - 13,
-                  9,
-                  9
-                );
-
                 doc.setTextColor(
                   100,
                   116,
@@ -2289,10 +2310,46 @@ const ReadingHistory = () => {
                   "normal"
                 );
 
+                const footerText =
+                  `Shivshambho | ${pumpName}`;
+
+                const footerLogoWidth =
+                  9;
+
+                const footerGap =
+                  3;
+
+                const footerTextWidth =
+                  doc.getTextWidth(
+                    footerText
+                  );
+
+                const footerGroupWidth =
+                  footerLogoWidth +
+                  footerGap +
+                  footerTextWidth;
+
+                const footerStartX =
+                  (
+                    pageWidth -
+                    footerGroupWidth
+                  ) / 2;
+
                 doc.text(
-                  `Shivshambho | ${pumpName}`,
-                  26,
+                  footerText,
+                  footerStartX +
+                    footerLogoWidth +
+                    footerGap,
                   pageHeight - 9
+                );
+
+                addPdfImageSafe(
+                  doc,
+                  shivshambhoLogoData,
+                  footerStartX,
+                  pageHeight - 13,
+                  footerLogoWidth,
+                  9
                 );
 
                 doc.text(
