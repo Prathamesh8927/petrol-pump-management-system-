@@ -257,6 +257,7 @@ export const login = async (req, res) => {
       "owner",
       "manager",
       "staff",
+      "employee",
     ];
 
     if (!allowedRoles.includes(role)) {
@@ -375,6 +376,8 @@ export const login = async (req, res) => {
         name: user.name,
         email: user.email,
         role,
+        employeeId:
+          user.employeeId || null,
         pumpId:
           user.pumpId || null,
         active: user.active,

@@ -1,10 +1,15 @@
 import express from "express";
-
 import authMiddleware from "../middleware/authMiddleware.js";
 
 import {
   getPumpSettings,
   updatePumpSettings,
+
+  getPaymentSettings,
+  updatePaymentSettings,
+
+  getBankAccountSettings,
+  updateBankAccountSettings,
 
   getFuelSettings,
   updateFuelSettings,
@@ -15,14 +20,16 @@ import {
   deletePumpUser,
 } from "../controllers/settingsController.js";
 
-const router =
-  express.Router();
+const router = express.Router();
 
-router.use(
-  authMiddleware
-);
+/*
+ * All settings routes require authentication.
+ */
+router.use(authMiddleware);
 
-/* PUMP */
+/* =====================================================
+   PUMP SETTINGS
+===================================================== */
 
 router.get(
   "/pump",
@@ -34,7 +41,37 @@ router.put(
   updatePumpSettings
 );
 
-/* FUEL */
+/* =====================================================
+   PAYMENT PROVIDER SETTINGS
+===================================================== */
+
+router.get(
+  "/payment",
+  getPaymentSettings
+);
+
+router.put(
+  "/payment",
+  updatePaymentSettings
+);
+
+/* =====================================================
+   OWNER BANK ACCOUNT
+===================================================== */
+
+router.get(
+  "/bank",
+  getBankAccountSettings
+);
+
+router.put(
+  "/bank",
+  updateBankAccountSettings
+);
+
+/* =====================================================
+   FUEL SETTINGS
+===================================================== */
 
 router.get(
   "/fuel",
@@ -46,7 +83,9 @@ router.put(
   updateFuelSettings
 );
 
-/* USERS */
+/* =====================================================
+   PUMP USERS
+===================================================== */
 
 router.get(
   "/users",

@@ -43,6 +43,8 @@ import ResetPassword from "./pages/auth/ResetPassword";
 
 import DashboardLayout from "./layouts/DashboardLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
+import EmployeeRoute from "./components/EmployeeRoute";
+import EmployeePayment from "./pages/employee/EmployeePayment";
 
 /* =====================================================
    DASHBOARD
@@ -105,6 +107,7 @@ import CustomReport from "./pages/reports/CustomReport.jsx";
 ===================================================== */
 
 import PumpSettings from "./pages/settings/PumpSettings";
+import PaymentSettings from "./pages/settings/PaymentSettings";
 import FuelSettings from "./pages/settings/FuelSettings";
 import UserManagement from "./pages/settings/UserManagement";
 
@@ -164,8 +167,17 @@ function App() {
         ================================================= */}
 
         <Route
+          path="/employee/payment"
           element={
-            <ProtectedRoute>
+            <EmployeeRoute>
+              <EmployeePayment />
+            </EmployeeRoute>
+          }
+        />
+
+        <Route
+          element={
+            <ProtectedRoute allowedRoles={["owner", "manager"]}>
               <DashboardLayout />
             </ProtectedRoute>
           }
@@ -476,6 +488,11 @@ function App() {
           <Route
             path="/settings/fuel"
             element={<FuelSettings />}
+          />
+
+          <Route
+            path="/settings/payment"
+            element={<PaymentSettings />}
           />
 
           <Route

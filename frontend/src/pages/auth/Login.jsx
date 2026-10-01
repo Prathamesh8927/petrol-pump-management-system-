@@ -282,7 +282,9 @@ const Login = () => {
         }
 
         const currentPumpName =
-          await loadPumpName();
+          ["staff", "employee"].includes(loggedInUser.role)
+            ? "ShivShambho"
+            : await loadPumpName();
 
         setPumpName(
           currentPumpName
@@ -305,7 +307,9 @@ const Login = () => {
         navigationTimerRef.current =
           setTimeout(() => {
             navigate(
-              "/dashboard",
+              ["staff", "employee"].includes(loggedInUser.role)
+                ? "/employee/payment"
+                : "/dashboard",
               {
                 replace: true,
               }

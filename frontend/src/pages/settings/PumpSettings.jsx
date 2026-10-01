@@ -110,7 +110,12 @@ const PumpSettings = () => {
           await getPumpSettings();
 
         const settings =
-          data?.pump || {};
+          data?.settings ||
+          data?.pump ||
+          data?.data?.settings ||
+          data?.data?.pump ||
+          data?.data ||
+          {};
 
         setForm({
           ...DEFAULT_FORM,
@@ -243,6 +248,8 @@ const PumpSettings = () => {
         toast.success(
           "Pump settings saved successfully"
         );
+
+        await loadSettings();
       } catch (error) {
         console.error(
           "SAVE PUMP SETTINGS ERROR:",

@@ -339,6 +339,14 @@ export const AuthProvider = ({
       "passwordResetRequestId"
     );
 
+    sessionStorage.removeItem(
+      "shivshambho_active_payment"
+    );
+
+    sessionStorage.removeItem(
+      "activePayment"
+    );
+
     setUser(null);
   };
 

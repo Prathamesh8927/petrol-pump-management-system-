@@ -53,6 +53,7 @@ const userSchema = new mongoose.Schema(
         "owner",
         "manager",
         "staff",
+        "employee",
       ],
       default: "owner",
       index: true,
@@ -75,6 +76,15 @@ const userSchema = new mongoose.Schema(
         return this.role !== "superadmin";
       },
       index: true,
+    },
+
+    employeeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Employee",
+      default: null,
+      index: true,
+      unique: true,
+      sparse: true,
     },
 
     /* -----------------------------------------------

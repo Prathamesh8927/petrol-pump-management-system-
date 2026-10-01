@@ -10,6 +10,21 @@ const employeeSchema = new mongoose.Schema(
       immutable: true,
     },
 
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+      unique: true,
+      sparse: true,
+    },
+
+    loginEnabled: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
     name: {
       type: String,
       required: true,

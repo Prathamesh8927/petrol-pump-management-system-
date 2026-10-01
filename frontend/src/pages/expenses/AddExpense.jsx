@@ -191,6 +191,10 @@ const AddExpense = () => {
       shiftName: "",
       shiftStartTime: "",
       shiftEndTime: "",
+      loginEmail: "",
+      loginPassword: "",
+      confirmPassword: "",
+      enableLogin: false,
     });
 
   const resetExpenseForm = useCallback(() => {
@@ -215,6 +219,10 @@ const AddExpense = () => {
       shiftName: "",
       shiftStartTime: "",
       shiftEndTime: "",
+      loginEmail: "",
+      loginPassword: "",
+      confirmPassword: "",
+      enableLogin: false,
     });
   }, []);
 
@@ -265,7 +273,9 @@ const AddExpense = () => {
   useEffect(() => {
     mountedRef.current = true;
 
-    loadEmployees();
+    const initialLoadTimer = window.setTimeout(() => {
+      loadEmployees();
+    }, 0);
 
     const handleVisibilityChange = () => {
       if (
@@ -291,6 +301,8 @@ const AddExpense = () => {
 
     return () => {
       mountedRef.current = false;
+
+      window.clearTimeout(initialLoadTimer);
 
       document.removeEventListener(
         "visibilitychange",
@@ -446,6 +458,12 @@ const AddExpense = () => {
     const shiftEndTime =
       employeeForm.shiftEndTime;
 
+    const loginEmail =
+      employeeForm.loginEmail.trim().toLowerCase();
+
+    const loginPassword =
+      employeeForm.loginPassword;
+
     /* ==========================
        BASIC VALIDATION
     ========================== */
@@ -486,6 +504,23 @@ const AddExpense = () => {
         "Enter a valid salary."
       );
       return;
+    }
+
+    if (employeeForm.enableLogin) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginEmail)) {
+        toast.error("Enter a valid employee login email.");
+        return;
+      }
+
+      if (loginPassword.length < 6 || loginPassword.length > 128) {
+        toast.error("Employee login password must contain 6 to 128 characters.");
+        return;
+      }
+
+      if (loginPassword !== employeeForm.confirmPassword) {
+        toast.error("Employee login passwords do not match.");
+        return;
+      }
     }
 
     if (
@@ -579,6 +614,9 @@ const AddExpense = () => {
         shiftName,
         shiftStartTime,
         shiftEndTime,
+        loginEmail: employeeForm.enableLogin ? loginEmail : "",
+        loginPassword: employeeForm.enableLogin ? loginPassword : "",
+        enableLogin: Boolean(employeeForm.enableLogin),
       });
 
       if (!mountedRef.current) {
@@ -1565,6 +1603,102 @@ const AddExpense = () => {
                   ) : null}
                 </div>
               </div>
+
+              {/* ==========================
+                  EMPLOYEE LOGIN
+              ========================== */}
+
+              <div
+                style={{
+                  marginTop: "18px",
+                  marginBottom: "12px",
+                }}
+              >
+                <h3 style={{ margin: 0, fontSize: "16px" }}>
+                  Employee Login
+                </h3>
+                <p style={{ margin: "5px 0 0", fontSize: "13px", opacity: 0.75 }}>
+                  Optional. Credentials use the existing secure login system.
+                </p>
+              </div>
+
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  marginBottom: "12px",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  name="enableLogin"
+                  checked={Boolean(employeeForm.enableLogin)}
+                  onChange={(event) =>
+                    setEmployeeForm((previous) => ({
+                      ...previous,
+                      enableLogin: event.target.checked,
+                    }))
+                  }
+                />
+                Enable employee payment login
+              </label>
+
+              {employeeForm.enableLogin && (
+                <div className="form-row">
+                  <div className="form-group">
+                    <label htmlFor="employee-login-email">
+                      Login Email
+                    </label>
+                    <input
+                      id="employee-login-email"
+                      type="email"
+                      name="loginEmail"
+                      value={employeeForm.loginEmail}
+                      onChange={handleEmployeeChange}
+                      autoComplete="off"
+                      maxLength={254}
+                      required
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="employee-login-password">
+                      Password
+                    </label>
+                    <input
+                      id="employee-login-password"
+                      type="password"
+                      name="loginPassword"
+                      value={employeeForm.loginPassword}
+                      onChange={handleEmployeeChange}
+                      autoComplete="new-password"
+                      minLength={6}
+                      maxLength={128}
+                      required
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="employee-confirm-password">
+                      Confirm Password
+                    </label>
+                    <input
+                      id="employee-confirm-password"
+                      type="password"
+                      name="confirmPassword"
+                      value={employeeForm.confirmPassword}
+                      onChange={handleEmployeeChange}
+                      autoComplete="new-password"
+                      minLength={6}
+                      maxLength={128}
+                      required
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* ==========================
                   ACTIONS

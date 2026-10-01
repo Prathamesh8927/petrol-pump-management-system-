@@ -157,6 +157,7 @@ const authMiddleware = async (req, res, next) => {
       "owner",
       "manager",
       "staff",
+      "employee",
     ];
 
     if (!allowedRoles.includes(role)) {

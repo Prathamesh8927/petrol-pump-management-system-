@@ -1,6 +1,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -16,6 +17,16 @@ import {
   getNozzles,
   addNozzleReading,
 } from "../../services/nozzleService";
+
+import {
+  createPayment,
+  getPaymentStatus,
+  cancelPayment,
+} from "../../services/paymentService";
+
+import {
+  getFuelPrice,
+} from "../../services/fuelService";
 
 import api from "../../services/api";
 
@@ -49,6 +60,7 @@ const PAYMENT_METHODS = new Set([
   "upi",
   "card",
   "credit",
+  "qr",
 ]);
 
 /* =====================================================
@@ -165,13 +177,21 @@ const normalizeUsersResponse = (
 const normalizeNozzles = (
   data
 ) => {
-  if (
-    !Array.isArray(data)
-  ) {
+  const list = Array.isArray(data)
+    ? data
+    : Array.isArray(data?.nozzles)
+      ? data.nozzles
+      : Array.isArray(data?.data)
+        ? data.data
+        : Array.isArray(data?.data?.nozzles)
+          ? data.data.nozzles
+          : [];
+
+  if (!Array.isArray(list)) {
     return [];
   }
 
-  return data.filter(
+  return list.filter(
     (item) =>
       item &&
       typeof item ===
@@ -269,6 +289,65 @@ const AddReading = () => {
     loading,
     setLoading,
   ] = useState(false);
+
+  const [
+    payment,
+    setPayment,
+  ] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem("activePayment");
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [
+    paymentLoading,
+    setPaymentLoading,
+  ] = useState(false);
+
+  const paymentPollRequest = useRef(0);
+
+  const [
+    fuelPrices,
+    setFuelPrices,
+  ] = useState(null);
+
+  useEffect(() => {
+    try {
+      if (payment?.id) {
+        sessionStorage.setItem("activePayment", JSON.stringify(payment));
+      } else {
+        sessionStorage.removeItem("activePayment");
+      }
+    } catch (error) {
+      console.error("PAYMENT RECOVERY STORAGE ERROR:", error);
+    }
+  }, [payment]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadFuelPrices = async () => {
+      try {
+        const response = await getFuelPrice();
+        if (mounted) {
+          setFuelPrices(response?.fuelPrice || response?.data?.fuelPrice || null);
+        }
+      } catch (error) {
+        if (mounted) {
+          console.error("LOAD FUEL PRICES ERROR:", error);
+        }
+      }
+    };
+
+    loadFuelPrices();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   /* =====================================
      LOAD NOZZLES
@@ -573,6 +652,16 @@ const AddReading = () => {
         )
       : 0;
 
+  const pricePerLitre = Number(
+    String(selectedNozzle?.fuelType || "").toLowerCase() === "diesel"
+      ? fuelPrices?.dieselPrice
+      : fuelPrices?.petrolPrice
+  );
+
+  const previewAmount = Number.isFinite(pricePerLitre)
+    ? Number((litresSold * pricePerLitre).toFixed(2))
+    : 0;
+
   /* =====================================
      NOZZLE CHANGE
   ===================================== */
@@ -609,6 +698,58 @@ const AddReading = () => {
         event.target.value
       );
     };
+
+  /* =====================================
+     VERIFIED QR PAYMENT POLLING
+  ===================================== */
+
+  useEffect(() => {
+    if (!payment?.id || payment.status !== "pending") {
+      return undefined;
+    }
+
+    let active = true;
+    const timer = window.setInterval(async () => {
+      if (paymentPollRequest.current !== 0) {
+        return;
+      }
+
+      const requestId = Date.now();
+      paymentPollRequest.current = requestId;
+      try {
+        const response = await getPaymentStatus(payment.id);
+        const nextPayment = response?.payment;
+        if (
+          active &&
+          paymentPollRequest.current === requestId &&
+          nextPayment
+        ) {
+          setPayment(nextPayment);
+        }
+      } catch (error) {
+        if (active) {
+          console.error("PAYMENT STATUS ERROR:", error);
+
+          const status = error?.response?.status;
+
+          if (status === 401 || status === 403 || status === 404) {
+            setPayment(null);
+            toast.error("This payment is no longer available. Please generate a new QR.");
+          }
+        }
+      } finally {
+        if (paymentPollRequest.current === requestId) {
+          paymentPollRequest.current = 0;
+        }
+      }
+    }, 2500);
+
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      paymentPollRequest.current = 0;
+    };
+  }, [payment?.id, payment?.status]);
 
   /* =====================================
      SUBMIT
@@ -772,6 +913,22 @@ const AddReading = () => {
           true
         );
 
+        if (paymentMethod === "qr") {
+          setPaymentLoading(true);
+          const response = await createPayment({
+            nozzleId,
+            shiftName,
+            staffId,
+            closingReading: closing,
+            readingDate: date,
+            note: trimmedNote,
+          });
+
+          setPayment(response?.payment || null);
+          toast.success("Dynamic payment QR generated.");
+          return;
+        }
+
         const response =
           await addNozzleReading({
             nozzleId,
@@ -830,8 +987,30 @@ const AddReading = () => {
         setLoading(
           false
         );
+        setPaymentLoading(false);
       }
     };
+
+  const handleCancelPayment = async () => {
+    if (!payment?.id) {
+      setPayment(null);
+      return;
+    }
+
+    try {
+      setPaymentLoading(true);
+      const response = await cancelPayment(payment.id);
+      setPayment(response?.payment || null);
+    } catch (error) {
+      toast.error(
+        error?.response?.data?.message ||
+          error?.message ||
+          "Unable to cancel payment."
+      );
+    } finally {
+      setPaymentLoading(false);
+    }
+  };
 
   /* =====================================
      RENDER
@@ -874,7 +1053,83 @@ const AddReading = () => {
 
       </div>
 
-      <div className="content-panel">
+      {payment && (
+        <div className="content-panel payment-step-card">
+          <div className="content-panel-header">
+            <h2>
+              {payment.status === "paid"
+                ? "✓ Payment Successful"
+                : payment.status === "pending"
+                  ? "Scan & Pay"
+                  : `Payment ${payment.status}`}
+            </h2>
+          </div>
+
+          <div className="content-panel-body payment-step-body">
+            <p className="payment-amount">
+              ₹{Number(payment.amount || 0).toLocaleString("en-IN", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </p>
+            <p>
+              {String(payment.fuelType || "").toUpperCase()} · {Number(payment.quantity || 0).toFixed(2)} L · Nozzle {selectedNozzle?.nozzleNumber || "-"}
+            </p>
+
+            {payment.status === "pending" && payment.qrImageUrl && (
+              <img
+                className="payment-qr-image"
+                src={payment.qrImageUrl}
+                alt="Dynamic Razorpay payment QR code"
+              />
+            )}
+
+            {payment.status === "pending" && !payment.qrImageUrl && (
+              <p className="payment-status payment-status-failed">
+                QR information is unavailable. Please cancel and generate a new QR.
+              </p>
+            )}
+
+            <p className={`payment-status payment-status-${payment.status}`}>
+              {payment.status === "pending" && "Waiting for payment..."}
+              {payment.status === "paid" && "Sale recorded successfully."}
+              {payment.status === "failed" && (payment.failureReason || "Payment failed.")}
+              {payment.status === "expired" && "Payment expired. Generate a new QR to retry."}
+              {payment.status === "cancelled" && "Payment cancelled."}
+            </p>
+
+            {payment.status === "paid" && (
+              <p>Payment: {String(payment.method || "upi").toUpperCase()} · Transaction ID: {payment.providerPaymentId || "-"}</p>
+            )}
+
+            <div className="modal-actions">
+              {payment.status === "pending" && (
+                <button type="button" className="secondary-button" onClick={handleCancelPayment} disabled={paymentLoading}>
+                  Cancel
+                </button>
+              )}
+              {payment.status === "paid" ? (
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={() => {
+                    setPayment(null);
+                    navigate("/nozzle/readings");
+                  }}
+                >
+                  Continue
+                </button>
+              ) : payment.status !== "pending" ? (
+                <button type="button" className="primary-button" onClick={() => setPayment(null)}>
+                  Generate New QR
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="content-panel" style={{ display: payment ? "none" : undefined }}>
 
         <div className="content-panel-header">
 
@@ -1527,8 +1782,12 @@ const AddReading = () => {
                     Cash
                   </option>
 
+                  <option value="qr">
+                    Digital QR Payment
+                  </option>
+
                   <option value="upi">
-                    UPI
+                    UPI (manual)
                   </option>
 
                   <option value="card">
@@ -1687,6 +1946,40 @@ const AddReading = () => {
                     L
                   </p>
 
+                  <p>
+                    <strong
+                      style={{
+                        color:
+                          "#0891b2",
+                      }}
+                    >
+                      Price per Litre:
+                    </strong>{" "}
+                    {Number.isFinite(pricePerLitre)
+                      ? `₹${pricePerLitre.toFixed(2)}`
+                      : "Loading..."}
+                  </p>
+
+                  <p>
+                    <strong
+                      style={{
+                        color:
+                          "#1d4ed8",
+                      }}
+                    >
+                      Estimated Total:
+                    </strong>{" "}
+                    {Number.isFinite(pricePerLitre)
+                      ? `₹${previewAmount.toFixed(2)}`
+                      : "Backend will calculate the amount"}
+                  </p>
+
+                  {paymentMethod === "qr" && (
+                    <small>
+                      Final amount is calculated and verified by the backend.
+                    </small>
+                  )}
+
                 </div>
               )}
 
@@ -1726,8 +2019,12 @@ const AddReading = () => {
                 }
               >
                 {loading
-                  ? "Saving..."
-                  : "Save Reading"}
+                  ? paymentMethod === "qr"
+                    ? "Generating QR..."
+                    : "Saving..."
+                  : paymentMethod === "qr"
+                    ? "Generate QR & Pay"
+                    : "Save Reading"}
               </button>
 
             </div>

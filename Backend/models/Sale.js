@@ -23,23 +23,30 @@ const saleSchema = new mongoose.Schema(
       default: null,
     },
 
+    paymentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Payment",
+      default: null,
+      index: true,
+    },
+
     fuelType: {
       type: String,
       enum: ["petrol", "diesel"],
-      required: true,
+      default: null,
       lowercase: true,
       trim: true,
     },
 
     quantity: {
       type: Number,
-      required: true,
+      default: 0,
       min: 0,
     },
 
     pricePerLitre: {
       type: Number,
-      required: true,
+      default: 0,
       min: 0,
     },
 
@@ -74,6 +81,7 @@ const saleSchema = new mongoose.Schema(
       enum: [
         "manual",
         "nozzle",
+        "payment",
       ],
       default: "nozzle",
       lowercase: true,
@@ -90,6 +98,18 @@ const saleSchema = new mongoose.Schema(
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
+      default: null,
+      index: true,
+    },
+
+    providerPaymentId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
+    paymentProvider: {
+      type: String,
       default: null,
       index: true,
     },
@@ -142,6 +162,11 @@ saleSchema.index({
   createdBy: 1,
   createdAt: -1,
 });
+
+saleSchema.index(
+  { paymentId: 1 },
+  { unique: true, sparse: true, name: "uniq_sale_payment" }
+);
 
 /* =====================================================
    MODEL

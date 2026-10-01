@@ -380,6 +380,475 @@ export const updatePumpSettings = async (
   }
 };
 
+export const getPaymentSettings = async (req, res) => {
+  try {
+    const pumpId = getAuthorizedPumpId(req);
+    if (!pumpId) return res.status(400).json({ success: false, message: "A valid pump ID is required" });
+
+    const pump = await Pump.findById(pumpId).select("paymentConfig").lean();
+    if (!pump) return res.status(404).json({ success: false, message: "Pump not found" });
+
+    return res.status(200).json({
+      success: true,
+      paymentConfig: pump.paymentConfig || { provider: "razorpay", enabled: true, status: "connected" },
+    });
+  } catch (error) {
+    console.error("GET PAYMENT SETTINGS ERROR:", error);
+    return res.status(500).json({ success: false, message: "Unable to load payment settings" });
+  }
+};
+
+export const updatePaymentSettings = async (req, res) => {
+  try {
+    const pumpId = getAuthorizedPumpId(req);
+    if (!pumpId) return res.status(400).json({ success: false, message: "A valid pump ID is required" });
+
+    const provider = normalizeString(req.body?.provider).toLowerCase();
+    if (!["razorpay", "bank"].includes(provider)) {
+      return res.status(400).json({ success: false, message: "Unsupported payment provider" });
+    }
+
+    const pump = await Pump.findById(pumpId);
+    if (!pump) return res.status(404).json({ success: false, message: "Pump not found" });
+
+    pump.paymentConfig = {
+      ...(pump.paymentConfig?.toObject?.() || pump.paymentConfig || {}),
+      provider,
+      enabled: req.body?.enabled !== false,
+      merchantId: normalizeString(req.body?.merchantId),
+      terminalId: normalizeString(req.body?.terminalId),
+      merchantVpa: normalizeString(req.body?.merchantVpa),
+      dynamicQrEnabled: req.body?.dynamicQrEnabled !== false,
+      webhookEnabled: req.body?.webhookEnabled === true,
+      status: provider === "razorpay" ? "connected" : "pending",
+      connectedAt: provider === "razorpay" ? new Date() : pump.paymentConfig?.connectedAt || null,
+    };
+
+    await pump.save();
+    return res.status(200).json({ success: true, message: "Payment settings updated successfully", paymentConfig: pump.paymentConfig });
+  } catch (error) {
+    console.error("UPDATE PAYMENT SETTINGS ERROR:", error);
+    return res.status(500).json({ success: false, message: "Unable to update payment settings" });
+  }
+};
+/* =====================================================
+   GET OWNER BANK ACCOUNT SETTINGS
+
+   SECURITY:
+   - Uses authenticated user's pumpId.
+   - Superadmin can use an explicit pumpId.
+   - Full account number is never returned.
+   - Only last 4 digits are exposed.
+===================================================== */
+
+export const getBankAccountSettings = async (
+  req,
+  res
+) => {
+  try {
+    const pumpId =
+      getAuthorizedPumpId(req);
+
+    if (!pumpId) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "A valid pump ID is required",
+      });
+    }
+
+    /*
+     * Explicitly select the hidden account number.
+     *
+     * accountNumber has select:false in Pump schema.
+     */
+    const pump =
+      await Pump.findById(pumpId)
+        .select(
+          "+bankAccount.accountNumber"
+        )
+        .lean();
+
+    if (!pump) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Pump not found",
+      });
+    }
+
+    const bankAccount =
+      pump.bankAccount || {};
+
+    const accountNumber =
+      normalizeString(
+        bankAccount.accountNumber
+      );
+
+    let maskedAccountNumber = "";
+
+    if (accountNumber) {
+      const lastFour =
+        accountNumber.slice(-4);
+
+      maskedAccountNumber =
+        `••••••••${lastFour}`;
+    }
+
+    return res.status(200).json({
+      success: true,
+
+      bankAccount: {
+        accountHolderName:
+          bankAccount.accountHolderName ||
+          "",
+
+        bankName:
+          bankAccount.bankName ||
+          "",
+
+        accountNumber:
+          maskedAccountNumber,
+
+        ifsc:
+          bankAccount.ifsc ||
+          "",
+
+        branchName:
+          bankAccount.branchName ||
+          "",
+
+        accountType:
+          bankAccount.accountType ||
+          "",
+
+        verified:
+          bankAccount.verified === true,
+
+        verifiedAt:
+          bankAccount.verifiedAt ||
+          null,
+
+        hasAccountNumber:
+          Boolean(accountNumber),
+      },
+    });
+  } catch (error) {
+    console.error(
+      "GET BANK ACCOUNT SETTINGS ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Unable to load bank account settings",
+    });
+  }
+};
+/* =====================================================
+   UPDATE OWNER BANK ACCOUNT SETTINGS
+
+   SECURITY:
+   - Uses authenticated user's pumpId.
+   - Superadmin may use explicit pumpId.
+   - Does NOT mark account as verified.
+   - Never stores banking passwords, OTP, UPI PIN,
+     card PIN, internet banking credentials, etc.
+===================================================== */
+
+export const updateBankAccountSettings = async (
+  req,
+  res
+) => {
+  try {
+    const pumpId =
+      getAuthorizedPumpId(req);
+
+    if (!pumpId) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "A valid pump ID is required",
+      });
+    }
+
+    const pump =
+      await Pump.findById(pumpId).select(
+        "+bankAccount.accountNumber"
+      );
+
+    if (!pump) {
+      return res.status(404).json({
+        success: false,
+        message: "Pump not found",
+      });
+    }
+
+    const {
+      accountHolderName,
+      bankName,
+      accountNumber,
+      ifsc,
+      branchName,
+      accountType,
+    } = req.body || {};
+
+    if (
+      accountHolderName !==
+      undefined
+    ) {
+      const value =
+        normalizeString(
+          accountHolderName
+        );
+
+      if (!value) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Account holder name is required",
+        });
+      }
+
+      pump.bankAccount.accountHolderName =
+        value;
+    }
+
+    if (bankName !== undefined) {
+      const value =
+        normalizeString(bankName);
+
+      if (!value) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Bank name is required",
+        });
+      }
+
+      pump.bankAccount.bankName =
+        value;
+    }
+
+    if (
+      accountNumber !==
+      undefined
+    ) {
+      const value =
+        normalizeString(
+          accountNumber
+        ).replace(/\s+/g, "");
+
+      if (!value) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Account number is required",
+        });
+      }
+
+      /*
+       * Basic validation only.
+       *
+       * Do not assume a specific bank's account-number
+       * format because formats can vary.
+       */
+      if (
+        !/^\d{6,30}$/.test(value)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Account number must contain 6 to 30 digits",
+        });
+      }
+
+      pump.bankAccount.accountNumber =
+        value;
+
+      /*
+       * Changing the account number means an old
+       * verification state cannot safely remain valid.
+       */
+      pump.bankAccount.verified =
+        false;
+
+      pump.bankAccount.verifiedAt =
+        null;
+    }
+
+    if (ifsc !== undefined) {
+      const value =
+        normalizeString(ifsc)
+          .toUpperCase()
+          .replace(/\s+/g, "");
+
+      if (!value) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "IFSC code is required",
+        });
+      }
+
+      /*
+       * Standard Indian IFSC format:
+       * 4 letters + 0 + 6 alphanumeric characters.
+       */
+      if (
+        !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(
+          value
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Please provide a valid IFSC code",
+        });
+      }
+
+      pump.bankAccount.ifsc =
+        value;
+    }
+
+    if (
+      branchName !==
+      undefined
+    ) {
+      pump.bankAccount.branchName =
+        normalizeString(
+          branchName
+        );
+    }
+
+    if (
+      accountType !==
+      undefined
+    ) {
+      const normalizedType =
+        normalizeString(
+          accountType
+        ).toLowerCase();
+
+      if (
+        ![
+          "savings",
+          "current",
+        ].includes(normalizedType)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Account type must be savings or current",
+        });
+      }
+
+      pump.bankAccount.accountType =
+        normalizedType;
+    }
+
+    /*
+     * Never allow the API request to mark the account
+     * as verified.
+     *
+     * Verification must happen only through a real
+     * verification flow/provider later.
+     */
+
+    await pump.save();
+
+    const savedAccount =
+      pump.bankAccount || {};
+
+    const savedAccountNumber =
+      normalizeString(
+        savedAccount.accountNumber
+      );
+
+    const maskedAccountNumber =
+      savedAccountNumber
+        ? `••••••••${savedAccountNumber.slice(-4)}`
+        : "";
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Bank account settings updated successfully",
+
+      bankAccount: {
+        accountHolderName:
+          savedAccount.accountHolderName ||
+          "",
+
+        bankName:
+          savedAccount.bankName ||
+          "",
+
+        accountNumber:
+          maskedAccountNumber,
+
+        ifsc:
+          savedAccount.ifsc ||
+          "",
+
+        branchName:
+          savedAccount.branchName ||
+          "",
+
+        accountType:
+          savedAccount.accountType ||
+          "",
+
+        verified:
+          savedAccount.verified ===
+          true,
+
+        verifiedAt:
+          savedAccount.verifiedAt ||
+          null,
+
+        hasAccountNumber:
+          Boolean(
+            savedAccountNumber
+          ),
+      },
+    });
+  } catch (error) {
+    console.error(
+      "UPDATE BANK ACCOUNT SETTINGS ERROR:",
+      error
+    );
+
+    if (
+      error?.name ===
+      "ValidationError"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Please provide valid bank account information",
+      });
+    }
+
+    if (
+      error?.name ===
+      "CastError"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid bank account information",
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Unable to update bank account settings",
+    });
+  }
+};
 /* =====================================================
    GET FUEL SETTINGS
 ===================================================== */
@@ -409,9 +878,34 @@ export const getFuelSettings = async (
         })
         .lean();
 
+    const petrol =
+      fuelPrices.find(
+        (item) => item.fuelType === "petrol"
+      );
+
+    const diesel =
+      fuelPrices.find(
+        (item) => item.fuelType === "diesel"
+      );
+
     return res.status(200).json({
       success: true,
+
       fuelPrices,
+
+      settings: {
+        petrolPrice:
+          petrol?.price ?? "",
+
+        dieselPrice:
+          diesel?.price ?? "",
+      },
+
+      petrolPrice:
+        petrol?.price ?? "",
+
+      dieselPrice:
+        diesel?.price ?? "",
     });
   } catch (error) {
     console.error(
@@ -426,6 +920,7 @@ export const getFuelSettings = async (
     });
   }
 };
+
 
 /* =====================================================
    UPDATE FUEL SETTINGS
@@ -459,16 +954,28 @@ export const updateFuelSettings = async (
       });
     }
 
-    const { petrol, diesel, prices } =
-      req.body;
+    const {
+      petrolPrice,
+      dieselPrice,
+      petrol,
+      diesel,
+      prices,
+    } = req.body || {};
 
     const fuelData =
       prices &&
       typeof prices === "object"
         ? prices
         : {
-            petrol,
-            diesel,
+            petrol:
+              petrolPrice !== undefined
+                ? petrolPrice
+                : petrol,
+
+            diesel:
+              dieselPrice !== undefined
+                ? dieselPrice
+                : diesel,
           };
 
     const updates = [];
@@ -539,11 +1046,37 @@ export const updateFuelSettings = async (
         })
         .lean();
 
+    const savedPetrol =
+      fuelPrices.find(
+        (item) => item.fuelType === "petrol"
+      );
+
+    const savedDiesel =
+      fuelPrices.find(
+        (item) => item.fuelType === "diesel"
+      );
+
     return res.status(200).json({
       success: true,
+
       message:
         "Fuel settings updated successfully",
+
       fuelPrices,
+
+      settings: {
+        petrolPrice:
+          savedPetrol?.price ?? "",
+
+        dieselPrice:
+          savedDiesel?.price ?? "",
+      },
+
+      petrolPrice:
+        savedPetrol?.price ?? "",
+
+      dieselPrice:
+        savedDiesel?.price ?? "",
     });
   } catch (error) {
     console.error(
@@ -551,20 +1084,39 @@ export const updateFuelSettings = async (
       error
     );
 
-    return res.status(
-      error?.code === 11000
-        ? 409
-        : 500
-    ).json({
+    if (error?.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Fuel price already exists for this pump",
+      });
+    }
+
+    if (
+      error?.name === "ValidationError"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Please provide valid fuel price information",
+      });
+    }
+
+    if (error?.name === "CastError") {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid fuel price information",
+      });
+    }
+
+    return res.status(500).json({
       success: false,
       message:
-        error?.code === 11000
-          ? "Fuel price already exists for this pump"
-          : "Unable to update fuel settings",
+        "Unable to update fuel settings",
     });
   }
 };
-
 /* =====================================================
    GET PUMP USERS
 ===================================================== */

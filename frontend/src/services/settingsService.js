@@ -63,6 +63,16 @@ export const updateFuelSettings =
     return response.data;
   };
 
+export const getPaymentSettings = async () => {
+  const response = await api.get("/settings/payment");
+  return response.data;
+};
+
+export const updatePaymentSettings = async (data) => {
+  const response = await api.put("/settings/payment", data);
+  return response.data;
+};
+
 /* =====================================================
    USER MANAGEMENT
 ===================================================== */
@@ -139,3 +149,28 @@ export const updateUser =
 
 export const deleteUser =
   deletePumpUser;
+  /* =====================================================
+   BANK ACCOUNT SETTINGS
+===================================================== */
+
+export const getBankAccountSettings =
+  async () => {
+    const response =
+      await api.get(
+        "/settings/bank"
+      );
+
+    return response.data;
+  };
+
+export const updateBankAccountSettings =
+  async (data) => {
+    const response =
+      await api.put(
+        "/settings/bank",
+        data
+      );
+
+    return response.data;
+  };
+  

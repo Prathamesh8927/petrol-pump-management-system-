@@ -11,6 +11,7 @@ import {
 
 const ProtectedRoute = ({
   children,
+  allowedRoles = ["owner", "manager", "staff"],
 }) => {
   const {
     user,
@@ -76,6 +77,15 @@ const ProtectedRoute = ({
     return (
       <Navigate
         to="/superadmin"
+        replace
+      />
+    );
+  }
+
+  if (!allowedRoles.includes(String(user.role || "").toLowerCase())) {
+    return (
+      <Navigate
+        to={["staff", "employee"].includes(String(user.role || "").toLowerCase()) ? "/employee/payment" : "/dashboard"}
         replace
       />
     );

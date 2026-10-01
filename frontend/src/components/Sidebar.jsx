@@ -208,6 +208,10 @@ const Sidebar = ({
           path: "/settings/fuel",
         },
         {
+  name: "Payment Setup",
+  path: "/settings/payment",
+},
+        {
           name: "Users",
           path: "/settings/users",
         },

@@ -135,7 +135,7 @@ export const getDailySales =
         await Sale.find({
           pumpId,
           saleDate: date,
-          source: "manual",
+          source: { $in: ["manual", "payment"] },
         })
           .populate(
             "nozzleId",
@@ -384,7 +384,7 @@ export const getSalesHistory =
 
       const manualFilter = {
         pumpId,
-        source: "manual",
+        source: { $in: ["manual", "payment"] },
       };
 
       if (date) {
@@ -494,7 +494,7 @@ export const getPaymentSummary =
         await Sale.find({
           pumpId,
           saleDate: date,
-          source: "manual",
+          source: { $in: ["manual", "payment"] },
         });
 
       const summary = {

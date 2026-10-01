@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 import Expense from "../models/Expense.js";
 import Employee from "../models/Employee.js";
+import User from "../models/User.js";
 
 import {
   createDeletedRecord,
@@ -354,6 +355,20 @@ export const deleteExpense =
             session,
           });
 
+          if (employee.userId) {
+            await User.updateOne(
+              {
+                _id: employee.userId,
+                pumpId,
+              },
+              {
+                $set: {
+                  active: false,
+                },
+              }
+            ).session(session);
+          }
+
           const deleted =
             await Expense.deleteOne({
               _id:
@@ -419,6 +434,8 @@ export const deleteExpense =
 
 export const addEmployee =
   async (req, res) => {
+    let session = null;
+
     try {
       const {
         name,
@@ -434,6 +451,9 @@ export const addEmployee =
         shiftName = "",
         shiftStartTime = "",
         shiftEndTime = "",
+        loginEmail = "",
+        loginPassword = "",
+        enableLogin = false,
       } = req.body;
 
       /* ---------------------------------------------
@@ -494,6 +514,34 @@ export const addEmployee =
           shiftEndTime || ""
         ).trim();
 
+      const normalizedLoginEmail =
+        String(loginEmail || "")
+          .trim()
+          .toLowerCase();
+
+      const shouldEnableLogin =
+        enableLogin === true ||
+        enableLogin === "true";
+
+      if (shouldEnableLogin) {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedLoginEmail)) {
+          return res.status(400).json({
+            success: false,
+            message: "A valid employee login email is required",
+          });
+        }
+
+        if (
+          String(loginPassword || "").length < 6 ||
+          String(loginPassword || "").length > 128
+        ) {
+          return res.status(400).json({
+            success: false,
+            message: "Employee login password must contain 6 to 128 characters",
+          });
+        }
+      }
+
       /* ---------------------------------------------
          SHIFT TIME VALIDATION
       --------------------------------------------- */
@@ -550,8 +598,25 @@ export const addEmployee =
          CREATE EMPLOYEE
       --------------------------------------------- */
 
-      const employee =
-        await Employee.create({
+      session = await mongoose.startSession();
+      let employee = null;
+
+      await session.withTransaction(async () => {
+        if (shouldEnableLogin) {
+          const existingLogin = await User.findOne({
+            email: normalizedLoginEmail,
+          }).session(session);
+
+          if (existingLogin) {
+            const error = new Error(
+              "A user with this employee login already exists"
+            );
+            error.code = "EMPLOYEE_LOGIN_EXISTS";
+            throw error;
+          }
+        }
+
+        const createdEmployees = await Employee.create([{
           pumpId:
             req.user.pumpId,
 
@@ -591,7 +656,28 @@ export const addEmployee =
 
           shiftEndTime:
             normalizedShiftEndTime,
-        });
+
+          loginEnabled:
+            shouldEnableLogin,
+        }], { session });
+
+        employee = createdEmployees[0];
+
+        if (shouldEnableLogin) {
+          const createdUsers = await User.create([{
+            name: name.trim(),
+            email: normalizedLoginEmail,
+            password: String(loginPassword),
+            role: "employee",
+            pumpId: req.user.pumpId,
+            employeeId: employee._id,
+            active: true,
+          }], { session });
+
+          employee.userId = createdUsers[0]._id;
+          await employee.save({ session });
+        }
+      });
 
       return res.status(201).json({
         success: true,
@@ -607,6 +693,17 @@ export const addEmployee =
         error
       );
 
+      if (
+        error?.code === "EMPLOYEE_LOGIN_EXISTS" ||
+        error?.code === 11000
+      ) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "A user with this employee login already exists",
+        });
+      }
+
       return res.status(500).json({
         success: false,
 
@@ -616,6 +713,10 @@ export const addEmployee =
         error:
           error.message,
       });
+    } finally {
+      if (session) {
+        await session.endSession();
+      }
     }
   };
 
@@ -738,6 +839,9 @@ export const updateEmployee =
         shiftName,
         shiftStartTime,
         shiftEndTime,
+        loginEmail,
+        loginPassword,
+        enableLogin,
       } = req.body;
 
       /* ---------------------------------------------
@@ -977,6 +1081,60 @@ export const updateEmployee =
           message:
             "Both shift start time and shift end time are required.",
         });
+      }
+
+      const shouldEnableLogin =
+        enableLogin === undefined
+          ? employee.loginEnabled
+          : enableLogin === true || enableLogin === "true";
+
+      if (loginEmail !== undefined || loginPassword !== undefined || enableLogin !== undefined) {
+        const normalizedLoginEmail = String(loginEmail || "").trim().toLowerCase();
+
+        if (shouldEnableLogin && !employee.userId && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedLoginEmail)) {
+          return res.status(400).json({ success: false, message: "A valid employee login email is required" });
+        }
+
+        if (loginPassword !== undefined && (String(loginPassword).length < 6 || String(loginPassword).length > 128)) {
+          return res.status(400).json({ success: false, message: "Employee login password must contain 6 to 128 characters" });
+        }
+
+        let user = employee.userId
+          ? await User.findOne({ _id: employee.userId, pumpId: req.user.pumpId })
+          : null;
+
+        if (shouldEnableLogin && !user) {
+          user = await User.create({
+            name: employee.name,
+            email: normalizedLoginEmail,
+            password: String(loginPassword || ""),
+            role: "employee",
+            pumpId: req.user.pumpId,
+            employeeId: employee._id,
+            active: true,
+          });
+          employee.userId = user._id;
+        } else if (user) {
+          if (loginEmail !== undefined) {
+            const duplicate = await User.findOne({ email: normalizedLoginEmail, _id: { $ne: user._id } });
+            if (duplicate) {
+              return res.status(409).json({ success: false, message: "A user with this login email already exists" });
+            }
+            user.email = normalizedLoginEmail;
+          }
+          if (loginPassword !== undefined) user.password = String(loginPassword);
+          user.active = shouldEnableLogin && employee.status === "active";
+          await user.save();
+        }
+
+        employee.loginEnabled = shouldEnableLogin;
+        if (user && !shouldEnableLogin) {
+          user.active = false;
+          await user.save();
+        }
+      } else if (employee.userId && employee.status === "inactive") {
+        await User.updateOne({ _id: employee.userId, pumpId: req.user.pumpId }, { $set: { active: false } });
+        employee.loginEnabled = false;
       }
 
       await employee.save();

@@ -19,12 +19,21 @@ import dailyClosingRoutes from "./routes/dailyClosingRoutes.js";
 import auditRoutes from "./routes/auditRoutes.js";
 import passwordResetRoutes from "./routes/passwordResetRoutes.js";
 import recoveryRoutes from "./routes/recoveryRoutes.js";
+import paymentRoutes from "./routes/paymentRoutes.js";
+import { handleRazorpayWebhook } from "./controllers/paymentController.js";
+import authMiddleware from "./middleware/authMiddleware.js";
+import allowRoles from "./middleware/roleMiddleware.js";
 
 /* =====================================================
    APP
 ===================================================== */
 
 const app = express();
+
+const adminOnly = [
+  authMiddleware,
+  allowRoles("owner", "manager"),
+];
 
 /* =====================================================
    CORS
@@ -125,6 +134,12 @@ app.use(
    BODY PARSERS
 ===================================================== */
 
+app.post(
+  "/api/payments/webhook",
+  express.raw({ type: "application/json", limit: "1mb" }),
+  handleRazorpayWebhook
+);
+
 app.use(
   express.json({
     limit: "1mb",
@@ -168,6 +183,7 @@ app.use(
 
 app.use(
   "/api/fuel",
+  ...adminOnly,
   fuelRoutes
 );
 
@@ -177,6 +193,7 @@ app.use(
 
 app.use(
   "/api/sales",
+  ...adminOnly,
   salesRoutes
 );
 
@@ -195,6 +212,7 @@ app.use(
 
 app.use(
   "/api/nozzles",
+  ...adminOnly,
   nozzleRoutes
 );
 
@@ -203,6 +221,7 @@ app.use(
  */
 app.use(
   "/api/nozzle",
+  ...adminOnly,
   nozzleRoutes
 );
 
@@ -212,6 +231,7 @@ app.use(
 
 app.use(
   "/api/expenses",
+  ...adminOnly,
   expenseRoutes
 );
 
@@ -221,6 +241,7 @@ app.use(
 
 app.use(
   "/api/ledger",
+  ...adminOnly,
   ledgerRoutes
 );
 
@@ -230,6 +251,7 @@ app.use(
 
 app.use(
   "/api/reports",
+  ...adminOnly,
   reportRoutes
 );
 
@@ -239,6 +261,7 @@ app.use(
 
 app.use(
   "/api/settings",
+  ...adminOnly,
   settingsRoutes
 );
 
@@ -248,6 +271,7 @@ app.use(
 
 app.use(
   "/api/dashboard",
+  ...adminOnly,
   dashboardRoutes
 );
 
@@ -257,6 +281,7 @@ app.use(
 
 app.use(
   "/api/daily-closing",
+  ...adminOnly,
   dailyClosingRoutes
 );
 
@@ -266,6 +291,7 @@ app.use(
 
 app.use(
   "/api/audit",
+  ...adminOnly,
   auditRoutes
 );
 
@@ -284,7 +310,13 @@ app.use(
 
 app.use(
   "/api/recovery",
+  ...adminOnly,
   recoveryRoutes
+);
+
+app.use(
+  "/api/payments",
+  paymentRoutes
 );
 
 /* =====================================================
