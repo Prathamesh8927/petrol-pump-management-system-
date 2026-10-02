@@ -1274,16 +1274,14 @@ const finalizePaidPayment =
            * Payment Link ID / Order ID verification.
            */
           const receivedOrderId =
-            payload?.order_id ||
-            payload?.payment_link_id ||
-            payload?.id &&
-              String(
-                payload.id
-              ).startsWith(
-                "plink_"
-              )
-              ? payload.id
-              : null;
+  payload?.order_id ||
+  payload?.payment_link_id ||
+  (
+    payload?.id &&
+    String(payload.id).startsWith("plink_")
+      ? payload.id
+      : null
+  );
 
           if (
             receivedOrderId &&
