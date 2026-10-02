@@ -20,7 +20,7 @@ const saleSchema = new mongoose.Schema(
     readingId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "NozzleReading",
-      default: null,
+      default: undefined,
     },
 
     paymentId: {
@@ -58,12 +58,7 @@ const saleSchema = new mongoose.Schema(
 
     paymentMethod: {
       type: String,
-      enum: [
-        "cash",
-        "upi",
-        "card",
-        "credit",
-      ],
+      enum: ["cash", "upi", "card", "credit"],
       default: "cash",
       lowercase: true,
       trim: true,
@@ -78,11 +73,7 @@ const saleSchema = new mongoose.Schema(
 
     source: {
       type: String,
-      enum: [
-        "manual",
-        "nozzle",
-        "payment",
-      ],
+      enum: ["manual", "nozzle", "payment"],
       default: "nozzle",
       lowercase: true,
       trim: true,
@@ -145,15 +136,20 @@ saleSchema.index({
  * A nozzle reading should generate at most
  * one Sale.
  *
- * Manual sales can have no readingId.
+ * Sales without a readingId, such as manual
+ * or employee payment sales, are excluded
+ * from this unique constraint.
  */
 saleSchema.index(
-  {
-    readingId: 1,
-  },
+  { readingId: 1 },
   {
     unique: true,
-    sparse: true,
+    partialFilterExpression: {
+      readingId: {
+        $type: "objectId",
+      },
+    },
+    name: "uniq_sale_reading",
   }
 );
 
@@ -165,7 +161,11 @@ saleSchema.index({
 
 saleSchema.index(
   { paymentId: 1 },
-  { unique: true, sparse: true, name: "uniq_sale_payment" }
+  {
+    unique: true,
+    sparse: true,
+    name: "uniq_sale_payment",
+  }
 );
 
 /* =====================================================
@@ -174,9 +174,6 @@ saleSchema.index(
 
 const Sale =
   mongoose.models.Sale ||
-  mongoose.model(
-    "Sale",
-    saleSchema
-  );
+  mongoose.model("Sale", saleSchema);
 
 export default Sale;
