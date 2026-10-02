@@ -1492,7 +1492,7 @@ const finalizePaidPayment =
                   },
                 },
               ],
-              { session }
+              { session, ordered: true }
             );
 
             result =
