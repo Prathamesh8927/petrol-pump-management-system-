@@ -52,11 +52,17 @@ const EMPTY_SUMMARY = {
 ========================================================= */
 
 const getToday = () => {
-  const date = new Date();
+  const now = new Date();
 
-  return date.toLocaleDateString(
-    "en-CA"
-  );
+  const year = now.getFullYear();
+  const month = String(
+    now.getMonth() + 1
+  ).padStart(2, "0");
+  const day = String(
+    now.getDate()
+  ).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
 };
 
 const isValidDate = (value) => {
@@ -67,13 +73,28 @@ const isValidDate = (value) => {
     return false;
   }
 
+  const [year, month, day] =
+    value.split("-").map(Number);
+
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31
+  ) {
+    return false;
+  }
+
   const date = new Date(
-    `${value}T00:00:00`
+    year,
+    month - 1,
+    day
   );
 
   return (
-    !Number.isNaN(date.getTime()) &&
-    date.toISOString().slice(0, 10) === value
+    date.getFullYear() === year &&
+    date.getMonth() === month - 1 &&
+    date.getDate() === day
   );
 };
 

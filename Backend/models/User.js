@@ -1,26 +1,19 @@
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 
-/* =====================================================
-   USER SCHEMA
-===================================================== */
-
 const userSchema = new mongoose.Schema(
   {
-    /* -----------------------------------------------
-       NAME
-    ------------------------------------------------ */
+    /* =====================================================
+       BASIC USER INFORMATION
+    ===================================================== */
 
     name: {
       type: String,
       required: true,
       trim: true,
+      minlength: 2,
       maxlength: 100,
     },
-
-    /* -----------------------------------------------
-       EMAIL
-    ------------------------------------------------ */
 
     email: {
       type: String,
@@ -29,22 +22,20 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
       maxlength: 254,
+      index: true,
     },
-
-    /* -----------------------------------------------
-       PASSWORD
-    ------------------------------------------------ */
 
     password: {
       type: String,
       required: true,
       minlength: 6,
+      maxlength: 128,
       select: false,
     },
 
-    /* -----------------------------------------------
+    /* =====================================================
        ROLE
-    ------------------------------------------------ */
+    ===================================================== */
 
     role: {
       type: String,
@@ -55,28 +46,24 @@ const userSchema = new mongoose.Schema(
         "staff",
         "employee",
       ],
-      default: "owner",
+      default: "staff",
       index: true,
     },
 
-    /* -----------------------------------------------
-       PUMP
-       
-       Superadmin:
-       pumpId = null / undefined
-
-       Owner / Manager / Staff:
-       pumpId is required
-    ------------------------------------------------ */
+    /* =====================================================
+       PUMP ISOLATION
+    ===================================================== */
 
     pumpId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Pump",
-      required: function () {
-        return this.role !== "superadmin";
-      },
+      default: null,
       index: true,
     },
+
+    /* =====================================================
+       EMPLOYEE LINK
+    ===================================================== */
 
     employeeId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -87,112 +74,124 @@ const userSchema = new mongoose.Schema(
       sparse: true,
     },
 
-    /* -----------------------------------------------
+    /* =====================================================
        ACCOUNT STATUS
-    ------------------------------------------------ */
+    ===================================================== */
 
     active: {
       type: Boolean,
       default: true,
       index: true,
     },
+
+    /* =====================================================
+       SESSION SECURITY
+       
+       tokenVersion is included in JWTs.
+
+       When incremented:
+       all previously issued JWTs become invalid.
+
+       This is used for:
+       - password reset
+       - logout-all
+       - forced session revocation
+       - security incidents
+    ===================================================== */
+
+    tokenVersion: {
+      type: Number,
+      default: 0,
+      min: 0,
+      required: true,
+    },
+
+    /* =====================================================
+       PASSWORD SECURITY AUDIT
+
+       Records the last successful password change.
+
+       This does not contain the password or any secret.
+    ===================================================== */
+
+    passwordChangedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
   },
   {
     timestamps: true,
+    strict: true,
   }
 );
 
-/* =====================================================
-   DETECT BCRYPT HASH
-===================================================== */
-
-/*
-   Valid bcrypt formats:
-
-   $2a$...
-   $2b$...
-   $2y$...
-
-   This prevents already-hashed passwords from being
-   hashed again.
-
-   IMPORTANT:
-   The previous regex contained escaped formatting
-   characters and was not a valid bcrypt detector.
-*/
+/* =========================================================
+   PASSWORD HASH DETECTION
+========================================================= */
 
 const isBcryptHash = (value) => {
-  if (typeof value !== "string") {
-    return false;
-  }
-
-  return /^\$2[aby]\$\d{2}\$/.test(value);
+  return (
+    typeof value === "string" &&
+    /^\$2[aby]\$\d{2}\$/.test(value)
+  );
 };
 
-/* =====================================================
-   HASH PASSWORD
-===================================================== */
+/* =========================================================
+   PASSWORD HASHING
+========================================================= */
 
-/*
-   IMPORTANT:
-
-   RegistrationRequest may already contain a bcrypt
-   password hash.
-
-   When Super Admin approves the request, that hash
-   may be assigned directly to User.
-
-   Therefore:
-
-   Plain password
-       ↓
-   bcrypt hash
-
-   Existing bcrypt hash
-       ↓
-   DO NOT hash again
-*/
-
-userSchema.pre("save", async function () {
-  if (!this.isModified("password")) {
-    return;
-  }
-
-  if (isBcryptHash(this.password)) {
-    return;
-  }
-
-  const salt = await bcrypt.genSalt(12);
-
-  this.password = await bcrypt.hash(
-    this.password,
-    salt
-  );
-});
-
-/* =====================================================
-   CHECK PASSWORD
-===================================================== */
-
-userSchema.methods.matchPassword =
-  async function (enteredPassword) {
+userSchema.pre("save", async function (next) {
+  try {
+    /*
+     * Only hash when the password was actually changed.
+     *
+     * This prevents already-hashed passwords from being
+     * hashed again during unrelated user updates.
+     */
     if (
-      typeof enteredPassword !== "string" ||
-      !enteredPassword ||
-      !this.password
+      !this.isModified("password") ||
+      isBcryptHash(this.password)
     ) {
-      return false;
+      return next();
     }
 
-    return bcrypt.compare(
-      enteredPassword,
-      this.password
+    this.password = await bcrypt.hash(
+      this.password,
+      12
     );
-  };
 
-/* =====================================================
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+});
+
+/* =========================================================
+   PASSWORD CHANGE TRACKING
+========================================================= */
+
+userSchema.pre("save", function (next) {
+  /*
+   * Whenever the password changes through a normal
+   * document save, record the change time.
+   *
+   * If passwordChangedAt was explicitly supplied during
+   * creation, preserve it.
+   */
+  if (
+    this.isModified("password") &&
+    !this.isNew
+  ) {
+    this.passwordChangedAt = new Date();
+  }
+
+  return next();
+});
+
+/* =========================================================
    MODEL
-===================================================== */
+========================================================= */
 
 const User =
   mongoose.models.User ||

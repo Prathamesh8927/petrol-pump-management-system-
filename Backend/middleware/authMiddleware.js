@@ -10,23 +10,20 @@ import Pump from "../models/Pump.js";
    1. JWT must be valid.
    2. JWT algorithm is restricted to HS256.
    3. JWT must contain a valid user ID.
-   4. User is always loaded from MongoDB.
-   5. Current database role is trusted.
-   6. Current database pumpId is trusted.
-   7. JWT pumpId is NEVER trusted.
-   8. Inactive users are blocked.
-   9. Non-superadmin users must have pumpId.
-   10. Associated pump must exist and be active.
-   11. Superadmin does not require pumpId.
-   12. Sensitive authentication errors are not exposed.
+   4. JWT tokenVersion must match the database.
+   5. User is always loaded from MongoDB.
+   6. Current database role is trusted.
+   7. Current database pumpId is trusted.
+   8. JWT pumpId is NEVER trusted.
+   9. Inactive users are blocked.
+   10. Non-superadmin users must have pumpId.
+   11. Associated pump must exist and be active.
+   12. Superadmin does not require pumpId.
+   13. Sensitive authentication errors are not exposed.
 ===================================================== */
 
 const authMiddleware = async (req, res, next) => {
   try {
-    /* =================================================
-       AUTHORIZATION HEADER
-    ================================================= */
-
     const authHeader = req.headers.authorization;
 
     if (
@@ -40,10 +37,6 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
-    /* =================================================
-       EXTRACT TOKEN
-    ================================================= */
-
     const token = authHeader.substring(7).trim();
 
     if (!token) {
@@ -53,10 +46,6 @@ const authMiddleware = async (req, res, next) => {
         code: "NO_TOKEN",
       });
     }
-
-    /* =================================================
-       JWT SECRET
-    ================================================= */
 
     const secret = process.env.JWT_SECRET;
 
@@ -75,29 +64,9 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
-    /* =================================================
-       VERIFY JWT
-
-       IMPORTANT:
-       Only user identity is taken from JWT.
-
-       Role and pumpId are ALWAYS loaded from
-       the current MongoDB User document.
-    ================================================= */
-
     const decoded = jwt.verify(token, secret, {
       algorithms: ["HS256"],
     });
-
-    /* =================================================
-       USER ID
-
-       Supported:
-       - New tokens: userId
-       - Legacy tokens: id
-
-       JWT pumpId is intentionally ignored.
-    ================================================= */
 
     const userId = decoded?.userId || decoded?.id;
 
@@ -109,15 +78,18 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
-    /* =================================================
-       LOAD CURRENT USER
+    const jwtTokenVersion = Number(decoded?.tokenVersion);
 
-       IMPORTANT:
-       Role, pumpId and active status come from MongoDB.
-    ================================================= */
+    if (!Number.isInteger(jwtTokenVersion) || jwtTokenVersion < 0) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid authentication token",
+        code: "INVALID_TOKEN",
+      });
+    }
 
     const user = await User.findById(userId).select(
-      "_id name email role pumpId active"
+      "_id name email role pumpId active tokenVersion"
     );
 
     if (!user) {
@@ -128,10 +100,6 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
-    /* =================================================
-       ACCOUNT STATUS
-    ================================================= */
-
     if (user.active !== true) {
       return res.status(403).json({
         success: false,
@@ -140,17 +108,19 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
-    /* =================================================
-       NORMALIZE ROLE
-    ================================================= */
+    const currentTokenVersion = Number(user.tokenVersion || 0);
+
+    if (jwtTokenVersion !== currentTokenVersion) {
+      return res.status(401).json({
+        success: false,
+        message: "Session expired. Please login again.",
+        code: "TOKEN_REVOKED",
+      });
+    }
 
     const role = String(user.role || "")
       .trim()
       .toLowerCase();
-
-    /* =================================================
-       ROLE VALIDATION
-    ================================================= */
 
     const allowedRoles = [
       "superadmin",
@@ -172,21 +142,10 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
-    /* =================================================
-       SUPERADMIN
-
-       Superadmin is not associated with a pump.
-    ================================================= */
-
     if (role === "superadmin") {
       req.user = user;
-
       return next();
     }
-
-    /* =================================================
-       NORMAL USER PUMP VALIDATION
-    ================================================= */
 
     if (!user.pumpId) {
       console.error(
@@ -200,19 +159,6 @@ const authMiddleware = async (req, res, next) => {
         code: "ACCOUNT_CONFIGURATION_ERROR",
       });
     }
-
-    /* =================================================
-       VERIFY ASSOCIATED PUMP
-
-       IMPORTANT:
-       A valid user account must also belong to an
-       existing and active pump.
-
-       This prevents access when:
-       - pump was deleted
-       - pump was deactivated
-       - user still exists in database
-    ================================================= */
 
     const pump = await Pump.findOne({
       _id: user.pumpId,
@@ -232,26 +178,9 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
-    /* =================================================
-       ATTACH USER
-
-       req.user contains the CURRENT database state.
-
-       Never attach role/pumpId from JWT.
-    ================================================= */
-
     req.user = user;
-
-    /* =================================================
-       CONTINUE
-    ================================================= */
-
     return next();
   } catch (error) {
-    /* =================================================
-       TOKEN EXPIRED
-    ================================================= */
-
     if (error?.name === "TokenExpiredError") {
       console.log("AUTH MIDDLEWARE: Token expired");
 
@@ -261,10 +190,6 @@ const authMiddleware = async (req, res, next) => {
         code: "TOKEN_EXPIRED",
       });
     }
-
-    /* =================================================
-       INVALID TOKEN
-    ================================================= */
 
     if (
       error?.name === "JsonWebTokenError" ||
@@ -279,10 +204,6 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
-    /* =================================================
-       INVALID USER ID
-    ================================================= */
-
     if (error?.name === "CastError") {
       console.error(
         "AUTH MIDDLEWARE: Invalid user ID"
@@ -294,13 +215,6 @@ const authMiddleware = async (req, res, next) => {
         code: "INVALID_TOKEN",
       });
     }
-
-    /* =================================================
-       DATABASE / OTHER AUTH ERROR
-
-       Do not expose internal database errors,
-       stack traces or implementation details.
-    ================================================= */
 
     console.error(
       "AUTH MIDDLEWARE ERROR:",

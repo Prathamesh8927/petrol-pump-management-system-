@@ -21,7 +21,10 @@ const COLORS = {
 ===================================================== */
 
 const safeString = (value) => {
-  if (value === null || value === undefined) return "";
+  if (value === null || value === undefined) {
+    return "";
+  }
+
   return String(value).trim();
 };
 
@@ -32,7 +35,9 @@ const formatMoney = (value) =>
   });
 
 const formatDate = (value) => {
-  if (!value) return "-";
+  if (!value) {
+    return "-";
+  }
 
   try {
     const date = new Date(value);
@@ -130,17 +135,6 @@ const getTransactionDate = (entry) =>
 
 /* =====================================================
    BILL PERIOD / DATE RANGE
-
-   Uses the earliest and latest transaction dates from
-   the customer's complete ledger history.
-
-   Example:
-   05/09/2026
-   10/09/2026
-   19/09/2026
-
-   Bill From:
-   05/09/2026 - 19/09/2026
 ===================================================== */
 
 const getBillPeriod = (
@@ -439,77 +433,225 @@ const amountInWords = (
 };
 
 /* =====================================================
-   PUMP HELPERS
+   SETTINGS / PUMP HELPERS
 ===================================================== */
 
-const getPumpName = (pump) =>
-  safeString(
-    pump?.pumpName ||
-      pump?.name ||
+/*
+ * The Settings object can arrive directly or sometimes
+ * be nested depending on the API response.
+ *
+ * This helper gives the PDF one normalized object.
+ */
+const normalizePumpSettings = (
+  pump = {}
+) => {
+  if (
+    !pump ||
+    typeof pump !== "object"
+  ) {
+    return {};
+  }
+
+  const nestedSettings =
+    pump?.settings ||
+    pump?.pumpSettings ||
+    pump?.pump ||
+    pump?.data?.settings ||
+    {};
+
+  return {
+    ...nestedSettings,
+    ...pump,
+  };
+};
+
+const getPumpName = (pump) => {
+  const settings =
+    normalizePumpSettings(
+      pump
+    );
+
+  return safeString(
+    settings?.pumpName ||
+      settings?.petrolPumpName ||
+      settings?.pump_name ||
+      settings?.name ||
+      settings?.businessName ||
+      settings?.business_name ||
       "Petrol Pump"
   );
+};
 
-const getOwnerName = (pump) =>
-  safeString(
-    pump?.ownerName ||
-      pump?.owner ||
+const getOwnerName = (pump) => {
+  const settings =
+    normalizePumpSettings(
+      pump
+    );
+
+  return safeString(
+    settings?.ownerName ||
+      settings?.owner ||
+      settings?.ownerFullName ||
+      settings?.authorizedPerson ||
+      settings?.authorizedPersonName ||
       ""
   );
+};
 
-const getCompanyName = (pump) =>
-  safeString(
-    pump?.companyName ||
-      pump?.oilCompanyName ||
-      pump?.oilCompany ||
+const getCompanyName = (pump) => {
+  const settings =
+    normalizePumpSettings(
+      pump
+    );
+
+  return safeString(
+    settings?.companyName ||
+      settings?.company ||
+      settings?.oilCompanyName ||
+      settings?.oilCompany ||
+      settings?.oilCompany_name ||
+      settings?.dealerName ||
+      settings?.dealer_name ||
       ""
   );
+};
 
-const getPumpPhone = (pump) =>
-  safeString(
-    pump?.phone ||
-      pump?.mobile ||
-      pump?.mobileNumber ||
+const getPumpPhone = (pump) => {
+  const settings =
+    normalizePumpSettings(
+      pump
+    );
+
+  return safeString(
+    settings?.phone ||
+      settings?.mobile ||
+      settings?.mobileNumber ||
+      settings?.contactNumber ||
+      settings?.contactPhone ||
       ""
   );
+};
 
-const getPumpEmail = (pump) =>
-  safeString(
-    pump?.email || ""
-  );
+const getPumpEmail = (pump) => {
+  const settings =
+    normalizePumpSettings(
+      pump
+    );
 
-const getPumpGstin = (pump) =>
-  safeString(
-    pump?.gstin ||
-      pump?.gstNo ||
+  return safeString(
+    settings?.email ||
+      settings?.emailAddress ||
       ""
   );
+};
 
-const getPumpAddress = (pump) =>
-  safeString(
-    pump?.address || ""
-  );
+const getPumpGstin = (pump) => {
+  const settings =
+    normalizePumpSettings(
+      pump
+    );
 
-const getPumpCity = (pump) =>
-  safeString(
-    pump?.city || ""
-  );
-
-const getPumpState = (pump) =>
-  safeString(
-    pump?.state || ""
-  );
-
-const getPumpPincode = (pump) =>
-  safeString(
-    pump?.pincode ||
-      pump?.pinCode ||
+  return safeString(
+    settings?.gstin ||
+      settings?.GSTIN ||
+      settings?.gstNo ||
+      settings?.gstNumber ||
+      settings?.gstNumber ||
       ""
   );
+};
+
+const getPumpAddress = (pump) => {
+  const settings =
+    normalizePumpSettings(
+      pump
+    );
+
+  return safeString(
+    settings?.address ||
+      settings?.addressLine1 ||
+      settings?.address1 ||
+      ""
+  );
+};
+
+const getPumpCity = (pump) => {
+  const settings =
+    normalizePumpSettings(
+      pump
+    );
+
+  return safeString(
+    settings?.city ||
+      settings?.town ||
+      ""
+  );
+};
+
+const getPumpState = (pump) => {
+  const settings =
+    normalizePumpSettings(
+      pump
+    );
+
+  return safeString(
+    settings?.state ||
+      settings?.stateName ||
+      ""
+  );
+};
+
+const getPumpDistrict = (pump) => {
+  const settings =
+    normalizePumpSettings(
+      pump
+    );
+
+  return safeString(
+    settings?.district ||
+      settings?.districtName ||
+      ""
+  );
+};
+
+const getPumpPincode = (pump) => {
+  const settings =
+    normalizePumpSettings(
+      pump
+    );
+
+  return safeString(
+    settings?.pincode ||
+      settings?.pinCode ||
+      settings?.postalCode ||
+      settings?.zipCode ||
+      ""
+  );
+};
+
+const getTermsAndConditions = (
+  pump
+) => {
+  const settings =
+    normalizePumpSettings(
+      pump
+    );
+
+  return safeString(
+    settings?.termsAndConditions ||
+      settings?.terms ||
+      settings?.termsText ||
+      ""
+  );
+};
 
 /* =====================================================
    PROFILE LOGO RESOLUTION
 ===================================================== */
 
+/*
+ * Extract a usable string from any logo format.
+ */
 const resolveLogoValue = (
   value
 ) => {
@@ -530,6 +672,7 @@ const resolveLogoValue = (
       value.secureUrl,
       value.path,
       value.src,
+      value.location,
     ];
 
     const resolved =
@@ -548,146 +691,52 @@ const resolveLogoValue = (
   return null;
 };
 
-const COMPANY_DOMAINS = {
-  "indian oil": "iocl.com",
-  "indian oil corporation":
-    "iocl.com",
-  iocl: "iocl.com",
-
-  "bharat petroleum":
-    "bharatpetroleum.in",
-  "bharat petroleum corporation":
-    "bharatpetroleum.in",
-  bpcl: "bharatpetroleum.in",
-
-  "hindustan petroleum":
-    "hindustanpetroleum.com",
-  "hindustan petroleum corporation":
-    "hindustanpetroleum.com",
-  hpcl:
-    "hindustanpetroleum.com",
-
-  nayara:
-    "nayaraenergy.com",
-  "nayara energy":
-    "nayaraenergy.com",
-
-  reliance: "ril.com",
-  "reliance industries":
-    "ril.com",
-
-  shell: "shell.com",
-  "shell india":
-    "shell.com",
-
-  "oil india":
-    "oil-india.com",
-  "oil india limited":
-    "oil-india.com",
-
-  "jio bp": "jiobp.com",
-  "jio-bp": "jiobp.com",
-
-  adani: "adani.com",
-  "adani total gas":
-    "adani.com",
-
-  gulf: "gulf.com",
-  "gulf oil":
-    "gulfoilltd.com",
-};
-
-const normalizeCompanyName = (
-  companyName
-) =>
-  safeString(companyName)
-    .toLowerCase()
-    .replace(/[.,()]/g, "")
-    .replace(
-      /\blimited\b/g,
-      ""
-    )
-    .replace(
-      /\bltd\b/g,
-      ""
-    )
-    .replace(
-      /\bcorporation\b/g,
-      ""
-    )
-    .replace(
-      /\s+/g,
-      " "
-    )
-    .trim();
-
-const getOnlineCompanyLogo = (
-  companyName
-) => {
-  const normalized =
-    normalizeCompanyName(
-      companyName
-    );
-
-  if (!normalized) {
-    return null;
-  }
-
-  let domain =
-    COMPANY_DOMAINS[
-      normalized
-    ];
-
-  if (!domain) {
-    const matched =
-      Object.keys(
-        COMPANY_DOMAINS
-      ).find(
-        (key) =>
-          normalized.includes(
-            key
-          ) ||
-          key.includes(
-            normalized
-          )
-      );
-
-    if (matched) {
-      domain =
-        COMPANY_DOMAINS[
-          matched
-        ];
-    }
-  }
-
-  if (!domain) {
-    return null;
-  }
-
-  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(
-    domain
-  )}&sz=256`;
-};
-
+/*
+ * Resolve the logo saved in Settings.
+ *
+ * IMPORTANT:
+ * No online company-logo fallback is used.
+ *
+ * Priority:
+ *
+ * 1. Explicit logo passed by CustomerLedger
+ * 2. logoUrl
+ * 3. logoURL
+ * 4. companyLogoUrl
+ * 5. companyLogo
+ * 6. pumpLogoUrl
+ * 7. pumpLogo
+ * 8. logo
+ */
 const getClientLogo = (
   pump,
   explicitLogoUrl = null
 ) => {
-  const explicit =
-    resolveLogoValue(
-      explicitLogoUrl
+  const settings =
+    normalizePumpSettings(
+      pump
     );
 
-  if (explicit) {
-    return explicit;
-  }
-
   const candidates = [
-    pump?.logoUrl,
-    pump?.logoURL,
-    pump?.companyLogo,
-    pump?.pumpLogo,
-    pump?.logo,
+    explicitLogoUrl,
+
+    settings?.logoUrl,
+    settings?.logoURL,
+
+    settings?.companyLogoUrl,
+    settings?.companyLogoURL,
+
+    settings?.companyLogo,
+
+    settings?.pumpLogoUrl,
+    settings?.pumpLogoURL,
+
+    settings?.pumpLogo,
+
+    settings?.logo,
+
+    settings?.businessLogo,
+    settings?.businessLogoUrl,
   ];
 
   for (
@@ -703,9 +752,96 @@ const getClientLogo = (
     }
   }
 
-  return getOnlineCompanyLogo(
-    getCompanyName(pump)
-  );
+  return null;
+};
+
+/* =====================================================
+   LOGO URL RESOLVER
+===================================================== */
+
+/*
+ * Settings may store:
+ *
+ * 1. https://example.com/logo.png
+ * 2. /uploads/logo.png
+ * 3. uploads/logo.png
+ * 4. data:image/png;base64,...
+ *
+ * Convert relative backend paths into absolute URLs.
+ */
+const resolveImageUrl = (
+  imageSource
+) => {
+  const value =
+    resolveLogoValue(
+      imageSource
+    );
+
+  if (!value) {
+    return null;
+  }
+
+  if (
+    value.startsWith(
+      "data:image/"
+    ) ||
+    value.startsWith(
+      "blob:"
+    )
+  ) {
+    return value;
+  }
+
+  if (
+    value.startsWith(
+      "http://"
+    ) ||
+    value.startsWith(
+      "https://"
+    )
+  ) {
+    return value;
+  }
+
+  const configuredApiUrl =
+    safeString(
+      import.meta.env
+        ?.VITE_API_URL
+    );
+
+  if (configuredApiUrl) {
+    const apiRoot =
+      configuredApiUrl
+        .replace(
+          /\/+$/,
+          ""
+        )
+        .replace(
+          /\/api$/i,
+          ""
+        );
+
+    const relativePath =
+      value.startsWith("/")
+        ? value
+        : `/${value}`;
+
+    return `${apiRoot}${relativePath}`;
+  }
+
+  if (
+    typeof window !==
+      "undefined"
+  ) {
+    return new URL(
+      value.startsWith("/")
+        ? value
+        : `/${value}`,
+      window.location.origin
+    ).href;
+  }
+
+  return value;
 };
 
 /* =====================================================
@@ -719,14 +855,23 @@ const loadImageAsDataURL = async (
     return null;
   }
 
+  const resolvedUrl =
+    resolveImageUrl(
+      imageSource
+    );
+
+  if (!resolvedUrl) {
+    return null;
+  }
+
   if (
-    typeof imageSource ===
+    typeof resolvedUrl ===
       "string" &&
-    imageSource.startsWith(
+    resolvedUrl.startsWith(
       "data:image/"
     )
   ) {
-    return imageSource;
+    return resolvedUrl;
   }
 
   const blobToDataURL = (
@@ -755,15 +900,16 @@ const loadImageAsDataURL = async (
       }
     );
 
-  const fetchImage = async (
-    url
-  ) => {
+  try {
     const response =
-      await fetch(url, {
-        method: "GET",
-        mode: "cors",
-        cache: "no-cache",
-      });
+      await fetch(
+        resolvedUrl,
+        {
+          method: "GET",
+          mode: "cors",
+          cache: "no-cache",
+        }
+      );
 
     if (!response.ok) {
       throw new Error(
@@ -784,39 +930,17 @@ const loadImageAsDataURL = async (
       );
     }
 
-    return blobToDataURL(
+    return await blobToDataURL(
       blob
     );
-  };
-
-  try {
-    return await fetchImage(
-      imageSource
-    );
-  } catch (directError) {
+  } catch (error) {
     console.warn(
-      "Direct company logo request failed:",
-      directError
+      "Unable to load Settings logo:",
+      error
     );
+
+    return null;
   }
-
-  try {
-    const proxyUrl =
-      `https://images.weserv.nl/?url=${encodeURIComponent(
-        imageSource
-      )}&w=512&h=512&fit=contain&output=png`;
-
-    return await fetchImage(
-      proxyUrl
-    );
-  } catch (proxyError) {
-    console.warn(
-      "Company logo proxy request failed:",
-      proxyError
-    );
-  }
-
-  return null;
 };
 
 /* =====================================================
@@ -857,15 +981,9 @@ export const exportLedgerPDF = async ({
     new Date();
 
   /*
-     Always derive the customer ledger
-     period from actual transaction history.
-
-     This intentionally ignores a stale/manual
-     billFrom value so the PDF always shows:
-
-     FIRST TRANSACTION DATE - LAST TRANSACTION DATE
-  */
-
+   * Always derive the customer ledger
+   * period from actual transaction history.
+   */
   const finalBillFrom =
     getBillPeriod(
       Array.isArray(entries)
@@ -874,35 +992,81 @@ export const exportLedgerPDF = async ({
       finalBillDate
     );
 
+  /*
+   * Normalize Settings first.
+   */
+  const pumpSettings =
+    normalizePumpSettings(
+      pump
+    );
+
+  /* ===================================================
+     SETTINGS VALUES
+  =================================================== */
+
   const pumpName =
-    getPumpName(pump);
+    getPumpName(
+      pumpSettings
+    );
 
   const ownerName =
-    getOwnerName(pump);
+    getOwnerName(
+      pumpSettings
+    );
 
   const companyName =
-    getCompanyName(pump);
+    getCompanyName(
+      pumpSettings
+    );
 
   const pumpPhone =
-    getPumpPhone(pump);
+    getPumpPhone(
+      pumpSettings
+    );
 
   const pumpEmail =
-    getPumpEmail(pump);
+    getPumpEmail(
+      pumpSettings
+    );
 
   const pumpGstin =
-    getPumpGstin(pump);
+    getPumpGstin(
+      pumpSettings
+    );
 
   const pumpAddress =
-    getPumpAddress(pump);
+    getPumpAddress(
+      pumpSettings
+    );
 
   const pumpCity =
-    getPumpCity(pump);
+    getPumpCity(
+      pumpSettings
+    );
 
   const pumpState =
-    getPumpState(pump);
+    getPumpState(
+      pumpSettings
+    );
+
+  const pumpDistrict =
+    getPumpDistrict(
+      pumpSettings
+    );
 
   const pumpPincode =
-    getPumpPincode(pump);
+    getPumpPincode(
+      pumpSettings
+    );
+
+  const settingsTerms =
+    getTermsAndConditions(
+      pumpSettings
+    );
+
+  /* ===================================================
+     CUSTOMER VALUES
+  =================================================== */
 
   const customerName =
     getCustomerName(
@@ -928,6 +1092,10 @@ export const exportLedgerPDF = async ({
     getVehicleNumber(
       customer
     );
+
+  /* ===================================================
+     SUMMARY VALUES
+  =================================================== */
 
   const totalPurchased =
     Number(
@@ -971,6 +1139,10 @@ export const exportLedgerPDF = async ({
         ).length
     );
 
+  /* ===================================================
+     CREATE PDF
+  =================================================== */
+
   const doc = new jsPDF({
     orientation: "portrait",
     unit: "mm",
@@ -1012,24 +1184,34 @@ export const exportLedgerPDF = async ({
   );
 
   /* ===================================================
-     RESOLVE PROFILE LOGO
+     RESOLVE SETTINGS LOGO
   =================================================== */
 
   let logoData = null;
 
   const finalLogo =
     getClientLogo(
-      pump,
+      pumpSettings,
       logoUrl
     );
 
   console.log(
-    "Company name:",
+    "[Ledger PDF] Settings:",
+    pumpSettings
+  );
+
+  console.log(
+    "[Ledger PDF] Pump name:",
+    pumpName
+  );
+
+  console.log(
+    "[Ledger PDF] Company:",
     companyName
   );
 
   console.log(
-    "Resolved company logo:",
+    "[Ledger PDF] Settings logo:",
     finalLogo
   );
 
@@ -1106,19 +1288,19 @@ export const exportLedgerPDF = async ({
 
   doc.setFontSize(7.5);
 
-  doc.text(
-    companyName
-      ? `DEALER - ${companyName.toUpperCase()}`
-      : "DEALER",
-    pageWidth / 2,
-    22,
-    {
-      align: "center",
-    }
-  );
+  if (companyName) {
+    doc.text(
+      `DEALER - ${companyName.toUpperCase()}`,
+      pageWidth / 2,
+      22,
+      {
+        align: "center",
+      }
+    );
+  }
 
   /* ===================================================
-     COMPANY LOGO — LEFT SIDE
+     SETTINGS LOGO — LEFT SIDE
   =================================================== */
 
   if (logoData) {
@@ -1135,7 +1317,7 @@ export const exportLedgerPDF = async ({
       );
     } catch (error) {
       console.warn(
-        "Unable to add company logo to PDF:",
+        "Unable to add Settings logo to PDF:",
         error
       );
     }
@@ -1145,14 +1327,16 @@ export const exportLedgerPDF = async ({
      PUMP ADDRESS
   =================================================== */
 
-  const addressText = [
+  const addressParts = [
     pumpAddress,
     pumpCity,
+    pumpDistrict,
     pumpState,
     pumpPincode,
-  ]
-    .filter(Boolean)
-    .join(", ");
+  ].filter(Boolean);
+
+  const addressText =
+    addressParts.join(", ");
 
   doc.setFont(
     "helvetica",
@@ -1323,16 +1507,6 @@ export const exportLedgerPDF = async ({
     "helvetica",
     "normal"
   );
-
-  /*
-     IMPORTANT:
-     This now displays:
-
-     First Transaction Date - Last Transaction Date
-
-     Example:
-     05/09/2026 - 19/09/2026
-  */
 
   doc.text(
     finalBillFrom,
@@ -2090,6 +2264,7 @@ export const exportLedgerPDF = async ({
   doc.setFontSize(5.7);
 
   const termsText =
+    settingsTerms ||
     "If bill is not paid on presentation, interest will be charged at 12% p.a. and supply will be suspended till bill payment.";
 
   doc.text(

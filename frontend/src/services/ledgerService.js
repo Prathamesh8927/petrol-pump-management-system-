@@ -203,7 +203,7 @@ export const getCustomerLedgerHistory =
 /**
  * Add a customer ledger payment.
  *
- * Expected data:
+ * Frontend contract:
  *
  * {
  *   customerId,
@@ -212,8 +212,17 @@ export const getCustomerLedgerHistory =
  *   note
  * }
  *
- * The backend remains responsible for
- * pumpId authorization.
+ * Backend contract:
+ *
+ * {
+ *   customerId,
+ *   amount,
+ *   entryDate,
+ *   note
+ * }
+ *
+ * This service converts paymentAmount
+ * to amount before sending the request.
  */
 export const addLedgerPayment = async (
   data
@@ -231,7 +240,8 @@ export const addLedgerPayment = async (
   }
 
   const paymentAmount = Number(
-    data.paymentAmount
+    data.paymentAmount ??
+      data.amount
   );
 
   if (
@@ -246,8 +256,23 @@ export const addLedgerPayment = async (
   const response = await api.post(
     "/ledger/payment",
     {
-      ...data,
-      paymentAmount,
+      customerId:
+        data.customerId,
+
+      /*
+       * IMPORTANT:
+       * Backend expects `amount`,
+       * not `paymentAmount`.
+       */
+      amount: paymentAmount,
+
+      entryDate:
+        data.entryDate,
+
+      note:
+        typeof data.note === "string"
+          ? data.note.trim()
+          : "",
     }
   );
 

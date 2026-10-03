@@ -10,6 +10,7 @@ import PasswordResetRequest from "../models/PasswordResetRequest.js";
 ========================================================= */
 
 const RESET_TOKEN_BYTES = 32;
+
 const RESET_TOKEN_EXPIRY_MINUTES = Math.min(
   60,
   Math.max(
@@ -23,6 +24,9 @@ const RESET_TOKEN_EXPIRY_MINUTES = Math.min(
 
 const RESET_TOKEN_EXPIRY_MS =
   RESET_TOKEN_EXPIRY_MINUTES * 60 * 1000;
+
+const MIN_RESET_PASSWORD_LENGTH = 12;
+const MAX_RESET_PASSWORD_LENGTH = 128;
 
 /* =========================================================
    HELPERS
@@ -74,7 +78,10 @@ const isValidResetToken = (token) => {
 };
 
 const isExpired = (date) => {
-  return !date || new Date(date).getTime() <= Date.now();
+  return (
+    !date ||
+    new Date(date).getTime() <= Date.now()
+  );
 };
 
 const getSafeErrorMessage = (error) => {
@@ -95,7 +102,9 @@ export const createPasswordResetRequest = async (
   res
 ) => {
   try {
-    const email = normalizeEmail(req.body?.email);
+    const email = normalizeEmail(
+      req.body?.email
+    );
 
     if (!email) {
       return res.status(400).json({
@@ -104,12 +113,16 @@ export const createPasswordResetRequest = async (
       });
     }
 
-    const user = await User.findOne({ email })
-      .select("_id email role active");
+    const user = await User.findOne({
+      email,
+    })
+      .select("_id email role active")
+      .lean();
 
     /*
-      Do not reveal whether an email exists.
-    */
+     * Do not reveal whether an email exists.
+     */
+
     if (!user) {
       return res.status(200).json({
         success: true,
@@ -119,8 +132,12 @@ export const createPasswordResetRequest = async (
     }
 
     /*
-      Super Admin does not use client password recovery.
-    */
+     * Super Admin does not use client password recovery.
+     *
+     * Keep the response generic so the role of an account
+     * cannot be discovered through this endpoint.
+     */
+
     if (
       String(user.role || "")
         .trim()
@@ -133,17 +150,24 @@ export const createPasswordResetRequest = async (
       });
     }
 
+    /*
+     * Keep the response generic for disabled accounts.
+     *
+     * This prevents account-state enumeration.
+     */
+
     if (!user.active) {
-      return res.status(403).json({
-        success: false,
-        message: "This account is currently disabled.",
-        code: "ACCOUNT_DISABLED",
+      return res.status(200).json({
+        success: true,
+        message:
+          "If the email is registered, a password reset request has been created.",
       });
     }
 
     /*
-      Prevent multiple pending requests.
-    */
+     * Prevent multiple pending requests.
+     */
+
     const existingPending =
       await PasswordResetRequest.findOne({
         userId: user._id,
@@ -158,18 +182,18 @@ export const createPasswordResetRequest = async (
         success: true,
         message:
           "A password reset request is already waiting for approval.",
-        requestId: existingPending._id,
-        status: existingPending.status,
+        requestId:
+          existingPending._id,
+        status:
+          existingPending.status,
       });
     }
 
     /*
-      Remove/replace stale approved requests only when
-      they have already expired.
+     * Check whether the user already has an active
+     * approved reset request.
+     */
 
-      An active approved request must remain the only
-      usable reset request for the user.
-    */
     const existingApproved =
       await PasswordResetRequest.findOne({
         userId: user._id,
@@ -191,16 +215,18 @@ export const createPasswordResetRequest = async (
         success: true,
         message:
           "Your previous password reset request has already been approved.",
-        requestId: existingApproved._id,
-        status: existingApproved.status,
+        requestId:
+          existingApproved._id,
+        status:
+          existingApproved.status,
       });
     }
 
     /*
-      If an old approved request exists but its token
-      has expired, mark it completed so a new request
-      can be created.
-    */
+     * If an old approved request has expired,
+     * invalidate it so a new request can be created.
+     */
+
     if (
       existingApproved &&
       isExpired(
@@ -225,6 +251,13 @@ export const createPasswordResetRequest = async (
       );
     }
 
+    /*
+     * Create a new pending request.
+     *
+     * The database index remains the final protection
+     * against duplicate token hashes.
+     */
+
     const request =
       await PasswordResetRequest.create({
         userId: user._id,
@@ -236,8 +269,10 @@ export const createPasswordResetRequest = async (
       success: true,
       message:
         "Password reset request sent to Super Admin for approval.",
-      requestId: request._id,
-      status: request.status,
+      requestId:
+        request._id,
+      status:
+        request.status,
     });
   } catch (error) {
     console.error(
@@ -247,7 +282,8 @@ export const createPasswordResetRequest = async (
 
     return res.status(500).json({
       success: false,
-      message: getSafeErrorMessage(error),
+      message:
+        getSafeErrorMessage(error),
     });
   }
 };
@@ -277,12 +313,17 @@ export const getPasswordResetStatus = async (
     const tokenHash =
       hashResetToken(token);
 
+    /*
+     * resetTokenHash is select:false in the model,
+     * but querying by it explicitly is allowed.
+     */
+
     const request =
       await PasswordResetRequest.findOne({
         resetTokenHash: tokenHash,
       })
         .select(
-          "_id email status rejectionReason createdAt approvedAt completedAt resetTokenExpiresAt"
+          "_id status resetTokenExpiresAt"
         )
         .lean();
 
@@ -296,29 +337,32 @@ export const getPasswordResetStatus = async (
 
     if (
       request.status === "approved" &&
-      isExpired(request.resetTokenExpiresAt)
+      isExpired(
+        request.resetTokenExpiresAt
+      )
     ) {
       return res.status(400).json({
         success: false,
         message:
           "This password reset token has expired.",
-        code: "RESET_TOKEN_EXPIRED",
+        code:
+          "RESET_TOKEN_EXPIRED",
       });
     }
+
+    /*
+     * Public token-status endpoint should expose
+     * only information required by the reset UI.
+     */
 
     return res.status(200).json({
       success: true,
       request: {
         id: request._id,
-        email: request.email,
         status: request.status,
-        rejectionReason:
-          request.rejectionReason || "",
-        createdAt: request.createdAt,
-        approvedAt: request.approvedAt,
-        completedAt: request.completedAt,
         expiresAt:
-          request.resetTokenExpiresAt || null,
+          request.resetTokenExpiresAt ||
+          null,
       },
     });
   } catch (error) {
@@ -360,6 +404,10 @@ export const resetPassword = async (
       req.body?.confirmPassword || ""
     );
 
+    /* -----------------------------------------------
+       TOKEN VALIDATION
+    ------------------------------------------------ */
+
     if (!isValidResetToken(token)) {
       return res.status(400).json({
         success: false,
@@ -368,7 +416,14 @@ export const resetPassword = async (
       });
     }
 
-    if (!password || !confirmPassword) {
+    /* -----------------------------------------------
+       PASSWORD REQUIRED
+    ------------------------------------------------ */
+
+    if (
+      !password ||
+      !confirmPassword
+    ) {
       return res.status(400).json({
         success: false,
         message:
@@ -376,23 +431,39 @@ export const resetPassword = async (
       });
     }
 
-    if (password.length < 6) {
+    /* -----------------------------------------------
+       PASSWORD LENGTH
+    ------------------------------------------------ */
+
+    if (
+      password.length <
+      MIN_RESET_PASSWORD_LENGTH
+    ) {
       return res.status(400).json({
         success: false,
         message:
-          "Password must contain at least 6 characters.",
+          `Password must contain at least ${MIN_RESET_PASSWORD_LENGTH} characters.`,
       });
     }
 
-    if (password.length > 128) {
+    if (
+      password.length >
+      MAX_RESET_PASSWORD_LENGTH
+    ) {
       return res.status(400).json({
         success: false,
         message:
-          "Password must not exceed 128 characters.",
+          `Password must not exceed ${MAX_RESET_PASSWORD_LENGTH} characters.`,
       });
     }
 
-    if (password !== confirmPassword) {
+    /* -----------------------------------------------
+       PASSWORD CONFIRMATION
+    ------------------------------------------------ */
+
+    if (
+      password !== confirmPassword
+    ) {
       return res.status(400).json({
         success: false,
         message:
@@ -401,11 +472,15 @@ export const resetPassword = async (
     }
 
     /*
-      Hash before transaction to avoid holding the
-      MongoDB transaction open during bcrypt work.
-    */
+     * Hash before the transaction so bcrypt work does not
+     * unnecessarily hold a MongoDB transaction open.
+     */
+
     const hashedPassword =
-      await bcrypt.hash(password, 12);
+      await bcrypt.hash(
+        password,
+        12
+      );
 
     const tokenHash =
       hashResetToken(token);
@@ -415,9 +490,10 @@ export const resetPassword = async (
     await session.withTransaction(
       async () => {
         /*
-          Only an APPROVED request with the matching
-          token hash can be completed.
-        */
+         * Only an APPROVED request with the exact
+         * corresponding token hash can be completed.
+         */
+
         const request =
           await PasswordResetRequest.findOne({
             resetTokenHash: tokenHash,
@@ -428,13 +504,16 @@ export const resetPassword = async (
           const error = new Error(
             "RESET_TOKEN_INVALID"
           );
+
           error.statusCode = 400;
+
           throw error;
         }
 
         /*
-          Token must have an expiry.
-        */
+         * Token must have an expiry.
+         */
+
         if (
           !request.resetTokenExpiresAt ||
           isExpired(
@@ -444,9 +523,15 @@ export const resetPassword = async (
           const error = new Error(
             "RESET_TOKEN_EXPIRED"
           );
+
           error.statusCode = 400;
+
           throw error;
         }
+
+        /*
+         * Load the actual user inside the transaction.
+         */
 
         const user =
           await User.findById(
@@ -457,7 +542,9 @@ export const resetPassword = async (
           const error = new Error(
             "PASSWORD_RESET_USER_NOT_FOUND"
           );
+
           error.statusCode = 404;
+
           throw error;
         }
 
@@ -465,14 +552,39 @@ export const resetPassword = async (
           const error = new Error(
             "PASSWORD_RESET_ACCOUNT_DISABLED"
           );
+
           error.statusCode = 403;
+
           throw error;
         }
 
         /*
-          Update directly because the password is
-          already bcrypt-hashed.
-        */
+         * IMPORTANT SECURITY CHANGE
+         *
+         * Password reset must invalidate every existing
+         * JWT issued before the password change.
+         *
+         * Therefore:
+         *
+         * password
+         * tokenVersion + 1
+         * passwordChangedAt
+         *
+         * are updated atomically.
+         *
+         * The password has already been bcrypt-hashed,
+         * so updateOne() is intentionally used instead
+         * of save(), preventing a second bcrypt hash.
+         */
+
+        const currentTokenVersion =
+          Number.isInteger(
+            Number(user.tokenVersion)
+          ) &&
+          Number(user.tokenVersion) >= 0
+            ? Number(user.tokenVersion)
+            : 0;
+
         const userUpdate =
           await User.updateOne(
             {
@@ -481,30 +593,61 @@ export const resetPassword = async (
             },
             {
               $set: {
-                password: hashedPassword,
+                password:
+                  hashedPassword,
+                passwordChangedAt:
+                  new Date(),
+              },
+              $inc: {
+                tokenVersion: 1,
               },
             },
-            { session }
+            {
+              session,
+            }
           );
 
-        if (userUpdate.modifiedCount !== 1) {
+        if (
+          userUpdate.modifiedCount !== 1
+        ) {
           const error = new Error(
             "PASSWORD_UPDATE_FAILED"
           );
+
           error.statusCode = 409;
+
           throw error;
         }
 
         /*
-          Mark request completed and immediately
-          destroy the reset credential.
+         * IMPORTANT:
+         *
+         * currentTokenVersion is intentionally read
+         * before the update so the resulting version
+         * is:
+         *
+         * current + 1
+         *
+         * The actual database increment is performed
+         * atomically by MongoDB.
+         */
 
-          This makes the token one-time-use.
-        */
+        void currentTokenVersion;
+
+        /*
+         * Immediately invalidate the reset credential.
+         *
+         * The hash is removed from MongoDB, so the same
+         * token cannot be used again.
+         */
+
         request.status = "completed";
-        request.completedAt = new Date();
+        request.completedAt =
+          new Date();
 
-        request.resetTokenHash = undefined;
+        request.resetTokenHash =
+          undefined;
+
         request.resetTokenExpiresAt =
           undefined;
 
@@ -527,7 +670,7 @@ export const resetPassword = async (
     return res.status(200).json({
       success: true,
       message:
-        "Password changed successfully.",
+        "Password changed successfully. Please login again on all devices.",
     });
   } catch (error) {
     console.error(
@@ -541,10 +684,13 @@ export const resetPassword = async (
     const messages = {
       400:
         "This password reset token is invalid, expired, or has already been used.",
+
       403:
         "This account is disabled.",
+
       404:
         "Password reset account not found.",
+
       409:
         "Password reset could not be completed.",
     };
@@ -590,16 +736,18 @@ export const getPasswordResetRequests =
           "completed",
         ].includes(normalizedStatus)
       ) {
-        filter.status = normalizedStatus;
+        filter.status =
+          normalizedStatus;
       }
 
       if (
         search &&
         String(search).trim()
       ) {
-        const searchText = escapeRegex(
-          String(search).trim()
-        );
+        const searchText =
+          escapeRegex(
+            String(search).trim()
+          );
 
         filter.email = {
           $regex: searchText,
@@ -652,9 +800,10 @@ export const getPasswordResetRequests =
       ]);
 
       /*
-        Never return resetTokenHash or
-        resetTokenExpiresAt to Super Admin.
-      */
+       * Never return the reset-token hash or its
+       * expiration credential to the admin listing.
+       */
+
       const sanitizedRequests =
         requests.map((request) => {
           const {
@@ -668,14 +817,16 @@ export const getPasswordResetRequests =
 
       return res.status(200).json({
         success: true,
-        count: sanitizedRequests.length,
+        count:
+          sanitizedRequests.length,
         total,
         page: parsedPage,
         limit: parsedLimit,
         totalPages: Math.ceil(
           total / parsedLimit
         ),
-        requests: sanitizedRequests,
+        requests:
+          sanitizedRequests,
       });
     } catch (error) {
       console.error(
@@ -733,7 +884,8 @@ export const approvePasswordReset =
       await mongoose.startSession();
 
     try {
-      const { id } = req.params;
+      const { id } =
+        req.params;
 
       if (!isValidObjectId(id)) {
         return res.status(400).json({
@@ -754,7 +906,8 @@ export const approvePasswordReset =
         });
       }
 
-      let approvalResult = null;
+      let approvalResult =
+        null;
 
       await session.withTransaction(
         async () => {
@@ -777,7 +930,9 @@ export const approvePasswordReset =
               const error = new Error(
                 "REQUEST_NOT_FOUND"
               );
+
               error.statusCode = 404;
+
               throw error;
             }
 
@@ -805,6 +960,7 @@ export const approvePasswordReset =
             );
 
             error.statusCode = 404;
+
             throw error;
           }
 
@@ -814,13 +970,15 @@ export const approvePasswordReset =
             );
 
             error.statusCode = 400;
+
             throw error;
           }
 
           /*
-            Generate a cryptographically secure,
-            single-use token.
-          */
+           * Generate a cryptographically secure,
+           * 256-bit random token.
+           */
+
           const resetToken =
             generateResetToken();
 
@@ -832,13 +990,23 @@ export const approvePasswordReset =
           const resetTokenExpiresAt =
             getResetTokenExpiry();
 
-          request.status = "approved";
-          request.approvedBy = adminId;
-          request.approvedAt = new Date();
+          request.status =
+            "approved";
 
-          request.rejectedBy = null;
-          request.rejectedAt = null;
-          request.rejectionReason = "";
+          request.approvedBy =
+            adminId;
+
+          request.approvedAt =
+            new Date();
+
+          request.rejectedBy =
+            null;
+
+          request.rejectedAt =
+            null;
+
+          request.rejectionReason =
+            "";
 
           request.resetTokenHash =
             resetTokenHash;
@@ -850,11 +1018,24 @@ export const approvePasswordReset =
             session,
           });
 
+          /*
+           * Keep the current response contract for
+           * backward compatibility with your existing
+           * Super Admin frontend.
+           *
+           * Later, when email/SMS/secure notification
+           * delivery is implemented, the raw token should
+           * be delivered through that channel instead.
+           */
+
           approvalResult = {
             id: request._id,
-            status: request.status,
-            userId: request.userId,
-            email: request.email,
+            status:
+              request.status,
+            userId:
+              request.userId,
+            email:
+              request.email,
             approvedAt:
               request.approvedAt,
             expiresAt:
@@ -864,18 +1045,12 @@ export const approvePasswordReset =
         }
       );
 
-      /*
-        IMPORTANT:
-        In production, resetToken should preferably be
-        delivered through an email/SMS/secure notification
-        service rather than returned in an admin API response.
-      */
-
       return res.status(200).json({
         success: true,
         message:
           "Password reset request approved.",
-        request: approvalResult,
+        request:
+          approvalResult,
       });
     } catch (error) {
       console.error(
@@ -898,9 +1073,10 @@ export const approvePasswordReset =
       ) {
         return res.status(400).json({
           success: false,
-          message: error.currentStatus
-            ? `Request is already ${error.currentStatus}.`
-            : "This user account is disabled.",
+          message:
+            error.currentStatus
+              ? `Request is already ${error.currentStatus}.`
+              : "This user account is disabled.",
         });
       }
 
@@ -925,7 +1101,8 @@ export const rejectPasswordReset =
       await mongoose.startSession();
 
     try {
-      const { id } = req.params;
+      const { id } =
+        req.params;
 
       const reason = String(
         req.body?.reason ||
@@ -960,7 +1137,8 @@ export const rejectPasswordReset =
         });
       }
 
-      let rejectedRequest = null;
+      let rejectedRequest =
+        null;
 
       await session.withTransaction(
         async () => {
@@ -985,6 +1163,7 @@ export const rejectPasswordReset =
               );
 
               error.statusCode = 404;
+
               throw error;
             }
 
@@ -993,19 +1172,35 @@ export const rejectPasswordReset =
             );
 
             error.statusCode = 400;
+
             error.currentStatus =
               existing.status;
 
             throw error;
           }
 
-          request.status = "rejected";
-          request.rejectedBy = adminId;
-          request.rejectedAt = new Date();
-          request.rejectionReason = reason;
+          request.status =
+            "rejected";
 
-          request.approvedBy = null;
-          request.approvedAt = null;
+          request.rejectedBy =
+            adminId;
+
+          request.rejectedAt =
+            new Date();
+
+          request.rejectionReason =
+            reason;
+
+          request.approvedBy =
+            null;
+
+          request.approvedAt =
+            null;
+
+          /*
+           * Rejected requests must never retain
+           * a usable reset credential.
+           */
 
           request.resetTokenHash =
             undefined;
@@ -1019,7 +1214,8 @@ export const rejectPasswordReset =
 
           rejectedRequest = {
             id: request._id,
-            status: request.status,
+            status:
+              request.status,
             rejectionReason:
               request.rejectionReason,
             rejectedAt:
@@ -1032,7 +1228,8 @@ export const rejectPasswordReset =
         success: true,
         message:
           "Password reset request rejected.",
-        request: rejectedRequest,
+        request:
+          rejectedRequest,
       });
     } catch (error) {
       console.error(
@@ -1055,9 +1252,10 @@ export const rejectPasswordReset =
       ) {
         return res.status(400).json({
           success: false,
-          message: error.currentStatus
-            ? `Request is already ${error.currentStatus}.`
-            : "Unable to reject password reset request.",
+          message:
+            error.currentStatus
+              ? `Request is already ${error.currentStatus}.`
+              : "Unable to reject password reset request.",
         });
       }
 

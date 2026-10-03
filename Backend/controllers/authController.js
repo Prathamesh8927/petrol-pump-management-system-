@@ -58,30 +58,63 @@ const isValidEmail = (email) => {
     return false;
   }
 
-  const emailRegex =
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   return emailRegex.test(normalizedEmail);
 };
 
 /* =====================================================
+   PASSWORD CONFIGURATION
+===================================================== */
+
+const MIN_PASSWORD_LENGTH = 12;
+const MAX_PASSWORD_LENGTH = 128;
+
+/* =====================================================
+   DUMMY BCRYPT HASH
+
+   Used when an account does not exist so that login
+   attempts do not return significantly faster simply
+   because the email address is unknown.
+
+   This hash is intentionally static and is NOT a real
+   user's password.
+===================================================== */
+
+const DUMMY_PASSWORD_HASH =
+  "$2b$12$C6UzMDM.H6dfI/f/IKcEe.Vk7pM8v8e4KxRjJ9L4m4x6q5Kx1uJ2a";
+
+/* =====================================================
    GENERATE JWT
 
    IMPORTANT:
-   Only userId is stored in JWT.
+   JWT intentionally does NOT contain:
 
-   Do NOT store:
    - role
    - pumpId
    - permissions
+   - employeeId
 
-   Those values must always come from MongoDB.
+   These values must always come from the database.
+
+   tokenVersion is included only for server-side
+   session revocation.
+
+   When User.tokenVersion changes, all older tokens
+   become invalid.
 ===================================================== */
 
-const generateToken = (userId) => {
+const generateToken = (userId, tokenVersion = 0) => {
+  const normalizedTokenVersion = Number.isInteger(
+    Number(tokenVersion)
+  )
+    ? Number(tokenVersion)
+    : 0;
+
   return jwt.sign(
     {
       userId: userId.toString(),
+      tokenVersion: normalizedTokenVersion,
     },
     getJwtSecret(),
     {
@@ -114,8 +147,7 @@ export const login = async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          "Email and password are required.",
+        message: "Email and password are required.",
       });
     }
 
@@ -129,8 +161,7 @@ export const login = async (req, res) => {
     if (!isValidEmail(normalizedEmail)) {
       return res.status(400).json({
         success: false,
-        message:
-          "Please enter a valid email address.",
+        message: "Please enter a valid email address.",
       });
     }
 
@@ -141,11 +172,10 @@ export const login = async (req, res) => {
        operations on extremely large input.
     ------------------------------------------------ */
 
-    if (password.length > 128) {
+    if (password.length > MAX_PASSWORD_LENGTH) {
       return res.status(400).json({
         success: false,
-        message:
-          "Invalid email or password.",
+        message: "Invalid email or password.",
       });
     }
 
@@ -173,6 +203,19 @@ export const login = async (req, res) => {
     ------------------------------------------------ */
 
     if (!user) {
+      /*
+       * Perform a dummy bcrypt comparison for normal
+       * nonexistent accounts.
+       *
+       * This makes the common "unknown email" path
+       * computationally closer to the real password
+       * verification path.
+       */
+      await bcrypt.compare(
+        password,
+        DUMMY_PASSWORD_HASH
+      );
+
       /* ---------------------------------------------
          CHECK PENDING REGISTRATION
       --------------------------------------------- */
@@ -221,8 +264,7 @@ export const login = async (req, res) => {
 
       return res.status(401).json({
         success: false,
-        message:
-          "Invalid email or password.",
+        message: "Invalid email or password.",
       });
     }
 
@@ -268,8 +310,7 @@ export const login = async (req, res) => {
       return res.status(403).json({
         success: false,
         code: "INVALID_ROLE",
-        message:
-          "Invalid account role.",
+        message: "Invalid account role.",
       });
     }
 
@@ -291,8 +332,7 @@ export const login = async (req, res) => {
 
       return res.status(403).json({
         success: false,
-        code:
-          "ACCOUNT_CONFIGURATION_ERROR",
+        code: "ACCOUNT_CONFIGURATION_ERROR",
         message:
           "Your account is not correctly configured. Please contact Super Admin.",
       });
@@ -312,8 +352,7 @@ export const login = async (req, res) => {
 
       return res.status(401).json({
         success: false,
-        message:
-          "Invalid email or password.",
+        message: "Invalid email or password.",
       });
     }
 
@@ -330,8 +369,7 @@ export const login = async (req, res) => {
     if (!passwordMatched) {
       return res.status(401).json({
         success: false,
-        message:
-          "Invalid email or password.",
+        message: "Invalid email or password.",
       });
     }
 
@@ -355,13 +393,37 @@ export const login = async (req, res) => {
     }
 
     /* -----------------------------------------------
+       TOKEN VERSION
+
+       tokenVersion was added for server-side session
+       revocation.
+
+       Older users created before this field existed
+       are safely treated as version 0.
+    ------------------------------------------------ */
+
+    const tokenVersion =
+      Number.isInteger(Number(user.tokenVersion)) &&
+      Number(user.tokenVersion) >= 0
+        ? Number(user.tokenVersion)
+        : 0;
+
+    /* -----------------------------------------------
        GENERATE TOKEN
 
-       JWT contains only userId.
+       JWT contains:
+
+       - userId
+       - tokenVersion
+
+       JWT does NOT contain role/pumpId.
     ------------------------------------------------ */
 
     const token =
-      generateToken(user._id);
+      generateToken(
+        user._id,
+        tokenVersion
+      );
 
     /* -----------------------------------------------
        RESPONSE
@@ -408,8 +470,7 @@ export const login = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message:
-        "Login failed.",
+      message: "Login failed.",
       code: "LOGIN_ERROR",
     });
   }
@@ -494,44 +555,48 @@ export const register = async (req, res) => {
     if (cleanName.length > 100) {
       return res.status(400).json({
         success: false,
-        message:
-          "Name is too long.",
+        message: "Name is too long.",
       });
     }
 
     if (cleanPumpName.length > 200) {
       return res.status(400).json({
         success: false,
-        message:
-          "Pump name is too long.",
+        message: "Pump name is too long.",
       });
     }
 
     if (cleanPhone.length > 30) {
       return res.status(400).json({
         success: false,
-        message:
-          "Phone number is too long.",
+        message: "Phone number is too long.",
       });
     }
 
     /* -----------------------------------------------
        PASSWORD VALIDATION
+
+       Production baseline:
+       minimum 12 characters.
     ------------------------------------------------ */
 
-    if (password.length < 6) {
+    if (
+      password.length < MIN_PASSWORD_LENGTH
+    ) {
       return res.status(400).json({
         success: false,
         message:
-          "Password must contain at least 6 characters.",
+          `Password must contain at least ${MIN_PASSWORD_LENGTH} characters.`,
       });
     }
 
-    if (password.length > 128) {
+    if (
+      password.length > MAX_PASSWORD_LENGTH
+    ) {
       return res.status(400).json({
         success: false,
         message:
-          "Password cannot contain more than 128 characters.",
+          `Password cannot contain more than ${MAX_PASSWORD_LENGTH} characters.`,
       });
     }
 
@@ -578,8 +643,7 @@ export const register = async (req, res) => {
     if (existingPending) {
       return res.status(409).json({
         success: false,
-        code:
-          "REGISTRATION_PENDING",
+        code: "REGISTRATION_PENDING",
         message:
           "A registration request for this email is already pending approval.",
       });

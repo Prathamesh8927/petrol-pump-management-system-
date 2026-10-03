@@ -10,8 +10,7 @@ import authMiddleware from "../middleware/authMiddleware.js";
 
 import loginRateLimiter from "../middleware/loginRateLimiter.js";
 
-const router =
-  express.Router();
+const router = express.Router();
 
 /* =====================================================
    LOGIN

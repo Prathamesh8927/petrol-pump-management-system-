@@ -703,7 +703,7 @@ export const getDeletedDataById =
   async (req, res) => {
     try {
       const pumpId =
-        getAuthorizedPumpId();
+        getAuthorizedPumpId(req);
 
       const deletedRecordId =
         req.params?.id;

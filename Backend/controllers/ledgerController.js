@@ -1,700 +1,333 @@
+
 import mongoose from "mongoose";
 
 import LedgerCustomer from "../models/LedgerCustomer.js";
 import LedgerEntry from "../models/LedgerEntry.js";
 
-import {
-  createDeletedRecord,
-} from "../services/recoveryService.js";
-
 /* =====================================================
-   CONSTANTS
+   HELPERS
 ===================================================== */
-
-const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
-
-const BUSINESS_TIMEZONE =
-  process.env.BUSINESS_TIMEZONE ||
-  "Asia/Kolkata";
-
-/* =====================================================
-   DATE HELPERS
-===================================================== */
-
-const isValidDateString = (value) => {
-  if (
-    typeof value !== "string" ||
-    !DATE_REGEX.test(value)
-  ) {
-    return false;
-  }
-
-  const [
-    year,
-    month,
-    day,
-  ] = value.split("-").map(Number);
-
-  const date = new Date(
-    Date.UTC(
-      year,
-      month - 1,
-      day
-    )
-  );
-
-  return (
-    date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day
-  );
-};
-
-const formatBusinessDate = (date) => {
-  try {
-    return new Intl.DateTimeFormat(
-      "en-CA",
-      {
-        timeZone:
-          BUSINESS_TIMEZONE,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }
-    ).format(date);
-  } catch (error) {
-    console.error(
-      "BUSINESS DATE FORMAT ERROR:",
-      error.message
-    );
-
-    return "";
-  }
-};
 
 const todayString = () =>
-  formatBusinessDate(
-    new Date()
-  );
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 
-/* =====================================================
-   OBJECT ID HELPERS
-===================================================== */
+const normalizeDate = (value) => {
+  const date = String(value || "").trim();
 
-const isValidObjectId = (
-  value
-) =>
-  mongoose.Types.ObjectId.isValid(
-    value
-  );
+  if (!date) {
+    return todayString();
+  }
 
-const normalizeObjectId = (
-  value
-) => {
-  if (
-    !isValidObjectId(value)
-  ) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return null;
   }
 
-  return new mongoose.Types.ObjectId(
-    value
-  );
-};
+  const parsed = new Date(`${date}T00:00:00+05:30`);
 
-/* =====================================================
-   GET AUTHENTICATED USER ID
-===================================================== */
-
-const getAuthenticatedUserId = (
-  req
-) => {
-  const userId =
-    req.user?._id ||
-    req.user?.id ||
-    req.user?.userId ||
-    null;
-
-  return isValidObjectId(
-    userId
-  )
-    ? userId
-    : null;
-};
-
-/* =====================================================
-   GET AUTHORIZED PUMP ID
-===================================================== */
-
-const getAuthorizedPumpId = (
-  req
-) => {
-  const pumpId =
-    req.user?.pumpId?._id ||
-    req.user?.pumpId ||
-    req.user?.pumpID ||
-    req.user?.pump?.pumpId ||
-    null;
-
-  return isValidObjectId(
-    pumpId
-  )
-    ? pumpId
-    : null;
-};
-
-/* =====================================================
-   VALIDATE ENTRY DATE
-===================================================== */
-
-const getEntryDate = (
-  value
-) => {
-  const date =
-    value === undefined ||
-    value === null ||
-    String(value).trim() === ""
-      ? todayString()
-      : String(value).trim();
-
-  if (
-    !isValidDateString(date)
-  ) {
-    const error = new Error(
-      "Entry date must be in YYYY-MM-DD format"
-    );
-
-    error.statusCode = 400;
-
-    throw error;
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
   }
 
   return date;
 };
 
-/* =====================================================
-   CALCULATE CUSTOMER SUMMARY
-===================================================== */
+const roundMoney = (value) =>
+  Number(Number(value).toFixed(2));
 
-const calculateCustomerSummary =
-  async (
-    pumpId,
-    customerId
-  ) => {
-    const entries =
-      await LedgerEntry.find(
-        {
-          pumpId,
-          customerId,
-        },
-        {
-          entryType: 1,
-          totalAmount: 1,
-          paidAmount: 1,
-          paymentAmount: 1,
-        }
-      )
-        .lean();
+const getAuthorizedPumpId = (req) => {
+  const pumpId = req.user?.pumpId;
 
-    const purchases =
-      entries.filter(
-        (entry) =>
-          entry.entryType ===
-          "purchase"
-      );
-
-    const payments =
-      entries.filter(
-        (entry) =>
-          entry.entryType ===
-          "payment"
-      );
-
-    const totalPurchased =
-      purchases.reduce(
-        (
-          total,
-          entry
-        ) =>
-          total +
-          Number(
-            entry.totalAmount || 0
-          ),
-        0
-      );
-
-    const purchasePaid =
-      purchases.reduce(
-        (
-          total,
-          entry
-        ) =>
-          total +
-          Number(
-            entry.paidAmount || 0
-          ),
-        0
-      );
-
-    const paymentReceived =
-      payments.reduce(
-        (
-          total,
-          entry
-        ) =>
-          total +
-          Number(
-            entry.paymentAmount || 0
-          ),
-        0
-      );
-
-    const totalPaid =
-      purchasePaid +
-      paymentReceived;
-
-    const totalPending =
-      Math.max(
-        totalPurchased -
-          totalPaid,
-        0
-      );
-
-    return {
-      totalPurchased,
-      totalPaid,
-      totalPending,
-
-      purchaseCount:
-        purchases.length,
-
-      paymentCount:
-        payments.length,
-    };
-  };
-
-/* =====================================================
-   CALCULATE ALL CUSTOMER SUMMARIES
-===================================================== */
-
-const calculateAllCustomerSummaries =
-  async (
-    pumpId,
-    customerIds
-  ) => {
-    if (
-      !Array.isArray(
-        customerIds
-      ) ||
-      customerIds.length === 0
-    ) {
-      return new Map();
-    }
-
-    const normalizedPumpId =
-      normalizeObjectId(
-        pumpId
-      );
-
-    if (!normalizedPumpId) {
-      return new Map();
-    }
-
-    const validCustomerIds =
-      customerIds.filter(
-        (customerId) =>
-          isValidObjectId(
-            customerId
-          )
-      );
-
-    if (
-      validCustomerIds.length === 0
-    ) {
-      return new Map();
-    }
-
-    const summaries =
-      await LedgerEntry.aggregate(
-        [
-          {
-            $match: {
-              pumpId:
-                normalizedPumpId,
-
-              customerId: {
-                $in:
-                  validCustomerIds,
-              },
-            },
-          },
-
-          {
-            $group: {
-              _id: {
-                customerId:
-                  "$customerId",
-
-                entryType:
-                  "$entryType",
-              },
-
-              totalAmount: {
-                $sum: {
-                  $cond: [
-                    {
-                      $eq: [
-                        "$entryType",
-                        "purchase",
-                      ],
-                    },
-                    {
-                      $ifNull: [
-                        "$totalAmount",
-                        0,
-                      ],
-                    },
-                    0,
-                  ],
-                },
-              },
-
-              paidAmount: {
-                $sum: {
-                  $cond: [
-                    {
-                      $eq: [
-                        "$entryType",
-                        "purchase",
-                      ],
-                    },
-                    {
-                      $ifNull: [
-                        "$paidAmount",
-                        0,
-                      ],
-                    },
-                    0,
-                  ],
-                },
-              },
-
-              paymentAmount: {
-                $sum: {
-                  $cond: [
-                    {
-                      $eq: [
-                        "$entryType",
-                        "payment",
-                      ],
-                    },
-                    {
-                      $ifNull: [
-                        "$paymentAmount",
-                        0,
-                      ],
-                    },
-                    0,
-                  ],
-                },
-              },
-
-              count: {
-                $sum: 1,
-              },
-            },
-          },
-        ]
-      );
-
-    const summaryMap =
-      new Map();
-
-    validCustomerIds.forEach(
-      (customerId) => {
-        summaryMap.set(
-          customerId.toString(),
-          {
-            totalPurchased: 0,
-            totalPaid: 0,
-            totalPending: 0,
-            purchaseCount: 0,
-            paymentCount: 0,
-          }
-        );
-      }
+  if (!pumpId) {
+    const error = new Error(
+      "Authenticated pump information is missing."
     );
 
-    summaries.forEach(
-      (item) => {
-        const customerId =
-          item._id.customerId.toString();
+    error.statusCode = 403;
+    error.code = "PUMP_ID_MISSING";
 
-        const current =
-          summaryMap.get(
-            customerId
-          ) || {
-            totalPurchased: 0,
-            totalPaid: 0,
-            totalPending: 0,
-            purchaseCount: 0,
-            paymentCount: 0,
-          };
+    throw error;
+  }
 
-        if (
-          item._id.entryType ===
-          "purchase"
-        ) {
-          current.totalPurchased +=
-            Number(
-              item.totalAmount || 0
-            );
+  return pumpId;
+};
 
-          current.totalPaid +=
-            Number(
-              item.paidAmount || 0
-            );
+const getAuthorizedUserId = (req) => {
+  return (
+    req.user?._id ||
+    req.user?.userId ||
+    null
+  );
+};
 
-          current.purchaseCount +=
-            Number(
-              item.count || 0
-            );
-        }
+const calculateCustomerSummary = async (
+  pumpId,
+  customerId,
+  session = null
+) => {
+  let query = LedgerEntry.find({
+    pumpId,
+    customerId,
+  });
 
-        if (
-          item._id.entryType ===
-          "payment"
-        ) {
-          current.totalPaid +=
-            Number(
-              item.paymentAmount || 0
-            );
+  if (session) {
+    query = query.session(session);
+  }
 
-          current.paymentCount +=
-            Number(
-              item.count || 0
-            );
-        }
+  const entries = await query;
 
-        current.totalPending =
-          Math.max(
-            current.totalPurchased -
-              current.totalPaid,
-            0
-          );
+  const purchases = entries.filter(
+    (entry) =>
+      entry.entryType === "purchase"
+  );
 
-        summaryMap.set(
-          customerId,
-          current
-        );
-      }
-    );
+  const payments = entries.filter(
+    (entry) =>
+      entry.entryType === "payment"
+  );
 
-    return summaryMap;
+  const totalPurchased = roundMoney(
+    purchases.reduce(
+      (total, entry) =>
+        total +
+        Number(
+          entry.totalAmount || 0
+        ),
+      0
+    )
+  );
+
+  const purchasePaid = roundMoney(
+    purchases.reduce(
+      (total, entry) =>
+        total +
+        Number(
+          entry.paidAmount || 0
+        ),
+      0
+    )
+  );
+
+  const paymentReceived = roundMoney(
+    payments.reduce(
+      (total, entry) =>
+        total +
+        Number(
+          entry.paymentAmount || 0
+        ),
+      0
+    )
+  );
+
+  const totalPaid = roundMoney(
+    purchasePaid +
+      paymentReceived
+  );
+
+  const totalPending = roundMoney(
+    Math.max(
+      totalPurchased -
+        totalPaid,
+      0
+    )
+  );
+
+  return {
+    totalPurchased,
+    totalPaid,
+    totalPending,
+    purchaseCount:
+      purchases.length,
+    paymentCount:
+      payments.length,
   };
+};
 
 /* =====================================================
    ADD CUSTOMER
 ===================================================== */
 
-export const addLedgerCustomer =
-  async (req, res) => {
-    try {
-      const {
-        name,
-        phone = "",
-        vehicleNumber = "",
-        address = "",
-        note = "",
-      } = req.body || {};
+export const addLedgerCustomer = async (
+  req,
+  res
+) => {
+  try {
+    const pumpId =
+      getAuthorizedPumpId(req);
 
-      const pumpId =
-        getAuthorizedPumpId(req);
+    const {
+      name,
+      phone = "",
+      vehicleNumber = "",
+      address = "",
+      note = "",
+    } = req.body || {};
 
-      if (!pumpId) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Pump ID is required.",
-        });
-      }
+    const normalizedName =
+      String(name || "").trim();
 
-      if (
-        typeof name !== "string" ||
-        !name.trim()
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Customer name is required",
-        });
-      }
+    const normalizedPhone =
+      String(phone || "").trim();
 
-      const normalizedPhone =
-        String(
-          phone || ""
-        ).trim();
-
-      if (normalizedPhone) {
-        const existingCustomer =
-          await LedgerCustomer.findOne(
-            {
-              pumpId,
-              phone:
-                normalizedPhone,
-              status:
-                "active",
-            }
-          ).lean();
-
-        if (existingCustomer) {
-          return res.status(409).json({
-            success: false,
-
-            message:
-              "Customer already exists. Open the existing ledger and add a new purchase.",
-
-            customer:
-              existingCustomer,
-          });
-        }
-      }
-
-      try {
-        const customer =
-          await LedgerCustomer.create(
-            {
-              pumpId,
-
-              name:
-                name.trim(),
-
-              phone:
-                normalizedPhone,
-
-              vehicleNumber:
-                String(
-                  vehicleNumber || ""
-                )
-                  .trim()
-                  .toUpperCase(),
-
-              address:
-                String(
-                  address || ""
-                ).trim(),
-
-              note:
-                String(
-                  note || ""
-                ).trim(),
-
-              currentBalance: 0,
-
-              status:
-                "active",
-            }
-          );
-
-        return res.status(201).json({
-          success: true,
-
-          message:
-            "Customer added successfully",
-
-          customer,
-        });
-      } catch (error) {
-        if (
-          error?.code === 11000
-        ) {
-          return res.status(409).json({
-            success: false,
-
-            message:
-              "Customer with this phone number already exists.",
-          });
-        }
-
-        throw error;
-      }
-    } catch (error) {
-      console.error(
-        "ADD LEDGER CUSTOMER ERROR:",
-        error
-      );
-
-      return res.status(500).json({
+    if (!normalizedName) {
+      return res.status(400).json({
         success: false,
-
         message:
-          "Unable to add customer",
+          "Customer name is required",
+        code: "CUSTOMER_NAME_REQUIRED",
       });
     }
-  };
+
+    if (normalizedName.length > 150) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Customer name cannot exceed 150 characters",
+        code: "CUSTOMER_NAME_TOO_LONG",
+      });
+    }
+
+    if (normalizedPhone.length > 30) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Phone number cannot exceed 30 characters",
+        code: "CUSTOMER_PHONE_TOO_LONG",
+      });
+    }
+
+    let existingCustomer = null;
+
+    if (normalizedPhone) {
+      existingCustomer =
+        await LedgerCustomer.findOne({
+          pumpId,
+          phone: normalizedPhone,
+          status: "active",
+        });
+    }
+
+    if (existingCustomer) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Customer already exists. Open the existing ledger and add a new purchase.",
+        customer:
+          existingCustomer,
+        code: "CUSTOMER_ALREADY_EXISTS",
+      });
+    }
+
+    const customer =
+      await LedgerCustomer.create({
+        pumpId,
+
+        name:
+          normalizedName,
+
+        phone:
+          normalizedPhone,
+
+        vehicleNumber:
+          String(
+            vehicleNumber || ""
+          )
+            .trim()
+            .toUpperCase(),
+
+        address:
+          String(
+            address || ""
+          ).trim(),
+
+        note:
+          String(
+            note || ""
+          ).trim(),
+
+        currentBalance:
+          0,
+
+        status:
+          "active",
+      });
+
+    return res.status(201).json({
+      success: true,
+
+      message:
+        "Customer added successfully",
+
+      customer,
+    });
+  } catch (error) {
+    console.error(
+      "ADD LEDGER CUSTOMER ERROR:",
+      error
+    );
+
+    return res.status(
+      error?.statusCode || 500
+    ).json({
+      success: false,
+
+      message:
+        error?.message ||
+        "Unable to add customer",
+
+      code:
+        error?.code ||
+        "ADD_LEDGER_CUSTOMER_ERROR",
+    });
+  }
+};
 
 /* =====================================================
    GET ALL CUSTOMERS
 ===================================================== */
 
-export const getLedgerCustomers =
-  async (req, res) => {
-    try {
-      const pumpId =
-        getAuthorizedPumpId(req);
+export const getLedgerCustomers = async (
+  req,
+  res
+) => {
+  try {
+    const pumpId =
+      getAuthorizedPumpId(req);
 
-      if (!pumpId) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Pump ID is required.",
-        });
-      }
+    const customers =
+      await LedgerCustomer.find({
+        pumpId,
 
-      const customers =
-        await LedgerCustomer.find({
-          pumpId,
-          status: "active",
-        })
-          .sort({
-            createdAt: -1,
-          })
-          .lean();
+        status:
+          "active",
+      }).sort({
+        createdAt: -1,
+      });
 
-      const customerIds =
+    const customersWithSummary =
+      await Promise.all(
         customers.map(
-          (customer) =>
-            customer._id
-        );
-
-      const summaryMap =
-        await calculateAllCustomerSummaries(
-          pumpId,
-          customerIds
-        );
-
-      const customersWithSummary =
-        customers.map(
-          (customer) => {
+          async (customer) => {
             const summary =
-              summaryMap.get(
-                customer._id.toString()
-              ) || {
-                totalPurchased: 0,
-                totalPaid: 0,
-                totalPending: 0,
-                purchaseCount: 0,
-                paymentCount: 0,
-              };
+              await calculateCustomerSummary(
+                pumpId,
+                customer._id
+              );
 
             return {
-              ...customer,
+              ...customer.toObject(),
               ...summary,
             };
           }
-        );
+        )
+      );
 
-      const totalPurchased =
+    const totalPurchased =
+      roundMoney(
         customersWithSummary.reduce(
           (
             total,
@@ -706,9 +339,11 @@ export const getLedgerCustomers =
                 0
             ),
           0
-        );
+        )
+      );
 
-      const totalPaid =
+    const totalPaid =
+      roundMoney(
         customersWithSummary.reduce(
           (
             total,
@@ -720,9 +355,11 @@ export const getLedgerCustomers =
                 0
             ),
           0
-        );
+        )
+      );
 
-      const totalPending =
+    const totalPending =
+      roundMoney(
         customersWithSummary.reduce(
           (
             total,
@@ -734,156 +371,168 @@ export const getLedgerCustomers =
                 0
             ),
           0
-        );
-
-      return res.status(200).json({
-        success: true,
-
-        count:
-          customersWithSummary.length,
-
-        customers:
-          customersWithSummary,
-
-        totalPurchased,
-        totalPaid,
-        totalPending,
-      });
-    } catch (error) {
-      console.error(
-        "GET LEDGER CUSTOMERS ERROR:",
-        error
+        )
       );
 
-      return res.status(500).json({
-        success: false,
+    return res.status(200).json({
+      success: true,
 
-        message:
-          "Unable to load ledger customers",
-      });
-    }
-  };
+      count:
+        customersWithSummary.length,
+
+      customers:
+        customersWithSummary,
+
+      totalPurchased,
+      totalPaid,
+      totalPending,
+    });
+  } catch (error) {
+    console.error(
+      "GET LEDGER CUSTOMERS ERROR:",
+      error
+    );
+
+    return res.status(
+      error?.statusCode || 500
+    ).json({
+      success: false,
+
+      message:
+        error?.message ||
+        "Unable to load ledger customers",
+
+      code:
+        error?.code ||
+        "GET_LEDGER_CUSTOMERS_ERROR",
+    });
+  }
+};
 
 /* =====================================================
    GET ONE CUSTOMER
 ===================================================== */
 
-export const getCustomerLedger =
-  async (req, res) => {
-    try {
-      const { id } =
-        req.params;
+export const getCustomerLedger = async (
+  req,
+  res
+) => {
+  try {
+    const pumpId =
+      getAuthorizedPumpId(req);
 
-      const pumpId =
-        getAuthorizedPumpId(req);
+    const { id } =
+      req.params;
 
-      if (!pumpId) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Pump ID is required.",
-        });
-      }
-
-      if (
-        !isValidObjectId(id)
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Invalid customer ID",
-        });
-      }
-
-      const customer =
-        await LedgerCustomer.findOne(
-          {
-            _id: id,
-            pumpId,
-          }
-        );
-
-      if (!customer) {
-        return res.status(404).json({
-          success: false,
-          message:
-            "Customer not found",
-        });
-      }
-
-      const summary =
-        await calculateCustomerSummary(
-          pumpId,
-          customer._id
-        );
-
-      return res.status(200).json({
-        success: true,
-
-        customer: {
-          ...customer.toObject(),
-          ...summary,
-        },
-      });
-    } catch (error) {
-      console.error(
-        "GET CUSTOMER LEDGER ERROR:",
-        error
-      );
-
-      return res.status(500).json({
+    if (
+      !mongoose.Types.ObjectId.isValid(
+        id
+      )
+    ) {
+      return res.status(400).json({
         success: false,
-
         message:
-          "Unable to load customer",
+          "Invalid customer ID",
+        code: "INVALID_CUSTOMER_ID",
       });
     }
-  };
+
+    const customer =
+      await LedgerCustomer.findOne({
+        _id: id,
+
+        pumpId,
+      });
+
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Customer not found",
+        code: "CUSTOMER_NOT_FOUND",
+      });
+    }
+
+    const summary =
+      await calculateCustomerSummary(
+        pumpId,
+        customer._id
+      );
+
+    return res.status(200).json({
+      success: true,
+
+      customer: {
+        ...customer.toObject(),
+        ...summary,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "GET CUSTOMER LEDGER ERROR:",
+      error
+    );
+
+    return res.status(
+      error?.statusCode || 500
+    ).json({
+      success: false,
+
+      message:
+        error?.message ||
+        "Unable to load customer",
+
+      code:
+        error?.code ||
+        "GET_CUSTOMER_LEDGER_ERROR",
+    });
+  }
+};
 
 /* =====================================================
    UPDATE CUSTOMER
 ===================================================== */
 
 export const updateLedgerCustomer =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
-      const { id } =
-        req.params;
-
       const pumpId =
         getAuthorizedPumpId(req);
 
-      if (!pumpId) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Pump ID is required.",
-        });
-      }
+      const { id } =
+        req.params;
 
       if (
-        !isValidObjectId(id)
+        !mongoose.Types.ObjectId.isValid(
+          id
+        )
       ) {
         return res.status(400).json({
           success: false,
           message:
             "Invalid customer ID",
+          code:
+            "INVALID_CUSTOMER_ID",
         });
       }
 
       const customer =
-        await LedgerCustomer.findOne(
-          {
-            _id: id,
-            pumpId,
-          }
-        );
+        await LedgerCustomer.findOne({
+          _id: id,
+
+          pumpId,
+        });
 
       if (!customer) {
         return res.status(404).json({
           success: false,
           message:
             "Customer not found",
+          code:
+            "CUSTOMER_NOT_FOUND",
         });
       }
 
@@ -898,62 +547,30 @@ export const updateLedgerCustomer =
       if (
         name !== undefined
       ) {
-        const normalizedName =
+        const value =
           String(name).trim();
 
-        if (!normalizedName) {
+        if (!value) {
           return res.status(400).json({
             success: false,
             message:
               "Customer name is required",
+            code:
+              "CUSTOMER_NAME_REQUIRED",
           });
         }
 
         customer.name =
-          normalizedName;
+          value;
       }
 
       if (
         phone !== undefined
       ) {
-        const normalizedPhone =
-          String(
-            phone || ""
-          ).trim();
-
-        if (
-          normalizedPhone &&
-          normalizedPhone !==
-            customer.phone
-        ) {
-          const duplicate =
-            await LedgerCustomer.findOne(
-              {
-                _id: {
-                  $ne: customer._id,
-                },
-
-                pumpId,
-
-                phone:
-                  normalizedPhone,
-
-                status:
-                  "active",
-              }
-            ).lean();
-
-          if (duplicate) {
-            return res.status(409).json({
-              success: false,
-              message:
-                "Another active customer already uses this phone number.",
-            });
-          }
-        }
-
         customer.phone =
-          normalizedPhone;
+          String(
+            phone
+          ).trim();
       }
 
       if (
@@ -962,7 +579,7 @@ export const updateLedgerCustomer =
       ) {
         customer.vehicleNumber =
           String(
-            vehicleNumber || ""
+            vehicleNumber
           )
             .trim()
             .toUpperCase();
@@ -974,7 +591,7 @@ export const updateLedgerCustomer =
       ) {
         customer.address =
           String(
-            address || ""
+            address
           ).trim();
       }
 
@@ -983,25 +600,11 @@ export const updateLedgerCustomer =
       ) {
         customer.note =
           String(
-            note || ""
+            note
           ).trim();
       }
 
-      try {
-        await customer.save();
-      } catch (error) {
-        if (
-          error?.code === 11000
-        ) {
-          return res.status(409).json({
-            success: false,
-            message:
-              "Another customer already uses this phone number.",
-          });
-        }
-
-        throw error;
-      }
+      await customer.save();
 
       return res.status(200).json({
         success: true,
@@ -1017,11 +620,18 @@ export const updateLedgerCustomer =
         error
       );
 
-      return res.status(500).json({
+      return res.status(
+        error?.statusCode || 500
+      ).json({
         success: false,
 
         message:
+          error?.message ||
           "Unable to update customer",
+
+        code:
+          error?.code ||
+          "UPDATE_LEDGER_CUSTOMER_ERROR",
       });
     }
   };
@@ -1031,120 +641,55 @@ export const updateLedgerCustomer =
 ===================================================== */
 
 export const deleteLedgerCustomer =
-  async (req, res) => {
-    const session =
-      await mongoose.startSession();
-
+  async (
+    req,
+    res
+  ) => {
     try {
-      const { id } =
-        req.params;
-
       const pumpId =
         getAuthorizedPumpId(req);
 
-      if (!pumpId) {
-        return res.status(400).json({
-          success: false,
-
-          message:
-            "Pump ID is required.",
-        });
-      }
+      const { id } =
+        req.params;
 
       if (
-        !isValidObjectId(id)
+        !mongoose.Types.ObjectId.isValid(
+          id
+        )
       ) {
         return res.status(400).json({
           success: false,
-
           message:
             "Invalid customer ID",
+          code:
+            "INVALID_CUSTOMER_ID",
         });
       }
 
-      const deletedBy =
-        getAuthenticatedUserId(req);
+      const customer =
+        await LedgerCustomer.findOne({
+          _id: id,
 
-      if (!deletedBy) {
-        return res.status(401).json({
+          pumpId,
+        });
+
+      if (!customer) {
+        return res.status(404).json({
           success: false,
-
           message:
-            "Authenticated user not found.",
+            "Customer not found",
+          code:
+            "CUSTOMER_NOT_FOUND",
         });
       }
 
-      await session.withTransaction(
-        async () => {
-          const customer =
-            await LedgerCustomer.findOne(
-              {
-                _id: id,
-                pumpId,
-              }
-            ).session(session);
+      customer.status =
+        "inactive";
 
-          if (!customer) {
-            const error =
-              new Error(
-                "Customer not found"
-              );
-
-            error.statusCode = 404;
-
-            throw error;
-          }
-
-          if (
-            customer.status ===
-            "inactive"
-          ) {
-            const error =
-              new Error(
-                "Customer is already inactive."
-              );
-
-            error.statusCode = 409;
-
-            throw error;
-          }
-
-          await createDeletedRecord({
-            document:
-              customer,
-
-            originalCollection:
-              LedgerCustomer
-                .collection
-                .name,
-
-            originalModel:
-              "LedgerCustomer",
-
-            pumpId,
-
-            deletedBy,
-
-            req,
-
-            deletionReason:
-              "Ledger customer removed by user",
-
-            session,
-          });
-
-          customer.status =
-            "inactive";
-
-          await customer.save({
-            session,
-          });
-        }
-      );
+      await customer.save();
 
       return res.status(200).json({
         success: true,
-
         message:
           "Customer removed successfully",
       });
@@ -1155,19 +700,18 @@ export const deleteLedgerCustomer =
       );
 
       return res.status(
-        error.statusCode || 500
+        error?.statusCode || 500
       ).json({
         success: false,
 
         message:
-          error.statusCode === 404
-            ? "Customer not found"
-            : error.statusCode === 409
-            ? "Customer is already inactive."
-            : "Unable to remove customer",
+          error?.message ||
+          "Unable to remove customer",
+
+        code:
+          error?.code ||
+          "DELETE_LEDGER_CUSTOMER_ERROR",
       });
-    } finally {
-      await session.endSession();
     }
   };
 
@@ -1176,11 +720,20 @@ export const deleteLedgerCustomer =
 ===================================================== */
 
 export const addCustomerPurchase =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     const session =
       await mongoose.startSession();
 
     try {
+      const pumpId =
+        getAuthorizedPumpId(req);
+
+      const userId =
+        getAuthorizedUserId(req);
+
       const {
         customerId,
       } = req.params;
@@ -1193,30 +746,12 @@ export const addCustomerPurchase =
         note = "",
       } = req.body || {};
 
-      const pumpId =
-        getAuthorizedPumpId(req);
-
-      const createdBy =
-        getAuthenticatedUserId(req);
-
-      if (!pumpId) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Pump ID is required.",
-        });
-      }
-
-      if (!createdBy) {
-        return res.status(401).json({
-          success: false,
-          message:
-            "Authenticated user not found.",
-        });
-      }
+      /* -------------------------------------------------
+         VALIDATE CUSTOMER ID
+      ------------------------------------------------- */
 
       if (
-        !isValidObjectId(
+        !mongoose.Types.ObjectId.isValid(
           customerId
         )
       ) {
@@ -1224,8 +759,14 @@ export const addCustomerPurchase =
           success: false,
           message:
             "Invalid customer ID",
+          code:
+            "INVALID_CUSTOMER_ID",
         });
       }
+
+      /* -------------------------------------------------
+         VALIDATE FUEL TYPE
+      ------------------------------------------------- */
 
       const normalizedFuel =
         String(
@@ -1244,18 +785,27 @@ export const addCustomerPurchase =
       ) {
         return res.status(400).json({
           success: false,
-
           message:
             "Select Petrol or Diesel",
+          code:
+            "INVALID_FUEL_TYPE",
         });
       }
 
+      /* -------------------------------------------------
+         VALIDATE AMOUNTS
+      ------------------------------------------------- */
+
       const total =
-        Number(totalAmount);
+        roundMoney(
+          Number(totalAmount)
+        );
 
       const paid =
-        Number(
-          paidAmount || 0
+        roundMoney(
+          Number(
+            paidAmount ?? 0
+          )
         );
 
       if (
@@ -1264,9 +814,10 @@ export const addCustomerPurchase =
       ) {
         return res.status(400).json({
           success: false,
-
           message:
             "Total amount must be greater than 0",
+          code:
+            "INVALID_TOTAL_AMOUNT",
         });
       }
 
@@ -1277,34 +828,76 @@ export const addCustomerPurchase =
       ) {
         return res.status(400).json({
           success: false,
-
           message:
             "Paid amount must be between 0 and total amount",
+          code:
+            "INVALID_PAID_AMOUNT",
         });
       }
 
+      /* -------------------------------------------------
+         VALIDATE DATE
+      ------------------------------------------------- */
+
       const normalizedEntryDate =
-        getEntryDate(
-          entryDate
+        normalizeDate(entryDate);
+
+      if (!normalizedEntryDate) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid purchase date. Use YYYY-MM-DD.",
+          code:
+            "INVALID_ENTRY_DATE",
+        });
+      }
+
+      /* -------------------------------------------------
+         VALIDATE NOTE
+      ------------------------------------------------- */
+
+      const normalizedNote =
+        String(
+          note || ""
+        ).trim();
+
+      if (
+        normalizedNote.length > 500
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Note cannot exceed 500 characters.",
+          code:
+            "NOTE_TOO_LONG",
+        });
+      }
+
+      const pending =
+        roundMoney(
+          total - paid
         );
 
-      let entry;
-      let customer;
+      /* -------------------------------------------------
+         ATOMIC PURCHASE CREATION
+      ------------------------------------------------- */
+
+      let result = null;
 
       await session.withTransaction(
         async () => {
-          customer =
-            await LedgerCustomer.findOne(
-              {
-                _id:
-                  customerId,
-
-                pumpId,
-
-                status:
-                  "active",
-              }
-            ).session(session);
+          /*
+           * Always re-read the customer using the
+           * authenticated pumpId.
+           *
+           * Never trust a frontend pumpId.
+           */
+          const customer =
+            await LedgerCustomer.findOne({
+              _id: customerId,
+              pumpId,
+              status: "active",
+            }).session(session);
 
           if (!customer) {
             const error =
@@ -1313,14 +906,19 @@ export const addCustomerPurchase =
               );
 
             error.statusCode = 404;
+            error.code =
+              "CUSTOMER_NOT_FOUND";
 
             throw error;
           }
 
-          const pending =
-            total - paid;
-
-          const entries =
+          /*
+           * Create the purchase ledger entry.
+           *
+           * This is intentionally done inside the same
+           * transaction as the customer balance update.
+           */
+          const createdEntries =
             await LedgerEntry.create(
               [
                 {
@@ -1351,42 +949,63 @@ export const addCustomerPurchase =
                     normalizedEntryDate,
 
                   note:
-                    String(
-                      note || ""
-                    ).trim(),
+                    normalizedNote,
 
-                  createdBy,
+                  createdBy:
+                    userId || undefined,
                 },
               ],
               {
                 session,
+                ordered: true,
               }
             );
 
-          entry =
-            entries[0];
+          const entry =
+            createdEntries[0];
+
+          if (!entry) {
+            const error =
+              new Error(
+                "Purchase entry could not be created."
+              );
+
+            error.statusCode = 500;
+            error.code =
+              "PURCHASE_ENTRY_CREATE_FAILED";
+
+            throw error;
+          }
 
           /*
-           * Keep the customer's cached balance
-           * synchronized with the ledger entries.
+           * Update customer pending balance atomically.
            */
           customer.currentBalance =
-            Number(
-              customer.currentBalance ||
-                0
-            ) + pending;
+            roundMoney(
+              Number(
+                customer.currentBalance ||
+                  0
+              ) + pending
+            );
 
           await customer.save({
             session,
           });
+
+          const summary =
+            await calculateCustomerSummary(
+              pumpId,
+              customer._id,
+              session
+            );
+
+          result = {
+            entry,
+            customer,
+            summary,
+          };
         }
       );
-
-      const summary =
-        await calculateCustomerSummary(
-          pumpId,
-          customer._id
-        );
 
       return res.status(201).json({
         success: true,
@@ -1394,29 +1013,69 @@ export const addCustomerPurchase =
         message:
           "Purchase added successfully",
 
-        entry,
+        entry:
+          result.entry,
 
-        customer,
+        customer:
+          result.customer,
 
-        summary,
+        summary:
+          result.summary,
       });
     } catch (error) {
       console.error(
         "ADD CUSTOMER PURCHASE ERROR:",
-        error
+        {
+          message:
+            error?.message,
+          code:
+            error?.code,
+          name:
+            error?.name,
+          statusCode:
+            error?.statusCode,
+          customerId:
+            req.params?.customerId,
+          pumpId:
+            req.user?.pumpId,
+        }
       );
 
-      return res.status(
-        error.statusCode || 500
-      ).json({
+      /*
+       * Return validation/conflict/not-found errors
+       * instead of hiding everything behind HTTP 500.
+       */
+      const status =
+        Number.isInteger(
+          error?.statusCode
+        )
+          ? error.statusCode
+          : error?.name ===
+              "ValidationError"
+            ? 400
+            : error?.name ===
+                "CastError"
+              ? 400
+              : error?.code ===
+                  11000
+                ? 409
+                : 500;
+
+      return res.status(status).json({
         success: false,
 
         message:
-          error.statusCode === 400
-            ? error.message
-            : error.statusCode === 404
-            ? "Customer not found"
-            : "Unable to add purchase",
+          error?.name ===
+          "ValidationError"
+            ? "Purchase data is invalid."
+            : error?.code === 11000
+              ? "This purchase could not be added because a duplicate record was detected."
+              : error?.message ||
+                "Unable to add purchase",
+
+        code:
+          error?.code ||
+          "ADD_CUSTOMER_PURCHASE_ERROR",
       });
     } finally {
       await session.endSession();
@@ -1428,11 +1087,20 @@ export const addCustomerPurchase =
 ===================================================== */
 
 export const addLedgerPayment =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     const session =
       await mongoose.startSession();
 
     try {
+      const pumpId =
+        getAuthorizedPumpId(req);
+
+      const userId =
+        getAuthorizedUserId(req);
+
       const {
         customerId,
         amount,
@@ -1440,30 +1108,8 @@ export const addLedgerPayment =
         note = "",
       } = req.body || {};
 
-      const pumpId =
-        getAuthorizedPumpId(req);
-
-      const createdBy =
-        getAuthenticatedUserId(req);
-
-      if (!pumpId) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Pump ID is required.",
-        });
-      }
-
-      if (!createdBy) {
-        return res.status(401).json({
-          success: false,
-          message:
-            "Authenticated user not found.",
-        });
-      }
-
       if (
-        !isValidObjectId(
+        !mongoose.Types.ObjectId.isValid(
           customerId
         )
       ) {
@@ -1471,11 +1117,15 @@ export const addLedgerPayment =
           success: false,
           message:
             "Invalid customer ID",
+          code:
+            "INVALID_CUSTOMER_ID",
         });
       }
 
       const payment =
-        Number(amount);
+        roundMoney(
+          Number(amount)
+        );
 
       if (
         !Number.isFinite(payment) ||
@@ -1483,38 +1133,53 @@ export const addLedgerPayment =
       ) {
         return res.status(400).json({
           success: false,
-
           message:
             "Payment amount must be greater than 0",
+          code:
+            "INVALID_PAYMENT_AMOUNT",
         });
       }
 
       const normalizedEntryDate =
-        getEntryDate(
-          entryDate
-        );
+        normalizeDate(entryDate);
 
-      let entry;
-      let customer;
+      if (!normalizedEntryDate) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid payment date. Use YYYY-MM-DD.",
+          code:
+            "INVALID_ENTRY_DATE",
+        });
+      }
+
+      const normalizedNote =
+        String(
+          note || ""
+        ).trim();
+
+      if (
+        normalizedNote.length > 500
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Note cannot exceed 500 characters.",
+          code:
+            "NOTE_TOO_LONG",
+        });
+      }
+
+      let result = null;
 
       await session.withTransaction(
         async () => {
-          /*
-           * First read the customer inside the
-           * transaction.
-           */
-          customer =
-            await LedgerCustomer.findOne(
-              {
-                _id:
-                  customerId,
-
-                pumpId,
-
-                status:
-                  "active",
-              }
-            ).session(session);
+          const customer =
+            await LedgerCustomer.findOne({
+              _id: customerId,
+              pumpId,
+              status: "active",
+            }).session(session);
 
           if (!customer) {
             const error =
@@ -1523,14 +1188,18 @@ export const addLedgerPayment =
               );
 
             error.statusCode = 404;
+            error.code =
+              "CUSTOMER_NOT_FOUND";
 
             throw error;
           }
 
           const currentBalance =
-            Number(
-              customer.currentBalance ||
-                0
+            roundMoney(
+              Number(
+                customer.currentBalance ||
+                  0
+              )
             );
 
           if (
@@ -1545,14 +1214,13 @@ export const addLedgerPayment =
               );
 
             error.statusCode = 400;
+            error.code =
+              "PAYMENT_EXCEEDS_PENDING";
 
             throw error;
           }
 
-          /*
-           * Create the payment ledger entry.
-           */
-          const entries =
+          const createdEntries =
             await LedgerEntry.create(
               [
                 {
@@ -1583,85 +1251,61 @@ export const addLedgerPayment =
                     normalizedEntryDate,
 
                   note:
-                    String(
-                      note || ""
-                    ).trim(),
+                    normalizedNote,
 
-                  createdBy,
+                  createdBy:
+                    userId || undefined,
                 },
               ],
               {
                 session,
+                ordered: true,
               }
             );
 
-          entry =
-            entries[0];
+          const entry =
+            createdEntries[0];
 
-          /*
-           * IMPORTANT:
-           *
-           * Use an atomic conditional update
-           * so concurrent payments cannot make
-           * currentBalance negative.
-           *
-           * Example:
-           *
-           * Balance = ₹5,000
-           *
-           * Two simultaneous ₹5,000 payments
-           * must NOT both succeed.
-           */
-          const updatedCustomer =
-            await LedgerCustomer.findOneAndUpdate(
-              {
-                _id:
-                  customer._id,
-
-                pumpId,
-
-                status:
-                  "active",
-
-                currentBalance: {
-                  $gte:
-                    payment,
-                },
-              },
-              {
-                $inc: {
-                  currentBalance:
-                    -payment,
-                },
-              },
-              {
-                new: true,
-
-                session,
-              }
-            );
-
-          if (!updatedCustomer) {
+          if (!entry) {
             const error =
               new Error(
-                "Customer balance changed. Please retry the payment."
+                "Payment entry could not be created."
               );
 
-            error.statusCode = 409;
+            error.statusCode = 500;
+            error.code =
+              "PAYMENT_ENTRY_CREATE_FAILED";
 
             throw error;
           }
 
-          customer =
-            updatedCustomer;
+          customer.currentBalance =
+            roundMoney(
+              Math.max(
+                currentBalance -
+                  payment,
+                0
+              )
+            );
+
+          await customer.save({
+            session,
+          });
+
+          const summary =
+            await calculateCustomerSummary(
+              pumpId,
+              customer._id,
+              session
+            );
+
+          result = {
+            entry,
+            customer,
+            summary,
+          };
         }
       );
-
-      const summary =
-        await calculateCustomerSummary(
-          pumpId,
-          customer._id
-        );
 
       return res.status(201).json({
         success: true,
@@ -1669,11 +1313,14 @@ export const addLedgerPayment =
         message:
           "Payment added successfully",
 
-        entry,
+        entry:
+          result.entry,
 
-        customer,
+        customer:
+          result.customer,
 
-        summary,
+        summary:
+          result.summary,
       });
     } catch (error) {
       console.error(
@@ -1681,18 +1328,37 @@ export const addLedgerPayment =
         error
       );
 
-      return res.status(
-        error.statusCode || 500
-      ).json({
+      const status =
+        Number.isInteger(
+          error?.statusCode
+        )
+          ? error.statusCode
+          : error?.name ===
+              "ValidationError"
+            ? 400
+            : error?.name ===
+                "CastError"
+              ? 400
+              : error?.code ===
+                  11000
+                ? 409
+                : 500;
+
+      return res.status(status).json({
         success: false,
 
         message:
-          error.statusCode === 400 ||
-          error.statusCode === 409
-            ? error.message
-            : error.statusCode === 404
-            ? "Customer not found"
-            : "Unable to add payment",
+          error?.name ===
+          "ValidationError"
+            ? "Payment data is invalid."
+            : error?.code === 11000
+              ? "This payment could not be added because a duplicate record was detected."
+              : error?.message ||
+                "Unable to add payment",
+
+        code:
+          error?.code ||
+          "ADD_LEDGER_PAYMENT_ERROR",
       });
     } finally {
       await session.endSession();
@@ -1704,25 +1370,20 @@ export const addLedgerPayment =
 ===================================================== */
 
 export const getCustomerLedgerHistory =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
+      const pumpId =
+        getAuthorizedPumpId(req);
+
       const {
         customerId,
       } = req.params;
 
-      const pumpId =
-        getAuthorizedPumpId(req);
-
-      if (!pumpId) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Pump ID is required.",
-        });
-      }
-
       if (
-        !isValidObjectId(
+        !mongoose.Types.ObjectId.isValid(
           customerId
         )
       ) {
@@ -1730,24 +1391,26 @@ export const getCustomerLedgerHistory =
           success: false,
           message:
             "Invalid customer ID",
+          code:
+            "INVALID_CUSTOMER_ID",
         });
       }
 
       const customer =
-        await LedgerCustomer.findOne(
-          {
-            _id:
-              customerId,
+        await LedgerCustomer.findOne({
+          _id:
+            customerId,
 
-            pumpId,
-          }
-        );
+          pumpId,
+        });
 
       if (!customer) {
         return res.status(404).json({
           success: false,
           message:
             "Customer not found",
+          code:
+            "CUSTOMER_NOT_FOUND",
         });
       }
 
@@ -1757,12 +1420,10 @@ export const getCustomerLedgerHistory =
 
           customerId:
             customer._id,
-        })
-          .sort({
-            entryDate: 1,
-            createdAt: 1,
-          })
-          .lean();
+        }).sort({
+          entryDate: 1,
+          createdAt: 1,
+        });
 
       const summary =
         await calculateCustomerSummary(
@@ -1785,11 +1446,18 @@ export const getCustomerLedgerHistory =
         error
       );
 
-      return res.status(500).json({
+      return res.status(
+        error?.statusCode || 500
+      ).json({
         success: false,
 
         message:
+          error?.message ||
           "Unable to load customer ledger history",
+
+        code:
+          error?.code ||
+          "GET_CUSTOMER_LEDGER_HISTORY_ERROR",
       });
     }
   };
@@ -1799,46 +1467,42 @@ export const getCustomerLedgerHistory =
 ===================================================== */
 
 export const getPendingCredit =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const pumpId =
         getAuthorizedPumpId(req);
-
-      if (!pumpId) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Pump ID is required.",
-        });
-      }
 
       const customers =
         await LedgerCustomer.find({
           pumpId,
 
-          status: "active",
+          status:
+            "active",
 
           currentBalance: {
             $gt: 0,
           },
-        })
-          .sort({
-            currentBalance: -1,
-          })
-          .lean();
+        }).sort({
+          currentBalance: -1,
+        });
 
       const totalPending =
-        customers.reduce(
-          (
-            total,
-            customer
-          ) =>
-            total +
-            Number(
-              customer.currentBalance ||
-                0
-            ),
-          0
+        roundMoney(
+          customers.reduce(
+            (
+              total,
+              customer
+            ) =>
+              total +
+              Number(
+                customer.currentBalance ||
+                  0
+              ),
+            0
+          )
         );
 
       return res.status(200).json({
@@ -1857,11 +1521,18 @@ export const getPendingCredit =
         error
       );
 
-      return res.status(500).json({
+      return res.status(
+        error?.statusCode || 500
+      ).json({
         success: false,
 
         message:
+          error?.message ||
           "Unable to load pending credit",
+
+        code:
+          error?.code ||
+          "GET_PENDING_CREDIT_ERROR",
       });
     }
   };
@@ -1871,31 +1542,31 @@ export const getPendingCredit =
 ===================================================== */
 
 export const getTodayCreditSales =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const pumpId =
         getAuthorizedPumpId(req);
 
-      if (!pumpId) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Pump ID is required.",
-        });
-      }
+      const requestedDate =
+        req.query?.date;
 
       const date =
-        req.query?.date ||
-        todayString();
+        requestedDate
+          ? normalizeDate(
+              requestedDate
+            )
+          : todayString();
 
-      if (
-        !isValidDateString(date)
-      ) {
+      if (!date) {
         return res.status(400).json({
           success: false,
-
           message:
-            "Invalid date. Use YYYY-MM-DD",
+            "Invalid date. Use YYYY-MM-DD.",
+          code:
+            "INVALID_DATE",
         });
       }
 
@@ -1908,42 +1579,22 @@ export const getTodayCreditSales =
 
           entryDate:
             date,
-        })
-          .populate(
-            "customerId",
-            "name phone vehicleNumber"
-          )
-          .sort({
-            createdAt: -1,
-          })
-          .lean();
+        });
 
-      /*
-       * Credit sales represent the FULL
-       * purchase amount, not only the pending
-       * amount.
-       *
-       * Example:
-       *
-       * Purchase = ₹10,000
-       * Paid now = ₹2,000
-       * Pending = ₹8,000
-       *
-       * Credit sale = ₹10,000
-       * Outstanding = ₹8,000
-       */
       const totalCreditSales =
-        entries.reduce(
-          (
-            total,
-            entry
-          ) =>
-            total +
-            Number(
-              entry.totalAmount ||
-                0
-            ),
-          0
+        roundMoney(
+          entries.reduce(
+            (
+              total,
+              entry
+            ) =>
+              total +
+              Number(
+                entry.totalAmount ||
+                  0
+              ),
+            0
+          )
         );
 
       return res.status(200).json({
@@ -1964,11 +1615,18 @@ export const getTodayCreditSales =
         error
       );
 
-      return res.status(500).json({
+      return res.status(
+        error?.statusCode || 500
+      ).json({
         success: false,
 
         message:
+          error?.message ||
           "Unable to load today's credit sales",
+
+        code:
+          error?.code ||
+          "TODAY_CREDIT_SALES_ERROR",
       });
     }
   };
