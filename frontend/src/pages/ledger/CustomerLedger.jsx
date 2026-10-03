@@ -55,9 +55,11 @@ const getToday = () => {
   const now = new Date();
 
   const year = now.getFullYear();
+
   const month = String(
     now.getMonth() + 1
   ).padStart(2, "0");
+
   const day = String(
     now.getDate()
   ).padStart(2, "0");
@@ -176,8 +178,10 @@ const CustomerLedger = () => {
   const mountedRef = useRef(true);
 
   const loadingLedgerRef = useRef(false);
+
   const loadingCustomersRef =
     useRef(false);
+
   const submittingRef = useRef(false);
 
   /* =====================================================
@@ -310,14 +314,27 @@ const CustomerLedger = () => {
             "/settings/pump"
           );
 
+        /*
+         * IMPORTANT:
+         * Prefer the same response shape used by
+         * the Monthly Report:
+         *
+         * response.data.pump
+         *
+         * Then fall back to the other supported shapes.
+         */
         const settings =
-          response?.settings ||
+          response?.data?.pump ||
           response?.data?.settings ||
+          response?.pump ||
+          response?.settings ||
           response?.data ||
           {};
 
         const logoUrl =
-          resolveLogoUrl(settings);
+          resolveLogoUrl(
+            settings
+          );
 
         const normalizedSettings = {
           ...settings,
@@ -370,6 +387,10 @@ const CustomerLedger = () => {
             settings?.email ||
             "",
 
+          /*
+           * Keep the Settings logo available for the
+           * PDF exporter.
+           */
           logoUrl:
             logoUrl || null,
 
@@ -385,6 +406,11 @@ const CustomerLedger = () => {
           );
         }
       } catch (error) {
+        console.warn(
+          "Unable to load pump settings:",
+          error
+        );
+
         if (mountedRef.current) {
           setPumpSettings(null);
         }
@@ -553,6 +579,7 @@ const CustomerLedger = () => {
     mountedRef.current = true;
 
     loadPumpSettings();
+
     loadPreviousCustomers();
 
     if (customerId) {
@@ -1017,7 +1044,8 @@ const CustomerLedger = () => {
             refreshedData =
               await getLedgerCustomers();
           } catch {
-            refreshedData = null;
+            refreshedData =
+              null;
           }
 
           const refreshedCustomers =
@@ -1362,9 +1390,11 @@ const CustomerLedger = () => {
             fuelType:
               purchaseForm.fuelType,
 
-            totalAmount: total,
+            totalAmount:
+              total,
 
-            paidAmount: paid,
+            paidAmount:
+              paid,
 
             entryDate:
               purchaseForm.entryDate,
@@ -1478,15 +1508,13 @@ const CustomerLedger = () => {
         setSaving(true);
 
         /*
-         * Backend ledger payment uses paymentAmount.
-         *
-         * addCustomerPayment(customerId, data)
-         * automatically injects customerId.
+         * Backend expects paymentAmount.
          */
         await addCustomerPayment(
           customerId,
           {
-            paymentAmount: amount,
+            paymentAmount:
+              amount,
 
             entryDate:
               paymentForm.entryDate,

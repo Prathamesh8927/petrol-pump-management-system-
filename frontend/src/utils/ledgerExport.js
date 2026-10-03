@@ -1,5 +1,7 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import api from "../services/api";
+import shivshambhoLogo from "../assets/logo.png";
 
 /* =====================================================
    PROFESSIONAL PDF COLOR SYSTEM
@@ -21,10 +23,7 @@ const COLORS = {
 ===================================================== */
 
 const safeString = (value) => {
-  if (value === null || value === undefined) {
-    return "";
-  }
-
+  if (value === null || value === undefined) return "";
   return String(value).trim();
 };
 
@@ -35,9 +34,7 @@ const formatMoney = (value) =>
   });
 
 const formatDate = (value) => {
-  if (!value) {
-    return "-";
-  }
+  if (!value) return "-";
 
   try {
     const date = new Date(value);
@@ -135,6 +132,17 @@ const getTransactionDate = (entry) =>
 
 /* =====================================================
    BILL PERIOD / DATE RANGE
+
+   Uses the earliest and latest transaction dates from
+   the customer's complete ledger history.
+
+   Example:
+   05/09/2026
+   10/09/2026
+   19/09/2026
+
+   Bill From:
+   05/09/2026 - 19/09/2026
 ===================================================== */
 
 const getBillPeriod = (
@@ -433,225 +441,83 @@ const amountInWords = (
 };
 
 /* =====================================================
-   SETTINGS / PUMP HELPERS
+   PUMP HELPERS
 ===================================================== */
 
-/*
- * The Settings object can arrive directly or sometimes
- * be nested depending on the API response.
- *
- * This helper gives the PDF one normalized object.
- */
-const normalizePumpSettings = (
-  pump = {}
-) => {
-  if (
-    !pump ||
-    typeof pump !== "object"
-  ) {
-    return {};
-  }
-
-  const nestedSettings =
-    pump?.settings ||
-    pump?.pumpSettings ||
-    pump?.pump ||
-    pump?.data?.settings ||
-    {};
-
-  return {
-    ...nestedSettings,
-    ...pump,
-  };
-};
-
-const getPumpName = (pump) => {
-  const settings =
-    normalizePumpSettings(
-      pump
-    );
-
-  return safeString(
-    settings?.pumpName ||
-      settings?.petrolPumpName ||
-      settings?.pump_name ||
-      settings?.name ||
-      settings?.businessName ||
-      settings?.business_name ||
+const getPumpName = (pump) =>
+  safeString(
+    pump?.pumpName ||
+      pump?.name ||
+      pump?.petrolPumpName ||
       "Petrol Pump"
   );
-};
 
-const getOwnerName = (pump) => {
-  const settings =
-    normalizePumpSettings(
-      pump
-    );
-
-  return safeString(
-    settings?.ownerName ||
-      settings?.owner ||
-      settings?.ownerFullName ||
-      settings?.authorizedPerson ||
-      settings?.authorizedPersonName ||
+const getOwnerName = (pump) =>
+  safeString(
+    pump?.ownerName ||
+      pump?.owner ||
       ""
   );
-};
 
-const getCompanyName = (pump) => {
-  const settings =
-    normalizePumpSettings(
-      pump
-    );
-
-  return safeString(
-    settings?.companyName ||
-      settings?.company ||
-      settings?.oilCompanyName ||
-      settings?.oilCompany ||
-      settings?.oilCompany_name ||
-      settings?.dealerName ||
-      settings?.dealer_name ||
+const getCompanyName = (pump) =>
+  safeString(
+    pump?.companyName ||
+      pump?.oilCompanyName ||
+      pump?.oilCompany ||
+      pump?.company ||
+      pump?.providerName ||
+      pump?.provider ||
+      pump?.oilProvider ||
+      pump?.oilProviderName ||
       ""
   );
-};
 
-const getPumpPhone = (pump) => {
-  const settings =
-    normalizePumpSettings(
-      pump
-    );
-
-  return safeString(
-    settings?.phone ||
-      settings?.mobile ||
-      settings?.mobileNumber ||
-      settings?.contactNumber ||
-      settings?.contactPhone ||
+const getPumpPhone = (pump) =>
+  safeString(
+    pump?.phone ||
+      pump?.mobile ||
+      pump?.mobileNumber ||
       ""
   );
-};
 
-const getPumpEmail = (pump) => {
-  const settings =
-    normalizePumpSettings(
-      pump
-    );
+const getPumpEmail = (pump) =>
+  safeString(
+    pump?.email || ""
+  );
 
-  return safeString(
-    settings?.email ||
-      settings?.emailAddress ||
+const getPumpGstin = (pump) =>
+  safeString(
+    pump?.gstin ||
+      pump?.gstNo ||
       ""
   );
-};
 
-const getPumpGstin = (pump) => {
-  const settings =
-    normalizePumpSettings(
-      pump
-    );
+const getPumpAddress = (pump) =>
+  safeString(
+    pump?.address || ""
+  );
 
-  return safeString(
-    settings?.gstin ||
-      settings?.GSTIN ||
-      settings?.gstNo ||
-      settings?.gstNumber ||
-      settings?.gstNumber ||
+const getPumpCity = (pump) =>
+  safeString(
+    pump?.city || ""
+  );
+
+const getPumpState = (pump) =>
+  safeString(
+    pump?.state || ""
+  );
+
+const getPumpPincode = (pump) =>
+  safeString(
+    pump?.pincode ||
+      pump?.pinCode ||
       ""
   );
-};
-
-const getPumpAddress = (pump) => {
-  const settings =
-    normalizePumpSettings(
-      pump
-    );
-
-  return safeString(
-    settings?.address ||
-      settings?.addressLine1 ||
-      settings?.address1 ||
-      ""
-  );
-};
-
-const getPumpCity = (pump) => {
-  const settings =
-    normalizePumpSettings(
-      pump
-    );
-
-  return safeString(
-    settings?.city ||
-      settings?.town ||
-      ""
-  );
-};
-
-const getPumpState = (pump) => {
-  const settings =
-    normalizePumpSettings(
-      pump
-    );
-
-  return safeString(
-    settings?.state ||
-      settings?.stateName ||
-      ""
-  );
-};
-
-const getPumpDistrict = (pump) => {
-  const settings =
-    normalizePumpSettings(
-      pump
-    );
-
-  return safeString(
-    settings?.district ||
-      settings?.districtName ||
-      ""
-  );
-};
-
-const getPumpPincode = (pump) => {
-  const settings =
-    normalizePumpSettings(
-      pump
-    );
-
-  return safeString(
-    settings?.pincode ||
-      settings?.pinCode ||
-      settings?.postalCode ||
-      settings?.zipCode ||
-      ""
-  );
-};
-
-const getTermsAndConditions = (
-  pump
-) => {
-  const settings =
-    normalizePumpSettings(
-      pump
-    );
-
-  return safeString(
-    settings?.termsAndConditions ||
-      settings?.terms ||
-      settings?.termsText ||
-      ""
-  );
-};
 
 /* =====================================================
    PROFILE LOGO RESOLUTION
 ===================================================== */
 
-/*
- * Extract a usable string from any logo format.
- */
 const resolveLogoValue = (
   value
 ) => {
@@ -672,14 +538,12 @@ const resolveLogoValue = (
       value.secureUrl,
       value.path,
       value.src,
-      value.location,
     ];
 
     const resolved =
       nested.find(
         (item) =>
-          typeof item ===
-            "string" &&
+          typeof item === "string" &&
           item.trim().length > 0
       );
 
@@ -691,63 +555,44 @@ const resolveLogoValue = (
   return null;
 };
 
-/*
- * Resolve the logo saved in Settings.
- *
- * IMPORTANT:
- * No online company-logo fallback is used.
- *
- * Priority:
- *
- * 1. Explicit logo passed by CustomerLedger
- * 2. logoUrl
- * 3. logoURL
- * 4. companyLogoUrl
- * 5. companyLogo
- * 6. pumpLogoUrl
- * 7. pumpLogo
- * 8. logo
- */
 const getClientLogo = (
   pump,
   explicitLogoUrl = null
 ) => {
-  const settings =
-    normalizePumpSettings(
-      pump
+  const explicit =
+    resolveLogoValue(
+      explicitLogoUrl
     );
 
+  if (explicit) {
+    return explicit;
+  }
+
   const candidates = [
-    explicitLogoUrl,
-
-    settings?.logoUrl,
-    settings?.logoURL,
-
-    settings?.companyLogoUrl,
-    settings?.companyLogoURL,
-
-    settings?.companyLogo,
-
-    settings?.pumpLogoUrl,
-    settings?.pumpLogoURL,
-
-    settings?.pumpLogo,
-
-    settings?.logo,
-
-    settings?.businessLogo,
-    settings?.businessLogoUrl,
+    pump?.logoUrl,
+    pump?.logoURL,
+    pump?.companyLogo,
+    pump?.pumpLogo,
+    pump?.logo?.url,
+    pump?.logo?.secure_url,
+    pump?.logo?.secureUrl,
+    pump?.logo?.path,
+    pump?.logo?.src,
+    pump?.logo,
   ];
 
-  for (
-    const candidate of candidates
-  ) {
+  for (const candidate of candidates) {
     const resolved =
       resolveLogoValue(
         candidate
       );
 
-    if (resolved) {
+    if (
+      resolved &&
+      !resolved.includes(
+        "/src/assets/logo.png"
+      )
+    ) {
       return resolved;
     }
   }
@@ -756,190 +601,374 @@ const getClientLogo = (
 };
 
 /* =====================================================
-   LOGO URL RESOLVER
+   OIL PROVIDER LOGO
 ===================================================== */
 
-/*
- * Settings may store:
- *
- * 1. https://example.com/logo.png
- * 2. /uploads/logo.png
- * 3. uploads/logo.png
- * 4. data:image/png;base64,...
- *
- * Convert relative backend paths into absolute URLs.
- */
-const resolveImageUrl = (
-  imageSource
+const OIL_PROVIDER_DOMAINS = {
+  "indian oil": "iocl.com",
+  "indianoil": "iocl.com",
+  "ioc": "iocl.com",
+  "bharat petroleum":
+    "bharatpetroleum.in",
+  "bpcl":
+    "bharatpetroleum.in",
+  "bharatpetroleum":
+    "bharatpetroleum.in",
+  "hindustan petroleum":
+    "hindustanpetroleum.com",
+  "hpcl":
+    "hindustanpetroleum.com",
+  "hindustanpetroleum":
+    "hindustanpetroleum.com",
+  "nayara":
+    "nayaraenergy.com",
+  "nayara energy":
+    "nayaraenergy.com",
+  "reliance":
+    "reliancepetroleum.com",
+  "reliance petroleum":
+    "reliancepetroleum.com",
+  "shell":
+    "shell.in",
+  "jio bp":
+    "jiobp.com",
+  "jiobp":
+    "jiobp.com",
+  "jio-bp":
+    "jiobp.com",
+  "oil india":
+    "oil-india.com",
+  "oilindia":
+    "oil-india.com",
+  "adani":
+    "adanigas.com",
+  "adani total":
+    "adanigas.com",
+  "gulf":
+    "gulf.com",
+};
+
+const normalizeOilProvider = (
+  value
+) =>
+  safeString(value)
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+const getOilProviderName = (
+  pump = {}
+) =>
+  safeString(
+    pump?.oilCompanyName ||
+      pump?.oilCompany ||
+      pump?.companyName ||
+      pump?.company ||
+      pump?.providerName ||
+      pump?.provider ||
+      pump?.oilProvider ||
+      pump?.oilProviderName ||
+      ""
+  );
+
+const getOilProviderLogo = (
+  pump = {}
 ) => {
-  const value =
-    resolveLogoValue(
-      imageSource
+  const providerName =
+    normalizeOilProvider(
+      getOilProviderName(
+        pump
+      )
     );
 
-  if (!value) {
+  if (!providerName) {
     return null;
   }
 
-  if (
-    value.startsWith(
-      "data:image/"
-    ) ||
-    value.startsWith(
-      "blob:"
-    )
-  ) {
-    return value;
+  const domain =
+    OIL_PROVIDER_DOMAINS[
+      providerName
+    ] ||
+    Object.entries(
+      OIL_PROVIDER_DOMAINS
+    ).find(
+      ([name]) =>
+        providerName.includes(
+          name
+        ) ||
+        name.includes(
+          providerName
+        )
+    )?.[1] ||
+    null;
+
+  if (!domain) {
+    return null;
   }
 
-  if (
-    value.startsWith(
-      "http://"
-    ) ||
-    value.startsWith(
-      "https://"
-    )
-  ) {
-    return value;
-  }
+  return `https://www.google.com/s2/favicons?domain=${domain}&sz=256`;
+};
 
-  const configuredApiUrl =
-    safeString(
-      import.meta.env
-        ?.VITE_API_URL
+const getPumpLogo = (
+  pump = {}
+) => {
+  /*
+   * EXACT SAME LOGIC AS THE WORKING
+   * MONTHLY REPORT.
+   */
+  const providerLogo =
+    getOilProviderLogo(
+      pump
     );
 
-  if (configuredApiUrl) {
-    const apiRoot =
-      configuredApiUrl
-        .replace(
-          /\/+$/,
-          ""
-        )
-        .replace(
-          /\/api$/i,
-          ""
-        );
-
-    const relativePath =
-      value.startsWith("/")
-        ? value
-        : `/${value}`;
-
-    return `${apiRoot}${relativePath}`;
+  if (providerLogo) {
+    return providerLogo;
   }
 
-  if (
-    typeof window !==
-      "undefined"
-  ) {
-    return new URL(
-      value.startsWith("/")
-        ? value
-        : `/${value}`,
-      window.location.origin
-    ).href;
+  const candidates = [
+    pump?.logoUrl,
+    pump?.logoURL,
+    pump?.companyLogo,
+    pump?.pumpLogo,
+    pump?.logo,
+  ];
+
+  for (const candidate of candidates) {
+    const resolved =
+      resolveLogoValue(
+        candidate
+      );
+
+    if (
+      resolved &&
+      !resolved.includes(
+        "/src/assets/logo.png"
+      )
+    ) {
+      return resolved;
+    }
   }
 
-  return value;
+  return null;
 };
 
 /* =====================================================
    IMAGE LOADER
 ===================================================== */
 
-const loadImageAsDataURL = async (
-  imageSource
-) => {
-  if (!imageSource) {
-    return null;
-  }
+/*
+ * EXACT SAME LOADER LOGIC AS MONTHLY REPORT.
+ */
+const loadImageAsDataURL =
+  async (
+    imageSource
+  ) => {
+    if (!imageSource) {
+      return null;
+    }
 
-  const resolvedUrl =
-    resolveImageUrl(
-      imageSource
-    );
+    if (
+      typeof imageSource ===
+        "string" &&
+      imageSource.startsWith(
+        "data:image/"
+      )
+    ) {
+      return imageSource;
+    }
 
-  if (!resolvedUrl) {
-    return null;
-  }
+    const blobToDataURL = (
+      blob
+    ) =>
+      new Promise(
+        (
+          resolve,
+          reject
+        ) => {
+          const reader =
+            new FileReader();
 
-  if (
-    typeof resolvedUrl ===
-      "string" &&
-    resolvedUrl.startsWith(
-      "data:image/"
-    )
-  ) {
-    return resolvedUrl;
-  }
+          reader.onloadend =
+            () =>
+              resolve(
+                reader.result
+              );
 
-  const blobToDataURL = (
-    blob
-  ) =>
-    new Promise(
-      (resolve, reject) => {
-        const reader =
-          new FileReader();
+          reader.onerror =
+            () =>
+              reject(
+                new Error(
+                  "Failed to convert image"
+                )
+              );
 
-        reader.onloadend = () =>
-          resolve(
-            reader.result
+          reader.readAsDataURL(
+            blob
           );
-
-        reader.onerror = () =>
-          reject(
-            new Error(
-              "Failed to convert logo to Data URL"
-            )
-          );
-
-        reader.readAsDataURL(
-          blob
-        );
-      }
-    );
-
-  try {
-    const response =
-      await fetch(
-        resolvedUrl,
-        {
-          method: "GET",
-          mode: "cors",
-          cache: "no-cache",
         }
       );
 
-    if (!response.ok) {
-      throw new Error(
-        `Logo request failed with status ${response.status}`
+    const fetchImage =
+      async (
+        url
+      ) => {
+        const response =
+          await fetch(
+            url,
+            {
+              method: "GET",
+              mode: "cors",
+              cache: "no-cache",
+            }
+          );
+
+        if (!response.ok) {
+          throw new Error(
+            `Logo request failed: ${response.status}`
+          );
+        }
+
+        const blob =
+          await response.blob();
+
+        if (
+          !blob.type.startsWith(
+            "image/"
+          )
+        ) {
+          throw new Error(
+            `Logo response is not an image: ${blob.type}`
+          );
+        }
+
+        return blobToDataURL(
+          blob
+        );
+      };
+
+    try {
+      return await fetchImage(
+        imageSource
+      );
+    } catch (error) {
+      console.warn(
+        "Direct logo loading failed:",
+        error
       );
     }
 
-    const blob =
-      await response.blob();
+    try {
+      const proxyUrl =
+        `https://images.weserv.nl/?url=${encodeURIComponent(
+          imageSource
+        )}&w=512&h=512&fit=contain&output=png`;
 
-    if (
-      !blob.type.startsWith(
-        "image/"
-      )
-    ) {
-      throw new Error(
-        `Logo response is not an image: ${blob.type}`
+      return await fetchImage(
+        proxyUrl
+      );
+    } catch (error) {
+      console.warn(
+        "Logo proxy loading failed:",
+        error
       );
     }
 
-    return await blobToDataURL(
-      blob
-    );
+    return null;
+  };
+
+/* =====================================================
+   LOAD LATEST PUMP SETTINGS
+===================================================== */
+
+const loadPumpSettings = async (
+  fallbackPump = {}
+) => {
+  try {
+    const response =
+      await api.get(
+        "/settings/pump"
+      );
+
+    /*
+     * This extraction intentionally matches the
+     * working Monthly Report implementation.
+     */
+    const settings =
+      response?.settings ||
+      response?.data?.settings ||
+      response?.data ||
+      {};
+
+    /*
+     * Monthly Report gets its header logo from
+     * the configured oil-provider/company.
+     */
+    const logoUrl =
+      getPumpLogo(
+        settings
+      );
+
+    const normalizedSettings = {
+      ...fallbackPump,
+      ...settings,
+
+      pumpName:
+        getPumpName(settings) ||
+        getPumpName(fallbackPump),
+
+      ownerName:
+        getOwnerName(settings) ||
+        getOwnerName(fallbackPump),
+
+      companyName:
+        getCompanyName(settings) ||
+        getCompanyName(fallbackPump),
+
+      phone:
+        getPumpPhone(settings) ||
+        getPumpPhone(fallbackPump),
+
+      email:
+        getPumpEmail(settings) ||
+        getPumpEmail(fallbackPump),
+
+      gstin:
+        getPumpGstin(settings) ||
+        getPumpGstin(fallbackPump),
+
+      address:
+        getPumpAddress(settings) ||
+        getPumpAddress(fallbackPump),
+
+      city:
+        getPumpCity(settings) ||
+        getPumpCity(fallbackPump),
+
+      state:
+        getPumpState(settings) ||
+        getPumpState(fallbackPump),
+
+      pincode:
+        getPumpPincode(settings) ||
+        getPumpPincode(fallbackPump),
+
+      logoUrl:
+        logoUrl ||
+        null,
+
+      logo:
+        settings?.logo ||
+        logoUrl ||
+        null,
+    };
+
+    return normalizedSettings;
   } catch (error) {
     console.warn(
-      "Unable to load Settings logo:",
+      "USING CACHED PUMP PROFILE:",
       error
     );
 
-    return null;
+    return fallbackPump || {};
   }
 };
 
@@ -947,1502 +976,1657 @@ const loadImageAsDataURL = async (
    EXPORT LEDGER PDF
 ===================================================== */
 
-export const exportLedgerPDF = async ({
-  customer = {},
-  pump = {},
-  entries =
-    customer?.entries || [],
-  summary =
-    customer?.summary || {},
-  billNo = null,
-  billDate = null,
-  billFrom = null,
-  logoUrl = null,
-} = {}) => {
-  const suppliedBillNo =
-    safeString(
-      billNo ||
-        customer?.billNo ||
-        customer?.invoiceNo ||
-        customer?.invoiceNumber ||
-        customer?.billNumber ||
-        ""
-    );
+export const exportLedgerPDF =
+  async ({
+    customer = {},
+    pump = {},
+    entries =
+      customer?.entries || [],
+    summary =
+      customer?.summary || {},
+    billNo = null,
+    billDate = null,
+    billFrom = null,
+    logoUrl = null,
+  } = {}) => {
+    const suppliedBillNo =
+      safeString(
+        billNo ||
+          customer?.billNo ||
+          customer?.invoiceNo ||
+          customer?.invoiceNumber ||
+          customer?.billNumber ||
+          ""
+      );
 
-  const finalBillNo =
-    suppliedBillNo ||
-    getNextBillNo();
+    const finalBillNo =
+      suppliedBillNo ||
+      getNextBillNo();
 
-  const finalBillDate =
-    billDate ||
-    customer?.billDate ||
-    customer?.invoiceDate ||
-    customer?.date ||
-    new Date();
+    const finalBillDate =
+      billDate ||
+      customer?.billDate ||
+      customer?.invoiceDate ||
+      customer?.date ||
+      new Date();
 
-  /*
-   * Always derive the customer ledger
-   * period from actual transaction history.
-   */
-  const finalBillFrom =
-    getBillPeriod(
-      Array.isArray(entries)
-        ? entries
-        : [],
-      finalBillDate
-    );
+    /*
+     * Always derive the customer ledger
+     * period from actual transaction history.
+     *
+     * This intentionally ignores a stale/manual
+     * billFrom value.
+     */
+    const finalBillFrom =
+      getBillPeriod(
+        Array.isArray(entries)
+          ? entries
+          : [],
+        finalBillDate
+      );
 
-  /*
-   * Normalize Settings first.
-   */
-  const pumpSettings =
-    normalizePumpSettings(
-      pump
-    );
+    /* ===================================================
+       LOAD LATEST SETTINGS PROFILE
+    =================================================== */
 
-  /* ===================================================
-     SETTINGS VALUES
-  =================================================== */
+    const settingsPump =
+      await loadPumpSettings(
+        pump
+      );
 
-  const pumpName =
-    getPumpName(
-      pumpSettings
-    );
+    const pumpName =
+      getPumpName(
+        settingsPump
+      );
 
-  const ownerName =
-    getOwnerName(
-      pumpSettings
-    );
+    const ownerName =
+      getOwnerName(
+        settingsPump
+      );
 
-  const companyName =
-    getCompanyName(
-      pumpSettings
-    );
+    const companyName =
+      getCompanyName(
+        settingsPump
+      );
 
-  const pumpPhone =
-    getPumpPhone(
-      pumpSettings
-    );
+    const pumpPhone =
+      getPumpPhone(
+        settingsPump
+      );
 
-  const pumpEmail =
-    getPumpEmail(
-      pumpSettings
-    );
+    const pumpEmail =
+      getPumpEmail(
+        settingsPump
+      );
 
-  const pumpGstin =
-    getPumpGstin(
-      pumpSettings
-    );
+    const pumpGstin =
+      getPumpGstin(
+        settingsPump
+      );
 
-  const pumpAddress =
-    getPumpAddress(
-      pumpSettings
-    );
+    const pumpAddress =
+      getPumpAddress(
+        settingsPump
+      );
 
-  const pumpCity =
-    getPumpCity(
-      pumpSettings
-    );
+    const pumpCity =
+      getPumpCity(
+        settingsPump
+      );
 
-  const pumpState =
-    getPumpState(
-      pumpSettings
-    );
+    const pumpState =
+      getPumpState(
+        settingsPump
+      );
 
-  const pumpDistrict =
-    getPumpDistrict(
-      pumpSettings
-    );
+    const pumpPincode =
+      getPumpPincode(
+        settingsPump
+      );
 
-  const pumpPincode =
-    getPumpPincode(
-      pumpSettings
-    );
+    const customerName =
+      getCustomerName(
+        customer
+      );
 
-  const settingsTerms =
-    getTermsAndConditions(
-      pumpSettings
-    );
+    const customerPhone =
+      getCustomerPhone(
+        customer
+      );
 
-  /* ===================================================
-     CUSTOMER VALUES
-  =================================================== */
+    const customerAddress =
+      getCustomerAddress(
+        customer
+      );
 
-  const customerName =
-    getCustomerName(
-      customer
-    );
+    const customerGstin =
+      getCustomerGstin(
+        customer
+      );
 
-  const customerPhone =
-    getCustomerPhone(
-      customer
-    );
+    const vehicleNumber =
+      getVehicleNumber(
+        customer
+      );
 
-  const customerAddress =
-    getCustomerAddress(
-      customer
-    );
-
-  const customerGstin =
-    getCustomerGstin(
-      customer
-    );
-
-  const vehicleNumber =
-    getVehicleNumber(
-      customer
-    );
-
-  /* ===================================================
-     SUMMARY VALUES
-  =================================================== */
-
-  const totalPurchased =
-    Number(
-      summary?.totalPurchased ??
-        summary?.totalPurchase ??
-        customer?.totalPurchased ??
-        customer?.totalPurchases ??
-        customer?.totalAmount ??
-        0
-    );
-
-  const totalPaid =
-    Number(
-      summary?.totalPaid ??
-        customer?.totalPaid ??
-        customer?.paidAmount ??
-        0
-    );
-
-  const totalPending =
-    Number(
-      summary?.totalPending ??
-        customer?.totalPending ??
-        customer?.currentBalance ??
-        Math.max(
-          totalPurchased -
-            totalPaid,
+    const totalPurchased =
+      Number(
+        summary?.totalPurchased ??
+          summary?.totalPurchase ??
+          customer?.totalPurchased ??
+          customer?.totalPurchases ??
+          customer?.totalAmount ??
           0
-        )
-    );
-
-  const purchaseCount =
-    Number(
-      summary?.purchaseCount ??
-        customer?.purchaseCount ??
-        entries.filter(
-          (entry) =>
-            getTransactionType(
-              entry
-            ) === "Purchase"
-        ).length
-    );
-
-  /* ===================================================
-     CREATE PDF
-  =================================================== */
-
-  const doc = new jsPDF({
-    orientation: "portrait",
-    unit: "mm",
-    format: "a4",
-  });
-
-  const pageWidth =
-    doc.internal.pageSize.getWidth();
-
-  const pageHeight =
-    doc.internal.pageSize.getHeight();
-
-  const margin = 10;
-
-  const contentWidth =
-    pageWidth -
-    margin * 2;
-
-  doc.setFont(
-    "helvetica",
-    "normal"
-  );
-
-  doc.setTextColor(
-    COLORS.text
-  );
-
-  doc.setDrawColor(
-    COLORS.border
-  );
-
-  doc.setLineWidth(0.35);
-
-  doc.rect(
-    5,
-    5,
-    pageWidth - 10,
-    pageHeight - 10
-  );
-
-  /* ===================================================
-     RESOLVE SETTINGS LOGO
-  =================================================== */
-
-  let logoData = null;
-
-  const finalLogo =
-    getClientLogo(
-      pumpSettings,
-      logoUrl
-    );
-
-  console.log(
-    "[Ledger PDF] Settings:",
-    pumpSettings
-  );
-
-  console.log(
-    "[Ledger PDF] Pump name:",
-    pumpName
-  );
-
-  console.log(
-    "[Ledger PDF] Company:",
-    companyName
-  );
-
-  console.log(
-    "[Ledger PDF] Settings logo:",
-    finalLogo
-  );
-
-  if (finalLogo) {
-    logoData =
-      await loadImageAsDataURL(
-        finalLogo
-      );
-  }
-
-  /* ===================================================
-     TOP HEADER
-  =================================================== */
-
-  doc.setFont(
-    "helvetica",
-    "normal"
-  );
-
-  doc.setFontSize(7);
-
-  doc.setTextColor(
-    COLORS.text
-  );
-
-  doc.text(
-    pumpGstin
-      ? `GSTIN-${pumpGstin}`
-      : "GSTIN-",
-    margin,
-    12
-  );
-
-  doc.text(
-    "Original Invoice",
-    pageWidth / 2,
-    12,
-    {
-      align: "center",
-    }
-  );
-
-  if (pumpPhone) {
-    doc.text(
-      `PH ${pumpPhone}`,
-      pageWidth - margin,
-      12,
-      {
-        align: "right",
-      }
-    );
-  }
-
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
-
-  doc.setFontSize(15);
-
-  doc.text(
-    pumpName,
-    pageWidth / 2,
-    18,
-    {
-      align: "center",
-    }
-  );
-
-  doc.setFont(
-    "helvetica",
-    "normal"
-  );
-
-  doc.setFontSize(7.5);
-
-  if (companyName) {
-    doc.text(
-      `DEALER - ${companyName.toUpperCase()}`,
-      pageWidth / 2,
-      22,
-      {
-        align: "center",
-      }
-    );
-  }
-
-  /* ===================================================
-     SETTINGS LOGO — LEFT SIDE
-  =================================================== */
-
-  if (logoData) {
-    try {
-      doc.addImage(
-        logoData,
-        "PNG",
-        15,
-        23,
-        25,
-        25,
-        undefined,
-        "FAST"
-      );
-    } catch (error) {
-      console.warn(
-        "Unable to add Settings logo to PDF:",
-        error
-      );
-    }
-  }
-
-  /* ===================================================
-     PUMP ADDRESS
-  =================================================== */
-
-  const addressParts = [
-    pumpAddress,
-    pumpCity,
-    pumpDistrict,
-    pumpState,
-    pumpPincode,
-  ].filter(Boolean);
-
-  const addressText =
-    addressParts.join(", ");
-
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
-
-  doc.setFontSize(7);
-
-  if (addressText) {
-    const addressLines =
-      doc.splitTextToSize(
-        addressText,
-        85
       );
 
-    doc.text(
-      addressLines,
-      pageWidth / 2,
-      31,
-      {
-        align: "center",
-      }
-    );
-  }
+    const totalPaid =
+      Number(
+        summary?.totalPaid ??
+          customer?.totalPaid ??
+          customer?.paidAmount ??
+          0
+      );
 
-  /* ===================================================
-     BUYER / BILL INFORMATION
-  =================================================== */
+    const totalPending =
+      Number(
+        summary?.totalPending ??
+          customer?.totalPending ??
+          customer?.currentBalance ??
+          Math.max(
+            totalPurchased -
+              totalPaid,
+            0
+          )
+      );
 
-  const infoY = 56;
+    const purchaseCount =
+      Number(
+        summary?.purchaseCount ??
+          customer?.purchaseCount ??
+          entries.filter(
+            (entry) =>
+              getTransactionType(
+                entry
+              ) === "Purchase"
+          ).length
+      );
 
-  const leftX = margin;
+    const doc =
+      new jsPDF({
+        orientation:
+          "portrait",
+        unit:
+          "mm",
+        format:
+          "a4",
+      });
 
-  const rightX =
-    pageWidth / 2 + 8;
+    const pageWidth =
+      doc.internal.pageSize.getWidth();
 
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
+    const pageHeight =
+      doc.internal.pageSize.getHeight();
 
-  doc.setFontSize(7);
+    const margin = 10;
 
-  doc.text(
-    "Buyer :",
-    leftX,
-    infoY
-  );
-
-  doc.setFont(
-    "helvetica",
-    "normal"
-  );
-
-  doc.text(
-    customerName,
-    leftX + 11,
-    infoY
-  );
-
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
-
-  doc.text(
-    "Bill No. :",
-    rightX,
-    infoY
-  );
-
-  doc.setFont(
-    "helvetica",
-    "normal"
-  );
-
-  doc.text(
-    finalBillNo,
-    rightX + 16,
-    infoY
-  );
-
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
-
-  doc.text(
-    "Address :",
-    leftX,
-    infoY + 5
-  );
-
-  doc.setFont(
-    "helvetica",
-    "normal"
-  );
-
-  doc.text(
-    doc.splitTextToSize(
-      customerAddress ||
-        "-",
-      75
-    ),
-    leftX + 15,
-    infoY + 5
-  );
-
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
-
-  doc.text(
-    "Bill Date :",
-    rightX,
-    infoY + 5
-  );
-
-  doc.setFont(
-    "helvetica",
-    "normal"
-  );
-
-  doc.text(
-    formatDate(
-      finalBillDate
-    ),
-    rightX + 17,
-    infoY + 5
-  );
-
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
-
-  doc.text(
-    "GST No. :",
-    leftX,
-    infoY + 10
-  );
-
-  doc.setFont(
-    "helvetica",
-    "normal"
-  );
-
-  doc.text(
-    customerGstin ||
-      "-",
-    leftX + 15,
-    infoY + 10
-  );
-
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
-
-  doc.text(
-    "Bill From :",
-    rightX,
-    infoY + 10
-  );
-
-  doc.setFont(
-    "helvetica",
-    "normal"
-  );
-
-  doc.text(
-    finalBillFrom,
-    rightX + 19,
-    infoY + 10
-  );
-
-  if (vehicleNumber) {
-    doc.setFont(
-      "helvetica",
-      "bold"
-    );
-
-    doc.text(
-      "Vehicle :",
-      leftX,
-      infoY + 15
-    );
+    const contentWidth =
+      pageWidth -
+      margin * 2;
 
     doc.setFont(
       "helvetica",
       "normal"
     );
 
-    doc.text(
-      vehicleNumber,
-      leftX + 15,
-      infoY + 15
-    );
-  }
-
-  const separatorY =
-    infoY + 18;
-
-  doc.setDrawColor(
-    COLORS.border
-  );
-
-  doc.setLineWidth(0.4);
-
-  doc.line(
-    margin,
-    separatorY,
-    pageWidth - margin,
-    separatorY
-  );
-
-  /* ===================================================
-     CUSTOMER LEDGER TITLE
-  =================================================== */
-
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
-
-  doc.setFontSize(11);
-
-  doc.setTextColor(
-    COLORS.text
-  );
-
-  doc.text(
-    "CUSTOMER LEDGER",
-    pageWidth / 2,
-    separatorY + 8,
-    {
-      align: "center",
-    }
-  );
-
-  doc.setFont(
-    "helvetica",
-    "normal"
-  );
-
-  doc.setFontSize(7);
-
-  doc.text(
-    `Customer: ${customerName}`,
-    margin,
-    separatorY + 14
-  );
-
-  if (customerPhone) {
-    doc.text(
-      `Mobile: ${customerPhone}`,
-      margin,
-      separatorY + 18
-    );
-  }
-
-  doc.text(
-    `Ledger Date: ${formatDate(
-      new Date()
-    )}`,
-    pageWidth - margin,
-    separatorY + 14,
-    {
-      align: "right",
-    }
-  );
-
-  /* ===================================================
-     SUMMARY TABLE
-  =================================================== */
-
-  const summaryY =
-    separatorY + 21;
-
-  autoTable(doc, {
-    startY: summaryY,
-
-    margin: {
-      left: margin,
-      right: margin,
-    },
-
-    tableWidth:
-      contentWidth,
-
-    theme: "grid",
-
-    head: [[
-      "TOTAL PURCHASES",
-      "TOTAL PAID",
-      "TOTAL PENDING",
-      "TRANSACTIONS",
-      "STATUS",
-    ]],
-
-    body: [[
-      `Rs. ${formatMoney(
-        totalPurchased
-      )}`,
-
-      `Rs. ${formatMoney(
-        totalPaid
-      )}`,
-
-      `Rs. ${formatMoney(
-        totalPending
-      )}`,
-
-      String(
-        purchaseCount
-      ),
-
-      totalPending > 0
-        ? "Pending"
-        : "Paid",
-    ]],
-
-    styles: {
-      font: "helvetica",
-      fontSize: 6.5,
-      textColor:
-        COLORS.text,
-      lineColor:
-        COLORS.border,
-      lineWidth: 0.3,
-      cellPadding: 2,
-      halign: "center",
-      valign: "middle",
-    },
-
-    headStyles: {
-      fillColor:
-        COLORS.mainHeader,
-      textColor:
-        COLORS.white,
-      fontStyle:
-        "bold",
-      fontSize: 6,
-      halign: "center",
-      valign: "middle",
-    },
-
-    bodyStyles: {
-      fillColor:
-        COLORS.white,
-      fontSize: 6.5,
-    },
-
-    didParseCell:
-      (data) => {
-        if (
-          data.section !==
-          "body"
-        ) {
-          return;
-        }
-
-        if (
-          data.column.index ===
-          1
-        ) {
-          data.cell.styles.textColor =
-            COLORS.paid;
-
-          data.cell.styles.fontStyle =
-            "bold";
-        }
-
-        if (
-          data.column.index ===
-            2 ||
-          data.column.index ===
-            4
-        ) {
-          data.cell.styles.textColor =
-            totalPending > 0
-              ? COLORS.pending
-              : COLORS.paid;
-
-          data.cell.styles.fontStyle =
-            "bold";
-        }
-      },
-  });
-
-  /* ===================================================
-     TRANSACTION HISTORY
-  =================================================== */
-
-  const transactionStartY =
-    doc.lastAutoTable
-      .finalY + 8;
-
-  doc.setFillColor(
-    COLORS.sectionBar
-  );
-
-  doc.setDrawColor(
-    COLORS.border
-  );
-
-  doc.rect(
-    margin,
-    transactionStartY,
-    contentWidth,
-    8,
-    "FD"
-  );
-
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
-
-  doc.setFontSize(8);
-
-  doc.setTextColor(
-    COLORS.text
-  );
-
-  doc.text(
-    "TRANSACTION HISTORY",
-    margin + 3,
-    transactionStartY +
-      5.5
-  );
-
-  const transactionRows =
-    entries.map(
-      (
-        entry,
-        index
-      ) => [
-        String(index + 1),
-
-        formatDate(
-          getTransactionDate(
-            entry
-          )
-        ),
-
-        getTransactionType(
-          entry
-        ),
-
-        getFuelType(entry),
-
-        `Rs. ${formatMoney(
-          getAmount(entry)
-        )}`,
-
-        `Rs. ${formatMoney(
-          getPaidAmount(
-            entry
-          )
-        )}`,
-
-        `Rs. ${formatMoney(
-          getPendingAmount(
-            entry
-          )
-        )}`,
-
-        getPaymentMode(
-          entry
-        ),
-
-        getRemarks(entry),
-      ]
-    );
-
-  autoTable(doc, {
-    startY:
-      transactionStartY +
-      8,
-
-    margin: {
-      left: margin,
-      right: margin,
-    },
-
-    tableWidth:
-      contentWidth,
-
-    theme: "grid",
-
-    head: [[
-      "#",
-      "Date",
-      "Type",
-      "Fuel",
-      "Amount",
-      "Paid",
-      "Pending",
-      "Payment Mode",
-      "Remarks",
-    ]],
-
-    body:
-      transactionRows.length >
-      0
-        ? transactionRows
-        : [[
-            "-",
-            "-",
-            "-",
-            "-",
-            "Rs. 0.00",
-            "Rs. 0.00",
-            "Rs. 0.00",
-            "-",
-            "-",
-          ]],
-
-    styles: {
-      font: "helvetica",
-      fontSize: 6.2,
-      textColor:
-        COLORS.text,
-      lineColor:
-        COLORS.border,
-      lineWidth: 0.25,
-      cellPadding: 1.5,
-      valign: "middle",
-      halign: "center",
-    },
-
-    headStyles: {
-      fillColor:
-        COLORS.mainHeader,
-      textColor:
-        COLORS.white,
-      fontStyle:
-        "bold",
-      fontSize: 5.8,
-      halign: "center",
-      valign: "middle",
-    },
-
-    bodyStyles: {
-      fillColor:
-        COLORS.white,
-      textColor:
-        COLORS.text,
-    },
-
-    columnStyles: {
-      0: {
-        cellWidth: 8,
-      },
-
-      1: {
-        cellWidth: 21,
-      },
-
-      2: {
-        cellWidth: 19,
-      },
-
-      3: {
-        cellWidth: 19,
-      },
-
-      4: {
-        cellWidth: 25,
-      },
-
-      5: {
-        cellWidth: 25,
-      },
-
-      6: {
-        cellWidth: 25,
-      },
-
-      7: {
-        cellWidth: 27,
-      },
-
-      8: {
-        cellWidth: "auto",
-      },
-    },
-
-    didParseCell:
-      (data) => {
-        if (
-          data.section !==
-          "body"
-        ) {
-          return;
-        }
-
-        if (
-          data.column.index ===
-          5
-        ) {
-          data.cell.styles.textColor =
-            COLORS.paid;
-        }
-
-        if (
-          data.column.index ===
-          6
-        ) {
-          const numeric =
-            Number(
-              String(
-                data.cell.raw
-              ).replace(
-                /[^0-9.-]/g,
-                ""
-              )
-            );
-
-          if (numeric > 0) {
-            data.cell.styles.textColor =
-              COLORS.pending;
-
-            data.cell.styles.fontStyle =
-              "bold";
-          }
-        }
-      },
-  });
-
-  /* ===================================================
-     LEDGER SUMMARY
-  =================================================== */
-
-  let summaryYPosition =
-    doc.lastAutoTable
-      .finalY + 8;
-
-  const summaryX =
-    pageWidth / 2 + 8;
-
-  const summaryValueX =
-    pageWidth - margin;
-
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
-
-  doc.setFontSize(7);
-
-  doc.setTextColor(
-    COLORS.text
-  );
-
-  doc.text(
-    "LEDGER SUMMARY",
-    summaryX,
-    summaryYPosition
-  );
-
-  summaryYPosition +=
-    5;
-
-  const drawSummaryLine = (
-    label,
-    value,
-    valueColor =
+    doc.setTextColor(
       COLORS.text
-  ) => {
+    );
+
+    doc.setDrawColor(
+      COLORS.border
+    );
+
+    doc.setLineWidth(
+      0.35
+    );
+
+    doc.rect(
+      5,
+      5,
+      pageWidth - 10,
+      pageHeight - 10
+    );
+
+    /* ===================================================
+       LOAD OIL PROVIDER LOGO
+    =================================================== */
+
+    const oilProviderName =
+      getOilProviderName(
+        settingsPump || {}
+      );
+
+    const pumpLogoUrl =
+      getPumpLogo(
+        settingsPump || {}
+      );
+
+    console.log(
+      "CUSTOMER LEDGER OIL PROVIDER:",
+      oilProviderName
+    );
+
+    console.log(
+      "CUSTOMER LEDGER OIL PROVIDER LOGO SOURCE:",
+      pumpLogoUrl
+    );
+
+    const logoData =
+      await loadImageAsDataURL(
+        pumpLogoUrl
+      );
+
+    console.log(
+      "CUSTOMER LEDGER OIL PROVIDER LOGO LOADED:",
+      Boolean(
+        logoData
+      )
+    );
+
+    /* ===================================================
+       LOAD SHIVSHAMBHO APPLICATION LOGO
+
+       This is the local asset used in the footer.
+       It is intentionally separate from the
+       oil-provider logo.
+    =================================================== */
+
+    const shivshambhoLogoData =
+      await loadImageAsDataURL(
+        shivshambhoLogo
+      );
+
+    console.log(
+      "Customer Ledger Shivshambho logo loaded:",
+      Boolean(
+        shivshambhoLogoData
+      )
+    );
+
+    /* ===================================================
+       TOP HEADER
+    =================================================== */
+
     doc.setFont(
       "helvetica",
       "normal"
     );
 
-    doc.setFontSize(6.5);
+    doc.setFontSize(
+      7
+    );
 
     doc.setTextColor(
       COLORS.text
     );
 
     doc.text(
-      label,
+      pumpGstin
+        ? `GSTIN-${pumpGstin}`
+        : "GSTIN-",
+      margin,
+      12
+    );
+
+    doc.text(
+      "Original Invoice",
+      pageWidth / 2,
+      12,
+      {
+        align:
+          "center",
+      }
+    );
+
+    if (pumpPhone) {
+      doc.text(
+        `PH ${pumpPhone}`,
+        pageWidth -
+          margin,
+        12,
+        {
+          align:
+            "right",
+        }
+      );
+    }
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(
+      15
+    );
+
+    doc.text(
+      pumpName,
+      pageWidth / 2,
+      18,
+      {
+        align:
+          "center",
+      }
+    );
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.setFontSize(
+      7.5
+    );
+
+    doc.text(
+      companyName
+        ? `DEALER - ${companyName.toUpperCase()}`
+        : "DEALER",
+      pageWidth / 2,
+      22,
+      {
+        align:
+          "center",
+      }
+    );
+
+    /* ===================================================
+       COMPANY LOGO — LEFT SIDE
+    =================================================== */
+
+    if (logoData) {
+      try {
+        doc.addImage(
+          logoData,
+          "PNG",
+          15,
+          23,
+          25,
+          25,
+          undefined,
+          "FAST"
+        );
+      } catch (error) {
+        console.warn(
+          "Unable to add company logo to PDF:",
+          error
+        );
+      }
+    }
+
+    /* ===================================================
+       PUMP ADDRESS
+    =================================================== */
+
+    const addressText = [
+      pumpAddress,
+      pumpCity,
+      pumpState,
+      pumpPincode,
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(
+      7
+    );
+
+    if (addressText) {
+      const addressLines =
+        doc.splitTextToSize(
+          addressText,
+          85
+        );
+
+      doc.text(
+        addressLines,
+        pageWidth / 2,
+        31,
+        {
+          align:
+            "center",
+        }
+      );
+    }
+
+    /* ===================================================
+       BUYER / BILL INFORMATION
+    =================================================== */
+
+    const infoY = 56;
+
+    const leftX =
+      margin;
+
+    const rightX =
+      pageWidth / 2 + 8;
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(
+      7
+    );
+
+    doc.text(
+      "Buyer :",
+      leftX,
+      infoY
+    );
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.text(
+      customerName,
+      leftX + 11,
+      infoY
+    );
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.text(
+      "Bill No. :",
+      rightX,
+      infoY
+    );
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.text(
+      finalBillNo,
+      rightX + 16,
+      infoY
+    );
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.text(
+      "Address :",
+      leftX,
+      infoY + 5
+    );
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.text(
+      doc.splitTextToSize(
+        customerAddress ||
+          "-",
+        75
+      ),
+      leftX + 15,
+      infoY + 5
+    );
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.text(
+      "Bill Date :",
+      rightX,
+      infoY + 5
+    );
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.text(
+      formatDate(
+        finalBillDate
+      ),
+      rightX + 17,
+      infoY + 5
+    );
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.text(
+      "GST No. :",
+      leftX,
+      infoY + 10
+    );
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.text(
+      customerGstin ||
+        "-",
+      leftX + 15,
+      infoY + 10
+    );
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.text(
+      "Bill From :",
+      rightX,
+      infoY + 10
+    );
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.text(
+      finalBillFrom,
+      rightX + 19,
+      infoY + 10
+    );
+
+    if (vehicleNumber) {
+      doc.setFont(
+        "helvetica",
+        "bold"
+      );
+
+      doc.text(
+        "Vehicle :",
+        leftX,
+        infoY + 15
+      );
+
+      doc.setFont(
+        "helvetica",
+        "normal"
+      );
+
+      doc.text(
+        vehicleNumber,
+        leftX + 15,
+        infoY + 15
+      );
+    }
+
+    const separatorY =
+      infoY + 18;
+
+    doc.setDrawColor(
+      COLORS.border
+    );
+
+    doc.setLineWidth(
+      0.4
+    );
+
+    doc.line(
+      margin,
+      separatorY,
+      pageWidth -
+        margin,
+      separatorY
+    );
+
+    /* ===================================================
+       CUSTOMER LEDGER TITLE
+    =================================================== */
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(
+      11
+    );
+
+    doc.setTextColor(
+      COLORS.text
+    );
+
+    doc.text(
+      "CUSTOMER LEDGER",
+      pageWidth / 2,
+      separatorY + 8,
+      {
+        align:
+          "center",
+      }
+    );
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.setFontSize(
+      7
+    );
+
+    doc.text(
+      `Customer: ${customerName}`,
+      margin,
+      separatorY + 14
+    );
+
+    if (customerPhone) {
+      doc.text(
+        `Mobile: ${customerPhone}`,
+        margin,
+        separatorY + 18
+      );
+    }
+
+    doc.text(
+      `Ledger Date: ${formatDate(
+        new Date()
+      )}`,
+      pageWidth -
+        margin,
+      separatorY + 14,
+      {
+        align:
+          "right",
+      }
+    );
+
+    /* ===================================================
+       SUMMARY TABLE
+    =================================================== */
+
+    const summaryY =
+      separatorY + 21;
+
+    autoTable(
+      doc,
+      {
+        startY:
+          summaryY,
+
+        margin: {
+          left:
+            margin,
+          right:
+            margin,
+        },
+
+        tableWidth:
+          contentWidth,
+
+        theme:
+          "grid",
+
+        head: [
+          [
+            "TOTAL PURCHASES",
+            "TOTAL PAID",
+            "TOTAL PENDING",
+            "TRANSACTIONS",
+            "STATUS",
+          ],
+        ],
+
+        body: [
+          [
+            `Rs. ${formatMoney(
+              totalPurchased
+            )}`,
+
+            `Rs. ${formatMoney(
+              totalPaid
+            )}`,
+
+            `Rs. ${formatMoney(
+              totalPending
+            )}`,
+
+            String(
+              purchaseCount
+            ),
+
+            totalPending >
+            0
+              ? "Pending"
+              : "Paid",
+          ],
+        ],
+
+        styles: {
+          font:
+            "helvetica",
+          fontSize:
+            6.5,
+          textColor:
+            COLORS.text,
+          lineColor:
+            COLORS.border,
+          lineWidth:
+            0.3,
+          cellPadding:
+            2,
+          halign:
+            "center",
+          valign:
+            "middle",
+        },
+
+        headStyles: {
+          fillColor:
+            COLORS.mainHeader,
+          textColor:
+            COLORS.white,
+          fontStyle:
+            "bold",
+          fontSize:
+            6,
+          halign:
+            "center",
+          valign:
+            "middle",
+        },
+
+        bodyStyles: {
+          fillColor:
+            COLORS.white,
+          fontSize:
+            6.5,
+        },
+
+        didParseCell:
+          (data) => {
+            if (
+              data.section !==
+              "body"
+            ) {
+              return;
+            }
+
+            if (
+              data.column.index ===
+              1
+            ) {
+              data.cell.styles.textColor =
+                COLORS.paid;
+
+              data.cell.styles.fontStyle =
+                "bold";
+            }
+
+            if (
+              data.column.index ===
+                2 ||
+              data.column.index ===
+                4
+            ) {
+              data.cell.styles.textColor =
+                totalPending >
+                0
+                  ? COLORS.pending
+                  : COLORS.paid;
+
+              data.cell.styles.fontStyle =
+                "bold";
+            }
+          },
+      }
+    );
+
+    /* ===================================================
+       TRANSACTION HISTORY
+    =================================================== */
+
+    const transactionStartY =
+      doc.lastAutoTable.finalY +
+      8;
+
+    doc.setFillColor(
+      COLORS.sectionBar
+    );
+
+    doc.setDrawColor(
+      COLORS.border
+    );
+
+    doc.rect(
+      margin,
+      transactionStartY,
+      contentWidth,
+      8,
+      "FD"
+    );
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(
+      8
+    );
+
+    doc.setTextColor(
+      COLORS.text
+    );
+
+    doc.text(
+      "TRANSACTION HISTORY",
+      margin + 3,
+      transactionStartY +
+        5.5
+    );
+
+    const transactionRows =
+      entries.map(
+        (
+          entry,
+          index
+        ) => [
+          String(
+            index + 1
+          ),
+
+          formatDate(
+            getTransactionDate(
+              entry
+            )
+          ),
+
+          getTransactionType(
+            entry
+          ),
+
+          getFuelType(
+            entry
+          ),
+
+          `Rs. ${formatMoney(
+            getAmount(
+              entry
+            )
+          )}`,
+
+          `Rs. ${formatMoney(
+            getPaidAmount(
+              entry
+            )
+          )}`,
+
+          `Rs. ${formatMoney(
+            getPendingAmount(
+              entry
+            )
+          )}`,
+
+          getPaymentMode(
+            entry
+          ),
+
+          getRemarks(
+            entry
+          ),
+        ]
+      );
+
+    autoTable(
+      doc,
+      {
+        startY:
+          transactionStartY +
+          8,
+
+        margin: {
+          left:
+            margin,
+          right:
+            margin,
+        },
+
+        tableWidth:
+          contentWidth,
+
+        theme:
+          "grid",
+
+        head: [
+          [
+            "#",
+            "Date",
+            "Type",
+            "Fuel",
+            "Amount",
+            "Paid",
+            "Pending",
+            "Payment Mode",
+            "Remarks",
+          ],
+        ],
+
+        body:
+          transactionRows.length >
+          0
+            ? transactionRows
+            : [
+                [
+                  "-",
+                  "-",
+                  "-",
+                  "-",
+                  "Rs. 0.00",
+                  "Rs. 0.00",
+                  "Rs. 0.00",
+                  "-",
+                  "-",
+                ],
+              ],
+
+        styles: {
+          font:
+            "helvetica",
+          fontSize:
+            6.2,
+          textColor:
+            COLORS.text,
+          lineColor:
+            COLORS.border,
+          lineWidth:
+            0.25,
+          cellPadding:
+            1.5,
+          valign:
+            "middle",
+          halign:
+            "center",
+        },
+
+        headStyles: {
+          fillColor:
+            COLORS.mainHeader,
+          textColor:
+            COLORS.white,
+          fontStyle:
+            "bold",
+          fontSize:
+            5.8,
+          halign:
+            "center",
+          valign:
+            "middle",
+        },
+
+        bodyStyles: {
+          fillColor:
+            COLORS.white,
+          textColor:
+            COLORS.text,
+        },
+
+        columnStyles: {
+          0: {
+            cellWidth:
+              8,
+          },
+
+          1: {
+            cellWidth:
+              21,
+          },
+
+          2: {
+            cellWidth:
+              19,
+          },
+
+          3: {
+            cellWidth:
+              19,
+          },
+
+          4: {
+            cellWidth:
+              25,
+          },
+
+          5: {
+            cellWidth:
+              25,
+          },
+
+          6: {
+            cellWidth:
+              25,
+          },
+
+          7: {
+            cellWidth:
+              27,
+          },
+
+          8: {
+            cellWidth:
+              "auto",
+          },
+        },
+
+        didParseCell:
+          (data) => {
+            if (
+              data.section !==
+              "body"
+            ) {
+              return;
+            }
+
+            if (
+              data.column.index ===
+              5
+            ) {
+              data.cell.styles.textColor =
+                COLORS.paid;
+            }
+
+            if (
+              data.column.index ===
+              6
+            ) {
+              const numeric =
+                Number(
+                  String(
+                    data.cell.raw
+                  ).replace(
+                    /[^0-9.-]/g,
+                    ""
+                  )
+                );
+
+              if (
+                numeric > 0
+              ) {
+                data.cell.styles.textColor =
+                  COLORS.pending;
+
+                data.cell.styles.fontStyle =
+                  "bold";
+              }
+            }
+          },
+      }
+    );
+
+    /* ===================================================
+       LEDGER SUMMARY
+    =================================================== */
+
+    let summaryYPosition =
+      doc.lastAutoTable
+        .finalY + 8;
+
+    const summaryX =
+      pageWidth / 2 +
+      8;
+
+    const summaryValueX =
+      pageWidth -
+      margin;
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(
+      7
+    );
+
+    doc.setTextColor(
+      COLORS.text
+    );
+
+    doc.text(
+      "LEDGER SUMMARY",
       summaryX,
       summaryYPosition
     );
 
+    summaryYPosition +=
+      5;
+
+    const drawSummaryLine =
+      (
+        label,
+        value,
+        valueColor =
+          COLORS.text
+      ) => {
+        doc.setFont(
+          "helvetica",
+          "normal"
+        );
+
+        doc.setFontSize(
+          6.5
+        );
+
+        doc.setTextColor(
+          COLORS.text
+        );
+
+        doc.text(
+          label,
+          summaryX,
+          summaryYPosition
+        );
+
+        doc.setFont(
+          "helvetica",
+          "bold"
+        );
+
+        doc.setTextColor(
+          valueColor
+        );
+
+        doc.text(
+          `Rs. ${formatMoney(
+            value
+          )}`,
+          summaryValueX,
+          summaryYPosition,
+          {
+            align:
+              "right",
+          }
+        );
+
+        summaryYPosition +=
+          4;
+      };
+
+    drawSummaryLine(
+      "Total Purchase",
+      totalPurchased
+    );
+
+    drawSummaryLine(
+      "Total Paid",
+      totalPaid,
+      COLORS.paid
+    );
+
+    drawSummaryLine(
+      "Total Pending",
+      totalPending,
+      totalPending >
+        0
+        ? COLORS.pending
+        : COLORS.paid
+    );
+
+    const previousBalance =
+      Number(
+        summary?.previousBalance ||
+          customer?.previousBalance ||
+          0
+      );
+
+    const receivedAmount =
+      Number(
+        summary?.receivedAmount ||
+          totalPaid
+      );
+
+    const adjustmentAmount =
+      Number(
+        summary?.adjustmentAmount ||
+          0
+      );
+
+    drawSummaryLine(
+      "Previous Balance",
+      previousBalance
+    );
+
+    drawSummaryLine(
+      "Received Amount",
+      receivedAmount,
+      COLORS.paid
+    );
+
+    drawSummaryLine(
+      "Adjustment Amount",
+      adjustmentAmount
+    );
+
+    const netAmount =
+      Number(
+        summary?.netAmount ??
+          totalPending
+      );
+
+    summaryYPosition +=
+      2;
+
+    doc.setDrawColor(
+      COLORS.border
+    );
+
+    doc.setLineWidth(
+      0.3
+    );
+
+    doc.line(
+      summaryX,
+      summaryYPosition,
+      pageWidth -
+        margin,
+      summaryYPosition
+    );
+
+    summaryYPosition +=
+      5;
+
     doc.setFont(
       "helvetica",
       "bold"
     );
 
+    doc.setFontSize(
+      8
+    );
+
     doc.setTextColor(
-      valueColor
+      COLORS.text
+    );
+
+    doc.text(
+      "NET AMOUNT",
+      summaryX,
+      summaryYPosition
+    );
+
+    doc.setTextColor(
+      netAmount > 0
+        ? COLORS.pending
+        : COLORS.paid
     );
 
     doc.text(
       `Rs. ${formatMoney(
-        value
+        netAmount
       )}`,
       summaryValueX,
       summaryYPosition,
       {
-        align: "right",
+        align:
+          "right",
       }
     );
 
-    summaryYPosition +=
-      4;
-  };
+    /* ===================================================
+       AMOUNT IN WORDS
+    =================================================== */
 
-  drawSummaryLine(
-    "Total Purchase",
-    totalPurchased
-  );
+    const amountWordsY =
+      summaryYPosition +
+      9;
 
-  drawSummaryLine(
-    "Total Paid",
-    totalPaid,
-    COLORS.paid
-  );
-
-  drawSummaryLine(
-    "Total Pending",
-    totalPending,
-    totalPending > 0
-      ? COLORS.pending
-      : COLORS.paid
-  );
-
-  const previousBalance =
-    Number(
-      summary?.previousBalance ||
-        customer?.previousBalance ||
-        0
+    doc.setFont(
+      "helvetica",
+      "bold"
     );
 
-  const receivedAmount =
-    Number(
-      summary?.receivedAmount ||
-        totalPaid
+    doc.setFontSize(
+      7
     );
 
-  const adjustmentAmount =
-    Number(
-      summary?.adjustmentAmount ||
-        0
+    doc.setTextColor(
+      COLORS.text
     );
 
-  drawSummaryLine(
-    "Previous Balance",
-    previousBalance
-  );
-
-  drawSummaryLine(
-    "Received Amount",
-    receivedAmount,
-    COLORS.paid
-  );
-
-  drawSummaryLine(
-    "Adjustment Amount",
-    adjustmentAmount
-  );
-
-  const netAmount =
-    Number(
-      summary?.netAmount ??
-        totalPending
+    doc.text(
+      "Amount in Words:",
+      margin,
+      amountWordsY
     );
 
-  summaryYPosition +=
-    2;
-
-  doc.setDrawColor(
-    COLORS.border
-  );
-
-  doc.setLineWidth(
-    0.3
-  );
-
-  doc.line(
-    summaryX,
-    summaryYPosition,
-    pageWidth - margin,
-    summaryYPosition
-  );
-
-  summaryYPosition +=
-    5;
-
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
-
-  doc.setFontSize(8);
-
-  doc.setTextColor(
-    COLORS.text
-  );
-
-  doc.text(
-    "NET AMOUNT",
-    summaryX,
-    summaryYPosition
-  );
-
-  doc.setTextColor(
-    netAmount > 0
-      ? COLORS.pending
-      : COLORS.paid
-  );
-
-  doc.text(
-    `Rs. ${formatMoney(
-      netAmount
-    )}`,
-    summaryValueX,
-    summaryYPosition,
-    {
-      align: "right",
-    }
-  );
-
-  /* ===================================================
-     AMOUNT IN WORDS
-  =================================================== */
-
-  const amountWordsY =
-    summaryYPosition +
-    9;
-
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
-
-  doc.setFontSize(7);
-
-  doc.setTextColor(
-    COLORS.text
-  );
-
-  doc.text(
-    "Amount in Words:",
-    margin,
-    amountWordsY
-  );
-
-  doc.setFont(
-    "helvetica",
-    "normal"
-  );
-
-  doc.setFontSize(6.5);
-
-  const words =
-    safeString(
-      summary?.amountInWords ||
-        summary?.netAmountWords ||
-        ""
-    ) ||
-    amountInWords(
-      netAmount
+    doc.setFont(
+      "helvetica",
+      "normal"
     );
 
-  doc.text(
-    doc.splitTextToSize(
-      words,
-      80
-    ),
-    margin,
-    amountWordsY + 4
-  );
+    doc.setFontSize(
+      6.5
+    );
 
-  /* ===================================================
-     TERMS & CONDITIONS
-  =================================================== */
-
-  const termsY =
-    pageHeight - 31;
-
-  doc.setFillColor(
-    COLORS.sectionBar
-  );
-
-  doc.setDrawColor(
-    COLORS.border
-  );
-
-  doc.rect(
-    margin,
-    termsY - 4,
-    contentWidth,
-    7,
-    "FD"
-  );
-
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
-
-  doc.setFontSize(6.5);
-
-  doc.setTextColor(
-    COLORS.text
-  );
-
-  doc.text(
-    "TERMS AND CONDITIONS",
-    margin + 2,
-    termsY
-  );
-
-  doc.setFont(
-    "helvetica",
-    "normal"
-  );
-
-  doc.setFontSize(5.7);
-
-  const termsText =
-    settingsTerms ||
-    "If bill is not paid on presentation, interest will be charged at 12% p.a. and supply will be suspended till bill payment.";
-
-  doc.text(
-    doc.splitTextToSize(
-      termsText,
-      contentWidth - 4
-    ),
-    margin + 2,
-    termsY + 5
-  );
-
-  /* ===================================================
-     SIGNATURES
-  =================================================== */
-
-  const signatureY =
-    pageHeight - 14;
-
-  doc.setDrawColor(
-    COLORS.text
-  );
-
-  doc.setLineWidth(
-    0.3
-  );
-
-  doc.line(
-    margin,
-    signatureY - 4,
-    margin + 45,
-    signatureY - 4
-  );
-
-  doc.setFont(
-    "helvetica",
-    "normal"
-  );
-
-  doc.setFontSize(5.8);
-
-  doc.setTextColor(
-    COLORS.text
-  );
-
-  doc.text(
-    "Customer Signature",
-    margin,
-    signatureY
-  );
-
-  doc.line(
-    pageWidth -
-      margin -
-      45,
-    signatureY - 4,
-    pageWidth - margin,
-    signatureY - 4
-  );
-
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
-
-  doc.setFontSize(6);
-
-  doc.text(
-    `For ${pumpName}`,
-    pageWidth - margin,
-    signatureY - 7,
-    {
-      align: "right",
-    }
-  );
-
-  doc.setFont(
-    "helvetica",
-    "normal"
-  );
-
-  doc.text(
-    ownerName ||
-      "Authorized Signatory",
-    pageWidth - margin,
-    signatureY,
-    {
-      align: "right",
-    }
-  );
-
-  doc.text(
-    "(Authorized Signatory)",
-    pageWidth - margin,
-    signatureY + 4,
-    {
-      align: "right",
-    }
-  );
-
-  /* ===================================================
-     FOOTER
-  =================================================== */
-
-  doc.setFont(
-    "helvetica",
-    "normal"
-  );
-
-  doc.setFontSize(4.8);
-
-  doc.setTextColor(
-    COLORS.muted
-  );
-
-  doc.text(
-    `Bill No. ${finalBillNo}  |  Bill Date: ${formatDate(
-      finalBillDate
-    )}`,
-    pageWidth / 2,
-    pageHeight - 11,
-    {
-      align: "center",
-    }
-  );
-
-  doc.text(
-    "Generated by MyPump - Petrol Pump Management System",
-    pageWidth / 2,
-    pageHeight - 7,
-    {
-      align: "center",
-    }
-  );
-
-  /* ===================================================
-     SAVE FILE
-  =================================================== */
-
-  const safeCustomerName =
-    customerName
-      .replace(
-        /[^a-zA-Z0-9]+/g,
-        "_"
-      )
-      .replace(
-        /^_+|_+$/g,
-        ""
+    const words =
+      safeString(
+        summary?.amountInWords ||
+          summary?.netAmountWords ||
+          ""
       ) ||
-    "Customer";
+      amountInWords(
+        netAmount
+      );
 
-  const safeBillNo =
-    String(
-      finalBillNo
-    ).replace(
-      /[^a-zA-Z0-9-_]/g,
-      "_"
+    doc.text(
+      doc.splitTextToSize(
+        words,
+        80
+      ),
+      margin,
+      amountWordsY +
+        4
     );
 
-  const datePart =
-    new Date()
-      .toISOString()
-      .slice(0, 10);
+    /* ===================================================
+       TERMS & CONDITIONS
+    =================================================== */
 
-  const fileName =
-    `Customer_Ledger_${safeCustomerName}_Bill_${safeBillNo}_${datePart}.pdf`;
+    const termsY =
+      pageHeight -
+      31;
 
-  doc.save(fileName);
+    doc.setFillColor(
+      COLORS.sectionBar
+    );
 
-  return {
-    billNo:
-      finalBillNo,
+    doc.setDrawColor(
+      COLORS.border
+    );
 
-    billDate:
-      finalBillDate,
+    doc.rect(
+      margin,
+      termsY - 4,
+      contentWidth,
+      7,
+      "FD"
+    );
 
-    fileName,
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(
+      6.5
+    );
+
+    doc.setTextColor(
+      COLORS.text
+    );
+
+    doc.text(
+      "TERMS AND CONDITIONS",
+      margin + 2,
+      termsY
+    );
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.setFontSize(
+      5.7
+    );
+
+    const termsText =
+      "If bill is not paid on presentation, interest will be charged at 12% p.a. and supply will be suspended till bill payment.";
+
+    doc.text(
+      doc.splitTextToSize(
+        termsText,
+        contentWidth - 4
+      ),
+      margin + 2,
+      termsY + 5
+    );
+
+    /* ===================================================
+       SIGNATURES
+    =================================================== */
+
+    const signatureY =
+      pageHeight -
+      14;
+
+    doc.setDrawColor(
+      COLORS.text
+    );
+
+    doc.setLineWidth(
+      0.3
+    );
+
+    doc.line(
+      margin,
+      signatureY - 4,
+      margin + 45,
+      signatureY - 4
+    );
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.setFontSize(
+      5.8
+    );
+
+    doc.setTextColor(
+      COLORS.text
+    );
+
+    doc.text(
+      "Customer Signature",
+      margin,
+      signatureY
+    );
+
+    doc.line(
+      pageWidth -
+        margin -
+        45,
+      signatureY - 4,
+      pageWidth -
+        margin,
+      signatureY - 4
+    );
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(
+      6
+    );
+
+    doc.text(
+      `For ${pumpName}`,
+      pageWidth -
+        margin,
+      signatureY - 7,
+      {
+        align:
+          "right",
+      }
+    );
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.text(
+      ownerName ||
+        "Authorized Signatory",
+      pageWidth -
+        margin,
+      signatureY,
+      {
+        align:
+          "right",
+      }
+    );
+
+    doc.text(
+      "(Authorized Signatory)",
+      pageWidth -
+        margin,
+      signatureY + 4,
+      {
+        align:
+          "right",
+      }
+    );
+
+    /* ===================================================
+       FOOTER
+    =================================================== */
+
+    if (
+      shivshambhoLogoData
+    ) {
+      try {
+        doc.addImage(
+          shivshambhoLogoData,
+          "PNG",
+          pageWidth / 2 - 5,
+          pageHeight - 21,
+          10,
+          10,
+          undefined,
+          "FAST"
+        );
+      } catch (error) {
+        console.warn(
+          "Unable to add Shivshambho footer logo:",
+          error
+        );
+      }
+    }
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.setFontSize(
+      4.8
+    );
+
+    doc.setTextColor(
+      COLORS.muted
+    );
+
+    doc.text(
+      `Bill No. ${finalBillNo}  |  Bill Date: ${formatDate(
+        finalBillDate
+      )}`,
+      pageWidth / 2,
+      pageHeight - 11,
+      {
+        align:
+          "center",
+      }
+    );
+
+    doc.text(
+      "Generated by MyPump - Petrol Pump Management System",
+      pageWidth / 2,
+      pageHeight - 7,
+      {
+        align:
+          "center",
+      }
+    );
+
+    /* ===================================================
+       SAVE FILE
+    =================================================== */
+
+    const safeCustomerName =
+      customerName
+        .replace(
+          /[^a-zA-Z0-9]+/g,
+          "_"
+        )
+        .replace(
+          /^_+|_+$/g,
+          ""
+        ) ||
+      "Customer";
+
+    const safeBillNo =
+      String(
+        finalBillNo
+      ).replace(
+        /[^a-zA-Z0-9-_]/g,
+        "_"
+      );
+
+    const datePart =
+      new Date()
+        .toISOString()
+        .slice(
+          0,
+          10
+        );
+
+    const fileName =
+      `Customer_Ledger_${safeCustomerName}_Bill_${safeBillNo}_${datePart}.pdf`;
+
+    doc.save(
+      fileName
+    );
+
+    return {
+      billNo:
+        finalBillNo,
+
+      billDate:
+        finalBillDate,
+
+      fileName,
+    };
   };
-};
 
 /* =====================================================
    PRINT / BACKWARD COMPATIBILITY
