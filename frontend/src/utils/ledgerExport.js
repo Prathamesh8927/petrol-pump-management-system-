@@ -23,18 +23,26 @@ const COLORS = {
 ===================================================== */
 
 const safeString = (value) => {
-  if (value === null || value === undefined) return "";
+  if (value === null || value === undefined) {
+    return "";
+  }
+
   return String(value).trim();
 };
 
-const formatMoney = (value) =>
-  Number(value || 0).toLocaleString("en-IN", {
+const formatMoney = (value) => {
+  const number = Number(value || 0);
+
+  return number.toLocaleString("en-IN", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+};
 
 const formatDate = (value) => {
-  if (!value) return "-";
+  if (!value) {
+    return "-";
+  }
 
   try {
     const date = new Date(value);
@@ -53,26 +61,31 @@ const formatDate = (value) => {
   }
 };
 
+/* =====================================================
+   BILL NUMBER
+===================================================== */
+
 const getNextBillNo = () => {
   try {
-    const stored = Number(
+    const storedValue = Number(
       localStorage.getItem("mypump_next_bill_no")
     );
 
-    const next =
-      Number.isInteger(stored) && stored >= 1
-        ? stored
+    const nextBillNo =
+      Number.isInteger(storedValue) &&
+      storedValue >= 1
+        ? storedValue
         : 1;
 
     localStorage.setItem(
       "mypump_next_bill_no",
-      String(next + 1)
+      String(nextBillNo + 1)
     );
 
-    return String(next);
+    return String(nextBillNo);
   } catch (error) {
     console.warn(
-      "Unable to access bill number storage:",
+      "Unable to access localStorage for bill number:",
       error
     );
 
@@ -101,7 +114,9 @@ const getCustomerPhone = (customer) =>
   );
 
 const getCustomerAddress = (customer) =>
-  safeString(customer?.address || "");
+  safeString(
+    customer?.address || ""
+  );
 
 const getCustomerGstin = (customer) =>
   safeString(
@@ -122,7 +137,6 @@ const getVehicleNumber = (customer) =>
 ===================================================== */
 
 const getTransactionDate = (entry) =>
-  entry?.entryDate ||
   entry?.date ||
   entry?.transactionDate ||
   entry?.createdAt ||
@@ -130,78 +144,21 @@ const getTransactionDate = (entry) =>
   entry?.paymentDate ||
   null;
 
-/* =====================================================
-   BILL PERIOD / DATE RANGE
-
-   Uses the earliest and latest transaction dates from
-   the customer's complete ledger history.
-
-   Example:
-   05/09/2026
-   10/09/2026
-   19/09/2026
-
-   Bill From:
-   05/09/2026 - 19/09/2026
-===================================================== */
-
-const getBillPeriod = (
-  entries = [],
-  fallbackDate = null
-) => {
-  const validDates = entries
-    .map((entry) =>
-      getTransactionDate(entry)
-    )
-    .filter(Boolean)
-    .map((value) => {
-      const date = new Date(value);
-
-      return Number.isNaN(
-        date.getTime()
-      )
-        ? null
-        : date;
-    })
-    .filter(Boolean)
-    .sort(
-      (a, b) =>
-        a.getTime() - b.getTime()
-    );
-
-  if (validDates.length === 0) {
-    return fallbackDate
-      ? formatDate(fallbackDate)
-      : "-";
-  }
-
-  const firstDate = formatDate(
-    validDates[0]
-  );
-
-  const lastDate = formatDate(
-    validDates[
-      validDates.length - 1
-    ]
-  );
-
-  return firstDate === lastDate
-    ? firstDate
-    : `${firstDate} - ${lastDate}`;
-};
-
 const getTransactionType = (entry) => {
   const type = safeString(
-    entry?.entryType ||
-      entry?.type ||
+    entry?.type ||
       entry?.transactionType ||
       ""
   ).toLowerCase();
 
-  return type.includes("payment") ||
+  if (
+    type.includes("payment") ||
     type.includes("paid")
-    ? "Payment"
-    : "Purchase";
+  ) {
+    return "Payment";
+  }
+
+  return "Purchase";
 };
 
 const getFuelType = (entry) =>
@@ -232,6 +189,12 @@ const getPaidAmount = (entry) =>
   );
 
 const getPendingAmount = (entry) => {
+  const amount =
+    getAmount(entry);
+
+  const paid =
+    getPaidAmount(entry);
+
   if (
     entry?.pending !== undefined &&
     entry?.pending !== null
@@ -251,8 +214,7 @@ const getPendingAmount = (entry) => {
   }
 
   return Math.max(
-    getAmount(entry) -
-      getPaidAmount(entry),
+    amount - paid,
     0
   );
 };
@@ -277,9 +239,7 @@ const getRemarks = (entry) =>
    INDIAN CURRENCY WORDS
 ===================================================== */
 
-const numberToWordsIndian = (
-  number
-) => {
+const numberToWordsIndian = (number) => {
   const value = Math.floor(
     Number(number || 0)
   );
@@ -329,9 +289,7 @@ const numberToWordsIndian = (
       return ones[num];
     }
 
-    return `${tens[
-      Math.floor(num / 10)
-    ]}${
+    return `${tens[Math.floor(num / 10)]}${
       num % 10
         ? ` ${ones[num % 10]}`
         : ""
@@ -343,11 +301,11 @@ const numberToWordsIndian = (
       return twoDigits(num);
     }
 
-    const hundred = Math.floor(
-      num / 100
-    );
+    const hundred =
+      Math.floor(num / 100);
 
-    const remainder = num % 100;
+    const remainder =
+      num % 100;
 
     return `${ones[hundred]} Hundred${
       remainder
@@ -359,6 +317,7 @@ const numberToWordsIndian = (
   };
 
   let remaining = value;
+
   const parts = [];
 
   const crore = Math.floor(
@@ -412,29 +371,28 @@ const numberToWordsIndian = (
   return parts.join(" ");
 };
 
-const amountInWords = (
-  amount
-) => {
-  const numeric = Number(
-    amount || 0
-  );
+const amountInWords = (amount) => {
+  const numericAmount =
+    Number(amount || 0);
 
-  const rupees = Math.floor(
-    numeric
-  );
+  const rupees =
+    Math.floor(numericAmount);
 
-  const paise = Math.round(
-    (numeric - rupees) * 100
-  );
+  const paise =
+    Math.round(
+      (numericAmount - rupees) * 100
+    );
 
-  let result = `Rupees ${numberToWordsIndian(
-    rupees
-  )}`;
+  let result =
+    `Rupees ${numberToWordsIndian(
+      rupees
+    )}`;
 
   if (paise > 0) {
-    result += ` and ${numberToWordsIndian(
-      paise
-    )} Paise`;
+    result +=
+      ` and ${numberToWordsIndian(
+        paise
+      )} Paise`;
   }
 
   return `${result} Only.`;
@@ -447,15 +405,37 @@ const amountInWords = (
 const getPumpName = (pump) =>
   safeString(
     pump?.pumpName ||
-      pump?.name ||
       pump?.petrolPumpName ||
+      pump?.name ||
+      pump?.settings?.pumpName ||
+      pump?.settings?.petrolPumpName ||
+      pump?.settings?.name ||
+      pump?.pump?.pumpName ||
+      pump?.pump?.petrolPumpName ||
+      pump?.pump?.name ||
       "Petrol Pump"
   );
 
+/*
+ * OWNER NAME
+ *
+ * Priority:
+ * 1. ownerName from Settings
+ * 2. owner from Settings
+ * 3. nested settings ownerName
+ * 4. fallback pump ownerName
+ * 5. fallback pump owner
+ */
 const getOwnerName = (pump) =>
   safeString(
     pump?.ownerName ||
       pump?.owner ||
+      pump?.ownerFullName ||
+      pump?.settings?.ownerName ||
+      pump?.settings?.owner ||
+      pump?.settings?.ownerFullName ||
+      pump?.pump?.ownerName ||
+      pump?.pump?.owner ||
       ""
   );
 
@@ -469,6 +449,9 @@ const getCompanyName = (pump) =>
       pump?.provider ||
       pump?.oilProvider ||
       pump?.oilProviderName ||
+      pump?.settings?.companyName ||
+      pump?.settings?.oilCompanyName ||
+      pump?.settings?.oilCompany ||
       ""
   );
 
@@ -477,45 +460,60 @@ const getPumpPhone = (pump) =>
     pump?.phone ||
       pump?.mobile ||
       pump?.mobileNumber ||
+      pump?.settings?.phone ||
+      pump?.settings?.mobile ||
+      pump?.settings?.mobileNumber ||
       ""
   );
 
 const getPumpEmail = (pump) =>
   safeString(
-    pump?.email || ""
+    pump?.email ||
+      pump?.settings?.email ||
+      ""
   );
 
 const getPumpGstin = (pump) =>
   safeString(
     pump?.gstin ||
       pump?.gstNo ||
+      pump?.settings?.gstin ||
+      pump?.settings?.gstNo ||
       ""
   );
 
 const getPumpAddress = (pump) =>
   safeString(
-    pump?.address || ""
+    pump?.address ||
+      pump?.settings?.address ||
+      ""
   );
 
 const getPumpCity = (pump) =>
   safeString(
-    pump?.city || ""
+    pump?.city ||
+      pump?.settings?.city ||
+      ""
   );
 
 const getPumpState = (pump) =>
   safeString(
-    pump?.state || ""
+    pump?.state ||
+      pump?.settings?.state ||
+      ""
   );
 
 const getPumpPincode = (pump) =>
   safeString(
     pump?.pincode ||
       pump?.pinCode ||
+      pump?.settings?.pincode ||
+      pump?.settings?.pinCode ||
       ""
   );
 
 /* =====================================================
-   PROFILE LOGO RESOLUTION
+   LOGO RESOLUTION — SAME LOGIC AS MONTHLY REPORT
 ===================================================== */
 
 const resolveLogoValue = (
@@ -555,51 +553,6 @@ const resolveLogoValue = (
   return null;
 };
 
-const getClientLogo = (
-  pump,
-  explicitLogoUrl = null
-) => {
-  const explicit =
-    resolveLogoValue(
-      explicitLogoUrl
-    );
-
-  if (explicit) {
-    return explicit;
-  }
-
-  const candidates = [
-    pump?.logoUrl,
-    pump?.logoURL,
-    pump?.companyLogo,
-    pump?.pumpLogo,
-    pump?.logo?.url,
-    pump?.logo?.secure_url,
-    pump?.logo?.secureUrl,
-    pump?.logo?.path,
-    pump?.logo?.src,
-    pump?.logo,
-  ];
-
-  for (const candidate of candidates) {
-    const resolved =
-      resolveLogoValue(
-        candidate
-      );
-
-    if (
-      resolved &&
-      !resolved.includes(
-        "/src/assets/logo.png"
-      )
-    ) {
-      return resolved;
-    }
-  }
-
-  return null;
-};
-
 /* =====================================================
    OIL PROVIDER LOGO
 ===================================================== */
@@ -608,42 +561,61 @@ const OIL_PROVIDER_DOMAINS = {
   "indian oil": "iocl.com",
   "indianoil": "iocl.com",
   "ioc": "iocl.com",
+
   "bharat petroleum":
     "bharatpetroleum.in",
+
   "bpcl":
     "bharatpetroleum.in",
+
   "bharatpetroleum":
     "bharatpetroleum.in",
+
   "hindustan petroleum":
     "hindustanpetroleum.com",
+
   "hpcl":
     "hindustanpetroleum.com",
+
   "hindustanpetroleum":
     "hindustanpetroleum.com",
+
   "nayara":
     "nayaraenergy.com",
+
   "nayara energy":
     "nayaraenergy.com",
+
   "reliance":
     "reliancepetroleum.com",
+
   "reliance petroleum":
     "reliancepetroleum.com",
+
   "shell":
     "shell.in",
+
   "jio bp":
     "jiobp.com",
+
   "jiobp":
     "jiobp.com",
+
   "jio-bp":
     "jiobp.com",
+
   "oil india":
     "oil-india.com",
+
   "oilindia":
     "oil-india.com",
+
   "adani":
     "adanigas.com",
+
   "adani total":
     "adanigas.com",
+
   "gulf":
     "gulf.com",
 };
@@ -651,24 +623,29 @@ const OIL_PROVIDER_DOMAINS = {
 const normalizeOilProvider = (
   value
 ) =>
-  safeString(value)
+  String(value || "")
+    .trim()
     .toLowerCase()
-    .replace(/\s+/g, " ");
+    .replace(
+      /\s+/g,
+      " "
+    );
 
 const getOilProviderName = (
   pump = {}
 ) =>
-  safeString(
-    pump?.oilCompanyName ||
-      pump?.oilCompany ||
-      pump?.companyName ||
-      pump?.company ||
-      pump?.providerName ||
-      pump?.provider ||
-      pump?.oilProvider ||
-      pump?.oilProviderName ||
-      ""
-  );
+  pump?.oilCompanyName ||
+  pump?.oilCompany ||
+  pump?.companyName ||
+  pump?.company ||
+  pump?.providerName ||
+  pump?.provider ||
+  pump?.oilProvider ||
+  pump?.oilProviderName ||
+  pump?.settings?.oilCompanyName ||
+  pump?.settings?.oilCompany ||
+  pump?.settings?.companyName ||
+  "";
 
 const getOilProviderLogo = (
   pump = {}
@@ -709,12 +686,8 @@ const getOilProviderLogo = (
 };
 
 const getPumpLogo = (
-  pump = {}
+  pump
 ) => {
-  /*
-   * EXACT SAME LOGIC AS THE WORKING
-   * MONTHLY REPORT.
-   */
   const providerLogo =
     getOilProviderLogo(
       pump
@@ -730,9 +703,17 @@ const getPumpLogo = (
     pump?.companyLogo,
     pump?.pumpLogo,
     pump?.logo,
+
+    pump?.settings?.logoUrl,
+    pump?.settings?.logoURL,
+    pump?.settings?.companyLogo,
+    pump?.settings?.pumpLogo,
+    pump?.settings?.logo,
   ];
 
-  for (const candidate of candidates) {
+  for (
+    const candidate of candidates
+  ) {
     const resolved =
       resolveLogoValue(
         candidate
@@ -752,12 +733,9 @@ const getPumpLogo = (
 };
 
 /* =====================================================
-   IMAGE LOADER
+   LOAD IMAGE AS DATA URL
 ===================================================== */
 
-/*
- * EXACT SAME LOADER LOGIC AS MONTHLY REPORT.
- */
 const loadImageAsDataURL =
   async (
     imageSource
@@ -767,8 +745,7 @@ const loadImageAsDataURL =
     }
 
     if (
-      typeof imageSource ===
-        "string" &&
+      typeof imageSource === "string" &&
       imageSource.startsWith(
         "data:image/"
       )
@@ -776,36 +753,35 @@ const loadImageAsDataURL =
       return imageSource;
     }
 
-    const blobToDataURL = (
-      blob
-    ) =>
-      new Promise(
-        (
-          resolve,
-          reject
-        ) => {
-          const reader =
-            new FileReader();
+    const blobToDataURL =
+      (blob) =>
+        new Promise(
+          (
+            resolve,
+            reject
+          ) => {
+            const reader =
+              new FileReader();
 
-          reader.onloadend =
-            () =>
-              resolve(
-                reader.result
-              );
+            reader.onloadend =
+              () =>
+                resolve(
+                  reader.result
+                );
 
-          reader.onerror =
-            () =>
-              reject(
-                new Error(
-                  "Failed to convert image"
-                )
-              );
+            reader.onerror =
+              () =>
+                reject(
+                  new Error(
+                    "Failed to convert image"
+                  )
+                );
 
-          reader.readAsDataURL(
-            blob
-          );
-        }
-      );
+            reader.readAsDataURL(
+              blob
+            );
+          }
+        );
 
     const fetchImage =
       async (
@@ -876,101 +852,40 @@ const loadImageAsDataURL =
   };
 
 /* =====================================================
-   LOAD LATEST PUMP SETTINGS
+   LOAD CURRENT PUMP SETTINGS
 ===================================================== */
 
-const loadPumpSettings = async (
-  fallbackPump = {}
-) => {
-  try {
-    const response =
-      await api.get(
-        "/settings/pump"
+const loadPumpSettings =
+  async (
+    fallbackPump = {}
+  ) => {
+    try {
+      const response =
+        await api.get(
+          "/settings/pump"
+        );
+
+      const settings =
+        response?.settings ||
+        response?.data?.settings ||
+        response?.data?.pump ||
+        response?.pump ||
+        response?.data ||
+        {};
+
+      return {
+        ...fallbackPump,
+        ...settings,
+      };
+    } catch (error) {
+      console.warn(
+        "Unable to load latest pump settings. Using current pump data:",
+        error
       );
 
-    /*
-     * This extraction intentionally matches the
-     * working Monthly Report implementation.
-     */
-    const settings =
-      response?.settings ||
-      response?.data?.settings ||
-      response?.data ||
-      {};
-
-    /*
-     * Monthly Report gets its header logo from
-     * the configured oil-provider/company.
-     */
-    const logoUrl =
-      getPumpLogo(
-        settings
-      );
-
-    const normalizedSettings = {
-      ...fallbackPump,
-      ...settings,
-
-      pumpName:
-        getPumpName(settings) ||
-        getPumpName(fallbackPump),
-
-      ownerName:
-        getOwnerName(settings) ||
-        getOwnerName(fallbackPump),
-
-      companyName:
-        getCompanyName(settings) ||
-        getCompanyName(fallbackPump),
-
-      phone:
-        getPumpPhone(settings) ||
-        getPumpPhone(fallbackPump),
-
-      email:
-        getPumpEmail(settings) ||
-        getPumpEmail(fallbackPump),
-
-      gstin:
-        getPumpGstin(settings) ||
-        getPumpGstin(fallbackPump),
-
-      address:
-        getPumpAddress(settings) ||
-        getPumpAddress(fallbackPump),
-
-      city:
-        getPumpCity(settings) ||
-        getPumpCity(fallbackPump),
-
-      state:
-        getPumpState(settings) ||
-        getPumpState(fallbackPump),
-
-      pincode:
-        getPumpPincode(settings) ||
-        getPumpPincode(fallbackPump),
-
-      logoUrl:
-        logoUrl ||
-        null,
-
-      logo:
-        settings?.logo ||
-        logoUrl ||
-        null,
-    };
-
-    return normalizedSettings;
-  } catch (error) {
-    console.warn(
-      "USING CACHED PUMP PROFILE:",
-      error
-    );
-
-    return fallbackPump || {};
-  }
-};
+      return fallbackPump || {};
+    }
+  };
 
 /* =====================================================
    EXPORT LEDGER PDF
@@ -981,14 +896,20 @@ export const exportLedgerPDF =
     customer = {},
     pump = {},
     entries =
-      customer?.entries || [],
+      customer?.entries ||
+      [],
     summary =
-      customer?.summary || {},
+      customer?.summary ||
+      {},
     billNo = null,
     billDate = null,
     billFrom = null,
     logoUrl = null,
   } = {}) => {
+    /* =================================================
+       BILL INFORMATION
+    ================================================= */
+
     const suppliedBillNo =
       safeString(
         billNo ||
@@ -1010,29 +931,26 @@ export const exportLedgerPDF =
       customer?.date ||
       new Date();
 
-    /*
-     * Always derive the customer ledger
-     * period from actual transaction history.
-     *
-     * This intentionally ignores a stale/manual
-     * billFrom value.
-     */
     const finalBillFrom =
-      getBillPeriod(
-        Array.isArray(entries)
-          ? entries
-          : [],
-        finalBillDate
-      );
+      safeString(
+        billFrom ||
+          customer?.billFrom ||
+          customer?.billingPeriod ||
+          ""
+      ) || "-";
 
-    /* ===================================================
-       LOAD LATEST SETTINGS PROFILE
-    =================================================== */
+    /* =================================================
+       LOAD LATEST SETTINGS
+    ================================================= */
 
     const settingsPump =
       await loadPumpSettings(
         pump
       );
+
+    /* =================================================
+       PUMP INFORMATION
+    ================================================= */
 
     const pumpName =
       getPumpName(
@@ -1084,6 +1002,10 @@ export const exportLedgerPDF =
         settingsPump
       );
 
+    /* =================================================
+       CUSTOMER INFORMATION
+    ================================================= */
+
     const customerName =
       getCustomerName(
         customer
@@ -1109,12 +1031,14 @@ export const exportLedgerPDF =
         customer
       );
 
+    /* =================================================
+       SUMMARY
+    ================================================= */
+
     const totalPurchased =
       Number(
         summary?.totalPurchased ??
-          summary?.totalPurchase ??
           customer?.totalPurchased ??
-          customer?.totalPurchases ??
           customer?.totalAmount ??
           0
       );
@@ -1151,14 +1075,16 @@ export const exportLedgerPDF =
           ).length
       );
 
+    /* =================================================
+       CREATE PDF
+    ================================================= */
+
     const doc =
       new jsPDF({
         orientation:
           "portrait",
-        unit:
-          "mm",
-        format:
-          "a4",
+        unit: "mm",
+        format: "a4",
       });
 
     const pageWidth =
@@ -1173,6 +1099,10 @@ export const exportLedgerPDF =
       pageWidth -
       margin * 2;
 
+    /* =================================================
+       FONT
+    ================================================= */
+
     doc.setFont(
       "helvetica",
       "normal"
@@ -1181,6 +1111,65 @@ export const exportLedgerPDF =
     doc.setTextColor(
       COLORS.text
     );
+
+    /* =================================================
+       LOAD PUMP / OIL-PROVIDER LOGO
+    ================================================= */
+
+    const pumpLogoUrl =
+      getPumpLogo(
+        settingsPump
+      );
+
+    console.log(
+      "Customer Ledger Oil Provider:",
+      getOilProviderName(
+        settingsPump
+      )
+    );
+
+    console.log(
+      "Customer Ledger Logo Source:",
+      pumpLogoUrl
+    );
+
+    const logoData =
+      await loadImageAsDataURL(
+        pumpLogoUrl ||
+          resolveLogoValue(
+            logoUrl
+          )
+      );
+
+    console.log(
+      "Customer Ledger Logo Loaded:",
+      Boolean(logoData)
+    );
+
+    /* =================================================
+       LOAD SHIVSHAMBHO APPLICATION LOGO
+    ================================================= */
+
+    let shivshambhoLogoData =
+      null;
+
+    try {
+      shivshambhoLogoData =
+        await loadImageAsDataURL(
+          shivshambhoLogo
+        );
+    } catch (error) {
+      console.warn(
+        "Unable to load Shivshambho footer logo:",
+        error
+      );
+    }
+
+    /* =================================================
+       PDF HEADER
+    ================================================= */
+
+    /* OUTER BORDER */
 
     doc.setDrawColor(
       COLORS.border
@@ -1197,74 +1186,16 @@ export const exportLedgerPDF =
       pageHeight - 10
     );
 
-    /* ===================================================
-       LOAD OIL PROVIDER LOGO
-    =================================================== */
-
-    const oilProviderName =
-      getOilProviderName(
-        settingsPump || {}
-      );
-
-    const pumpLogoUrl =
-      getPumpLogo(
-        settingsPump || {}
-      );
-
-    console.log(
-      "CUSTOMER LEDGER OIL PROVIDER:",
-      oilProviderName
-    );
-
-    console.log(
-      "CUSTOMER LEDGER OIL PROVIDER LOGO SOURCE:",
-      pumpLogoUrl
-    );
-
-    const logoData =
-      await loadImageAsDataURL(
-        pumpLogoUrl
-      );
-
-    console.log(
-      "CUSTOMER LEDGER OIL PROVIDER LOGO LOADED:",
-      Boolean(
-        logoData
-      )
-    );
-
-    /* ===================================================
-       LOAD SHIVSHAMBHO APPLICATION LOGO
-
-       This is the local asset used in the footer.
-       It is intentionally separate from the
-       oil-provider logo.
-    =================================================== */
-
-    const shivshambhoLogoData =
-      await loadImageAsDataURL(
-        shivshambhoLogo
-      );
-
-    console.log(
-      "Customer Ledger Shivshambho logo loaded:",
-      Boolean(
-        shivshambhoLogoData
-      )
-    );
-
-    /* ===================================================
-       TOP HEADER
-    =================================================== */
+    /* =================================================
+       GSTIN
+    ================================================= */
 
     doc.setFont(
       "helvetica",
       "normal"
     );
 
-    doc.setFontSize(
-      7
-    );
+    doc.setFontSize(7);
 
     doc.setTextColor(
       COLORS.text
@@ -1274,32 +1205,88 @@ export const exportLedgerPDF =
       pumpGstin
         ? `GSTIN-${pumpGstin}`
         : "GSTIN-",
-      margin,
+      10,
       12
     );
 
-    doc.text(
-      "Original Invoice",
-      pageWidth / 2,
-      12,
-      {
-        align:
-          "center",
-      }
-    );
+    /* =================================================
+       OWNER NAME FROM SETTINGS
+       DISPLAYED ABOVE PHONE NUMBER
+    ================================================= */
 
-    if (pumpPhone) {
+    if (ownerName) {
+      doc.setFont(
+        "helvetica",
+        "bold"
+      );
+
+      doc.setFontSize(
+        7
+      );
+
+      doc.setTextColor(
+        COLORS.text
+      );
+
       doc.text(
-        `PH ${pumpPhone}`,
-        pageWidth -
-          margin,
-        12,
+        ` ${ownerName}`,
+        pageWidth - 10,
+        10,
         {
-          align:
-            "right",
+          align: "right",
         }
       );
     }
+
+    /* =================================================
+       PHONE NUMBER
+    ================================================= */
+
+    if (pumpPhone) {
+      doc.setFont(
+        "helvetica",
+        "normal"
+      );
+
+      doc.setFontSize(7);
+
+      doc.text(
+        `PH ${pumpPhone}`,
+        pageWidth - 10,
+        14,
+        {
+          align: "right",
+        }
+      );
+    }
+
+    /* =================================================
+       OIL PROVIDER / SETTINGS LOGO
+    ================================================= */
+
+    if (logoData) {
+      try {
+        doc.addImage(
+          logoData,
+          "PNG",
+          13,
+          19,
+          24,
+          24,
+          undefined,
+          "FAST"
+        );
+      } catch (error) {
+        console.warn(
+          "Unable to add pump logo:",
+          error
+        );
+      }
+    }
+
+    /* =================================================
+       PUMP NAME
+    ================================================= */
 
     doc.setFont(
       "helvetica",
@@ -1310,15 +1297,23 @@ export const exportLedgerPDF =
       15
     );
 
+    doc.setTextColor(
+      COLORS.text
+    );
+
     doc.text(
       pumpName,
       pageWidth / 2,
-      18,
+      19,
       {
         align:
           "center",
       }
     );
+
+    /* =================================================
+       COMPANY / DEALER
+    ================================================= */
 
     doc.setFont(
       "helvetica",
@@ -1334,70 +1329,48 @@ export const exportLedgerPDF =
         ? `DEALER - ${companyName.toUpperCase()}`
         : "DEALER",
       pageWidth / 2,
-      22,
+      24,
       {
         align:
           "center",
       }
     );
 
-    /* ===================================================
-       COMPANY LOGO — LEFT SIDE
-    =================================================== */
+    /* =================================================
+       ADDRESS
+    ================================================= */
 
-    if (logoData) {
-      try {
-        doc.addImage(
-          logoData,
-          "PNG",
-          15,
-          23,
-          25,
-          25,
-          undefined,
-          "FAST"
-        );
-      } catch (error) {
-        console.warn(
-          "Unable to add company logo to PDF:",
-          error
-        );
-      }
-    }
+    const addressParts =
+      [
+        pumpAddress,
+        pumpCity,
+        pumpState,
+        pumpPincode,
+      ].filter(Boolean);
 
-    /* ===================================================
-       PUMP ADDRESS
-    =================================================== */
-
-    const addressText = [
-      pumpAddress,
-      pumpCity,
-      pumpState,
-      pumpPincode,
-    ]
-      .filter(Boolean)
-      .join(", ");
-
-    doc.setFont(
-      "helvetica",
-      "bold"
-    );
-
-    doc.setFontSize(
-      7
-    );
+    const addressText =
+      addressParts.join(", ");
 
     if (addressText) {
+      doc.setFont(
+        "helvetica",
+        "bold"
+      );
+
+      doc.setFontSize(
+        6.5
+      );
+
       const addressLines =
         doc.splitTextToSize(
           addressText,
-          85
+          105
         );
 
       doc.text(
         addressLines,
         pageWidth / 2,
-        31,
+        30,
         {
           align:
             "center",
@@ -1405,17 +1378,9 @@ export const exportLedgerPDF =
       );
     }
 
-    /* ===================================================
-       BUYER / BILL INFORMATION
-    =================================================== */
-
-    const infoY = 56;
-
-    const leftX =
-      margin;
-
-    const rightX =
-      pageWidth / 2 + 8;
+    /* =================================================
+       CUSTOMER LEDGER TITLE
+    ================================================= */
 
     doc.setFont(
       "helvetica",
@@ -1423,7 +1388,53 @@ export const exportLedgerPDF =
     );
 
     doc.setFontSize(
+      12
+    );
+
+    doc.setTextColor(
+      COLORS.mainHeader
+    );
+
+    doc.text(
+      "CUSTOMER LEDGER",
+      pageWidth / 2,
+      43,
+      {
+        align:
+          "center",
+      }
+    );
+
+    /* =================================================
+       BUYER / BILL INFORMATION
+    ================================================= */
+
+    const infoY =
+      60;
+
+    const leftX =
+      margin;
+
+    const rightX =
+      pageWidth / 2 +
+      8;
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.setFontSize(
       7
+    );
+
+    /* =================================================
+       LEFT — BUYER
+    ================================================= */
+
+    doc.setFont(
+      "helvetica",
+      "bold"
     );
 
     doc.text(
@@ -1442,6 +1453,10 @@ export const exportLedgerPDF =
       leftX + 11,
       infoY
     );
+
+    /* =================================================
+       RIGHT — BILL NO.
+    ================================================= */
 
     doc.setFont(
       "helvetica",
@@ -1465,6 +1480,10 @@ export const exportLedgerPDF =
       infoY
     );
 
+    /* =================================================
+       LEFT — ADDRESS
+    ================================================= */
+
     doc.setFont(
       "helvetica",
       "bold"
@@ -1481,15 +1500,22 @@ export const exportLedgerPDF =
       "normal"
     );
 
-    doc.text(
+    const customerAddressLines =
       doc.splitTextToSize(
         customerAddress ||
           "-",
         75
-      ),
+      );
+
+    doc.text(
+      customerAddressLines,
       leftX + 15,
       infoY + 5
     );
+
+    /* =================================================
+       RIGHT — BILL DATE
+    ================================================= */
 
     doc.setFont(
       "helvetica",
@@ -1515,6 +1541,10 @@ export const exportLedgerPDF =
       infoY + 5
     );
 
+    /* =================================================
+       LEFT — CUSTOMER GST
+    ================================================= */
+
     doc.setFont(
       "helvetica",
       "bold"
@@ -1538,6 +1568,10 @@ export const exportLedgerPDF =
       infoY + 10
     );
 
+    /* =================================================
+       RIGHT — BILL FROM
+    ================================================= */
+
     doc.setFont(
       "helvetica",
       "bold"
@@ -1559,6 +1593,10 @@ export const exportLedgerPDF =
       rightX + 19,
       infoY + 10
     );
+
+    /* =================================================
+       LEFT — VEHICLE
+    ================================================= */
 
     if (vehicleNumber) {
       doc.setFont(
@@ -1584,6 +1622,10 @@ export const exportLedgerPDF =
       );
     }
 
+    /* =================================================
+       HEADER SEPARATOR
+    ================================================= */
+
     const separatorY =
       infoY + 18;
 
@@ -1598,14 +1640,13 @@ export const exportLedgerPDF =
     doc.line(
       margin,
       separatorY,
-      pageWidth -
-        margin,
+      pageWidth - margin,
       separatorY
     );
 
-    /* ===================================================
+    /* =================================================
        CUSTOMER LEDGER TITLE
-    =================================================== */
+    ================================================= */
 
     doc.setFont(
       "helvetica",
@@ -1629,6 +1670,10 @@ export const exportLedgerPDF =
           "center",
       }
     );
+
+    /* =================================================
+       CUSTOMER META
+    ================================================= */
 
     doc.setFont(
       "helvetica",
@@ -1657,8 +1702,7 @@ export const exportLedgerPDF =
       `Ledger Date: ${formatDate(
         new Date()
       )}`,
-      pageWidth -
-        margin,
+      pageWidth - margin,
       separatorY + 14,
       {
         align:
@@ -1666,150 +1710,168 @@ export const exportLedgerPDF =
       }
     );
 
-    /* ===================================================
+    /* =================================================
        SUMMARY TABLE
-    =================================================== */
+    ================================================= */
 
     const summaryY =
       separatorY + 21;
 
-    autoTable(
-      doc,
-      {
-        startY:
-          summaryY,
+    autoTable(doc, {
+      startY:
+        summaryY,
 
-        margin: {
-          left:
-            margin,
-          right:
-            margin,
-        },
+      margin: {
+        left:
+          margin,
+        right:
+          margin,
+      },
 
-        tableWidth:
-          contentWidth,
+      tableWidth:
+        contentWidth,
 
-        theme:
-          "grid",
+      theme:
+        "grid",
 
-        head: [
-          [
-            "TOTAL PURCHASES",
-            "TOTAL PAID",
-            "TOTAL PENDING",
-            "TRANSACTIONS",
-            "STATUS",
-          ],
+      head: [
+        [
+          "TOTAL PURCHASES",
+          "TOTAL PAID",
+          "TOTAL PENDING",
+          "TRANSACTIONS",
+          "STATUS",
         ],
+      ],
 
-        body: [
-          [
-            `Rs. ${formatMoney(
-              totalPurchased
-            )}`,
+      body: [
+        [
+          `Rs. ${formatMoney(
+            totalPurchased
+          )}`,
 
-            `Rs. ${formatMoney(
-              totalPaid
-            )}`,
+          `Rs. ${formatMoney(
+            totalPaid
+          )}`,
 
-            `Rs. ${formatMoney(
-              totalPending
-            )}`,
+          `Rs. ${formatMoney(
+            totalPending
+          )}`,
 
-            String(
-              purchaseCount
-            ),
+          String(
+            purchaseCount
+          ),
 
-            totalPending >
-            0
-              ? "Pending"
-              : "Paid",
-          ],
+          totalPending > 0
+            ? "Pending"
+            : "Paid",
         ],
+      ],
 
-        styles: {
-          font:
-            "helvetica",
-          fontSize:
-            6.5,
-          textColor:
-            COLORS.text,
-          lineColor:
-            COLORS.border,
-          lineWidth:
-            0.3,
-          cellPadding:
-            2,
-          halign:
-            "center",
-          valign:
-            "middle",
-        },
+      styles: {
+        font:
+          "helvetica",
 
-        headStyles: {
-          fillColor:
-            COLORS.mainHeader,
-          textColor:
-            COLORS.white,
-          fontStyle:
-            "bold",
-          fontSize:
-            6,
-          halign:
-            "center",
-          valign:
-            "middle",
-        },
+        fontSize:
+          6.5,
 
-        bodyStyles: {
-          fillColor:
-            COLORS.white,
-          fontSize:
-            6.5,
-        },
+        textColor:
+          COLORS.text,
 
-        didParseCell:
-          (data) => {
-            if (
-              data.section !==
-              "body"
-            ) {
-              return;
-            }
+        lineColor:
+          COLORS.border,
 
-            if (
-              data.column.index ===
+        lineWidth:
+          0.3,
+
+        cellPadding:
+          2,
+
+        halign:
+          "center",
+
+        valign:
+          "middle",
+      },
+
+      headStyles: {
+        fillColor:
+          COLORS.mainHeader,
+
+        textColor:
+          COLORS.white,
+
+        fontStyle:
+          "bold",
+
+        fontSize:
+          6,
+
+        halign:
+          "center",
+
+        valign:
+          "middle",
+      },
+
+      bodyStyles: {
+        fillColor:
+          COLORS.white,
+
+        fontSize:
+          6.5,
+      },
+
+      didParseCell:
+        (hookData) => {
+          if (
+            hookData.section ===
+              "body" &&
+            hookData.column.index ===
+              2
+          ) {
+            hookData.cell.styles.textColor =
+              totalPending > 0
+                ? COLORS.pending
+                : COLORS.paid;
+
+            hookData.cell.styles.fontStyle =
+              "bold";
+          }
+
+          if (
+            hookData.section ===
+              "body" &&
+            hookData.column.index ===
               1
-            ) {
-              data.cell.styles.textColor =
-                COLORS.paid;
+          ) {
+            hookData.cell.styles.textColor =
+              COLORS.paid;
 
-              data.cell.styles.fontStyle =
-                "bold";
-            }
+            hookData.cell.styles.fontStyle =
+              "bold";
+          }
 
-            if (
-              data.column.index ===
-                2 ||
-              data.column.index ===
-                4
-            ) {
-              data.cell.styles.textColor =
-                totalPending >
-                0
-                  ? COLORS.pending
-                  : COLORS.paid;
+          if (
+            hookData.section ===
+              "body" &&
+            hookData.column.index ===
+              4
+          ) {
+            hookData.cell.styles.textColor =
+              totalPending > 0
+                ? COLORS.pending
+                : COLORS.paid;
 
-              data.cell.styles.fontStyle =
-                "bold";
-            }
-          },
-      }
-    );
+            hookData.cell.styles.fontStyle =
+              "bold";
+          }
+        },
+    });
 
-    /* ===================================================
+    /* =================================================
        TRANSACTION HISTORY
-    =================================================== */
+    ================================================= */
 
     const transactionStartY =
       doc.lastAutoTable.finalY +
@@ -1851,254 +1913,278 @@ export const exportLedgerPDF =
         5.5
     );
 
+    /* =================================================
+       TRANSACTION ROWS
+    ================================================= */
+
     const transactionRows =
       entries.map(
         (
           entry,
           index
-        ) => [
-          String(
-            index + 1
-          ),
-
-          formatDate(
-            getTransactionDate(
-              entry
-            )
-          ),
-
-          getTransactionType(
-            entry
-          ),
-
-          getFuelType(
-            entry
-          ),
-
-          `Rs. ${formatMoney(
+        ) => {
+          const amount =
             getAmount(
               entry
-            )
-          )}`,
+            );
 
-          `Rs. ${formatMoney(
+          const paid =
             getPaidAmount(
               entry
-            )
-          )}`,
+            );
 
-          `Rs. ${formatMoney(
+          const pending =
             getPendingAmount(
               entry
-            )
-          )}`,
+            );
 
-          getPaymentMode(
-            entry
-          ),
+          return [
+            String(
+              index + 1
+            ),
 
-          getRemarks(
-            entry
-          ),
-        ]
+            formatDate(
+              getTransactionDate(
+                entry
+              )
+            ),
+
+            getTransactionType(
+              entry
+            ),
+
+            getFuelType(
+              entry
+            ),
+
+            `Rs. ${formatMoney(
+              amount
+            )}`,
+
+            `Rs. ${formatMoney(
+              paid
+            )}`,
+
+            `Rs. ${formatMoney(
+              pending
+            )}`,
+
+            getPaymentMode(
+              entry
+            ),
+
+            getRemarks(
+              entry
+            ),
+          ];
+        }
       );
 
-    autoTable(
-      doc,
-      {
-        startY:
-          transactionStartY +
-          8,
+    autoTable(doc, {
+      startY:
+        transactionStartY +
+        8,
 
-        margin: {
-          left:
-            margin,
-          right:
-            margin,
-        },
+      margin: {
+        left:
+          margin,
+        right:
+          margin,
+      },
 
-        tableWidth:
-          contentWidth,
+      tableWidth:
+        contentWidth,
 
-        theme:
-          "grid",
+      theme:
+        "grid",
 
-        head: [
-          [
-            "#",
-            "Date",
-            "Type",
-            "Fuel",
-            "Amount",
-            "Paid",
-            "Pending",
-            "Payment Mode",
-            "Remarks",
-          ],
+      head: [
+        [
+          "#",
+          "Date",
+          "Type",
+          "Fuel",
+          "Amount",
+          "Paid",
+          "Pending",
+          "Payment Mode",
+          "Remarks",
         ],
+      ],
 
-        body:
-          transactionRows.length >
-          0
-            ? transactionRows
-            : [
-                [
-                  "-",
-                  "-",
-                  "-",
-                  "-",
-                  "Rs. 0.00",
-                  "Rs. 0.00",
-                  "Rs. 0.00",
-                  "-",
-                  "-",
-                ],
+      body:
+        transactionRows.length >
+        0
+          ? transactionRows
+          : [
+              [
+                "-",
+                "-",
+                "-",
+                "-",
+                "Rs. 0.00",
+                "Rs. 0.00",
+                "Rs. 0.00",
+                "-",
+                "-",
               ],
+            ],
 
-        styles: {
-          font:
-            "helvetica",
-          fontSize:
-            6.2,
-          textColor:
-            COLORS.text,
-          lineColor:
-            COLORS.border,
-          lineWidth:
-            0.25,
-          cellPadding:
-            1.5,
-          valign:
-            "middle",
-          halign:
-            "center",
+      styles: {
+        font:
+          "helvetica",
+
+        fontSize:
+          6.2,
+
+        textColor:
+          COLORS.text,
+
+        lineColor:
+          COLORS.border,
+
+        lineWidth:
+          0.25,
+
+        cellPadding:
+          1.5,
+
+        valign:
+          "middle",
+
+        halign:
+          "center",
+      },
+
+      headStyles: {
+        fillColor:
+          COLORS.mainHeader,
+
+        textColor:
+          COLORS.white,
+
+        fontStyle:
+          "bold",
+
+        fontSize:
+          5.8,
+
+        halign:
+          "center",
+
+        valign:
+          "middle",
+      },
+
+      bodyStyles: {
+        fillColor:
+          COLORS.white,
+
+        textColor:
+          COLORS.text,
+      },
+
+      columnStyles: {
+        0: {
+          cellWidth: 8,
         },
 
-        headStyles: {
-          fillColor:
-            COLORS.mainHeader,
-          textColor:
-            COLORS.white,
-          fontStyle:
-            "bold",
-          fontSize:
-            5.8,
-          halign:
-            "center",
-          valign:
-            "middle",
+        1: {
+          cellWidth: 21,
         },
 
-        bodyStyles: {
-          fillColor:
-            COLORS.white,
-          textColor:
-            COLORS.text,
+        2: {
+          cellWidth: 19,
         },
 
-        columnStyles: {
-          0: {
-            cellWidth:
-              8,
-          },
-
-          1: {
-            cellWidth:
-              21,
-          },
-
-          2: {
-            cellWidth:
-              19,
-          },
-
-          3: {
-            cellWidth:
-              19,
-          },
-
-          4: {
-            cellWidth:
-              25,
-          },
-
-          5: {
-            cellWidth:
-              25,
-          },
-
-          6: {
-            cellWidth:
-              25,
-          },
-
-          7: {
-            cellWidth:
-              27,
-          },
-
-          8: {
-            cellWidth:
-              "auto",
-          },
+        3: {
+          cellWidth: 19,
         },
 
-        didParseCell:
-          (data) => {
+        4: {
+          cellWidth: 25,
+        },
+
+        5: {
+          cellWidth: 25,
+        },
+
+        6: {
+          cellWidth: 25,
+        },
+
+        7: {
+          cellWidth: 27,
+        },
+
+        8: {
+          cellWidth:
+            "auto",
+        },
+      },
+
+      didParseCell:
+        (hookData) => {
+          if (
+            hookData.section !==
+            "body"
+          ) {
+            return;
+          }
+
+          if (
+            hookData.column.index ===
+            5
+          ) {
+            hookData.cell.styles.textColor =
+              COLORS.paid;
+          }
+
+          if (
+            hookData.column.index ===
+            6
+          ) {
+            const rawValue =
+              hookData.cell.raw;
+
+            const numericValue =
+              Number(
+                String(
+                  rawValue
+                ).replace(
+                  /[^0-9.-]/g,
+                  ""
+                )
+              );
+
             if (
-              data.section !==
-              "body"
+              numericValue >
+              0
             ) {
-              return;
+              hookData.cell.styles.textColor =
+                COLORS.pending;
+
+              hookData.cell.styles.fontStyle =
+                "bold";
             }
+          }
+        },
+    });
 
-            if (
-              data.column.index ===
-              5
-            ) {
-              data.cell.styles.textColor =
-                COLORS.paid;
-            }
-
-            if (
-              data.column.index ===
-              6
-            ) {
-              const numeric =
-                Number(
-                  String(
-                    data.cell.raw
-                  ).replace(
-                    /[^0-9.-]/g,
-                    ""
-                  )
-                );
-
-              if (
-                numeric > 0
-              ) {
-                data.cell.styles.textColor =
-                  COLORS.pending;
-
-                data.cell.styles.fontStyle =
-                  "bold";
-              }
-            }
-          },
-      }
-    );
-
-    /* ===================================================
+    /* =================================================
        LEDGER SUMMARY
-    =================================================== */
+    ================================================= */
 
     let summaryYPosition =
-      doc.lastAutoTable
-        .finalY + 8;
+      doc.lastAutoTable.finalY +
+      8;
 
     const summaryX =
       pageWidth / 2 +
       8;
+
+    const summaryLabelX =
+      summaryX;
 
     const summaryValueX =
       pageWidth -
@@ -2148,7 +2234,7 @@ export const exportLedgerPDF =
 
         doc.text(
           label,
-          summaryX,
+          summaryLabelX,
           summaryYPosition
         );
 
@@ -2191,8 +2277,7 @@ export const exportLedgerPDF =
     drawSummaryLine(
       "Total Pending",
       totalPending,
-      totalPending >
-        0
+      totalPending > 0
         ? COLORS.pending
         : COLORS.paid
     );
@@ -2232,6 +2317,10 @@ export const exportLedgerPDF =
       adjustmentAmount
     );
 
+    /* =================================================
+       NET AMOUNT
+    ================================================= */
+
     const netAmount =
       Number(
         summary?.netAmount ??
@@ -2250,10 +2339,9 @@ export const exportLedgerPDF =
     );
 
     doc.line(
-      summaryX,
+      summaryLabelX,
       summaryYPosition,
-      pageWidth -
-        margin,
+      pageWidth - margin,
       summaryYPosition
     );
 
@@ -2275,7 +2363,7 @@ export const exportLedgerPDF =
 
     doc.text(
       "NET AMOUNT",
-      summaryX,
+      summaryLabelX,
       summaryYPosition
     );
 
@@ -2297,9 +2385,9 @@ export const exportLedgerPDF =
       }
     );
 
-    /* ===================================================
+    /* =================================================
        AMOUNT IN WORDS
-    =================================================== */
+    ================================================= */
 
     const amountWordsY =
       summaryYPosition +
@@ -2343,23 +2431,24 @@ export const exportLedgerPDF =
         netAmount
       );
 
-    doc.text(
+    const wordsLines =
       doc.splitTextToSize(
         words,
         80
-      ),
+      );
+
+    doc.text(
+      wordsLines,
       margin,
-      amountWordsY +
-        4
+      amountWordsY + 4
     );
 
-    /* ===================================================
+    /* =================================================
        TERMS & CONDITIONS
-    =================================================== */
+    ================================================= */
 
     const termsY =
-      pageHeight -
-      31;
+      pageHeight - 31;
 
     doc.setFillColor(
       COLORS.sectionBar
@@ -2406,24 +2495,36 @@ export const exportLedgerPDF =
     );
 
     const termsText =
-      "If bill is not paid on presentation, interest will be charged at 12% p.a. and supply will be suspended till bill payment.";
+      safeString(
+        settingsPump?.termsAndConditions ||
+          settingsPump?.terms ||
+          pump?.termsAndConditions ||
+          pump?.terms ||
+          "If bill is not paid on presentation, interest will be charged at 12% p.a. and supply will be suspended till bill payment."
+      );
 
-    doc.text(
+    const termsLines =
       doc.splitTextToSize(
         termsText,
         contentWidth - 4
-      ),
+      );
+
+    doc.text(
+      termsLines,
       margin + 2,
       termsY + 5
     );
 
-    /* ===================================================
+    /* =================================================
        SIGNATURES
-    =================================================== */
+    ================================================= */
 
     const signatureY =
-      pageHeight -
-      14;
+      pageHeight - 14;
+
+    /* =================================================
+       CUSTOMER SIGNATURE
+    ================================================= */
 
     doc.setDrawColor(
       COLORS.text
@@ -2459,6 +2560,10 @@ export const exportLedgerPDF =
       signatureY
     );
 
+    /* =================================================
+       AUTHORIZED SIGNATORY
+    ================================================= */
+
     doc.line(
       pageWidth -
         margin -
@@ -2480,8 +2585,7 @@ export const exportLedgerPDF =
 
     doc.text(
       `For ${pumpName}`,
-      pageWidth -
-        margin,
+      pageWidth - margin,
       signatureY - 7,
       {
         align:
@@ -2497,9 +2601,8 @@ export const exportLedgerPDF =
     doc.text(
       ownerName ||
         "Authorized Signatory",
-      pageWidth -
-        margin,
-      signatureY,
+      pageWidth - margin,
+      signatureY + 1,
       {
         align:
           "right",
@@ -2508,18 +2611,43 @@ export const exportLedgerPDF =
 
     doc.text(
       "(Authorized Signatory)",
-      pageWidth -
-        margin,
-      signatureY + 4,
+      pageWidth - margin,
+      signatureY + 5,
       {
         align:
           "right",
       }
     );
 
-    /* ===================================================
+    /* =================================================
        FOOTER
-    =================================================== */
+       
+       SHIVSHAMBHO LOGO IS NOW DIRECTLY IN FRONT OF
+       THE SHIVSHAMBHO NAME — SIDE BY SIDE.
+    ================================================= */
+
+    const footerCenterX =
+      pageWidth / 2;
+
+    const footerLogoSize =
+      7;
+
+    const footerLogoX =
+      footerCenterX - 26;
+
+    const footerLogoY =
+      pageHeight - 14.5;
+
+    const footerNameX =
+      footerCenterX - 17;
+
+    const footerNameY =
+      pageHeight - 9.5;
+
+    /*
+     * SHIVSHAMBHO LOGO
+     * Positioned immediately to the left of the name.
+     */
 
     if (
       shivshambhoLogoData
@@ -2528,10 +2656,10 @@ export const exportLedgerPDF =
         doc.addImage(
           shivshambhoLogoData,
           "PNG",
-          pageWidth / 2 - 5,
-          pageHeight - 21,
-          10,
-          10,
+          footerLogoX,
+          footerLogoY,
+          footerLogoSize,
+          footerLogoSize,
           undefined,
           "FAST"
         );
@@ -2542,6 +2670,34 @@ export const exportLedgerPDF =
         );
       }
     }
+
+    /*
+     * SHIVSHAMBHO NAME
+     * Logo is directly in front of this text.
+     */
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(
+      7
+    );
+
+    doc.setTextColor(
+      COLORS.mainHeader
+    );
+
+    doc.text(
+      "SHIVSHAMBHO",
+      footerNameX,
+      footerNameY
+    );
+
+    /*
+     * BILL INFORMATION
+     */
 
     doc.setFont(
       "helvetica",
@@ -2561,26 +2717,16 @@ export const exportLedgerPDF =
         finalBillDate
       )}`,
       pageWidth / 2,
-      pageHeight - 11,
+      pageHeight - 6.5,
       {
         align:
           "center",
       }
     );
 
-    doc.text(
-      "Generated by MyPump - Petrol Pump Management System",
-      pageWidth / 2,
-      pageHeight - 7,
-      {
-        align:
-          "center",
-      }
-    );
-
-    /* ===================================================
+    /* =================================================
        SAVE FILE
-    =================================================== */
+    ================================================= */
 
     const safeCustomerName =
       customerName
@@ -2605,10 +2751,7 @@ export const exportLedgerPDF =
     const datePart =
       new Date()
         .toISOString()
-        .slice(
-          0,
-          10
-        );
+        .slice(0, 10);
 
     const fileName =
       `Customer_Ledger_${safeCustomerName}_Bill_${safeBillNo}_${datePart}.pdf`;
@@ -2635,10 +2778,10 @@ export const exportLedgerPDF =
 export const printLedger =
   async (
     options = {}
-  ) =>
-    exportLedgerPDF(
+  ) => {
+    return exportLedgerPDF(
       options
     );
+  };
 
-export default
-  exportLedgerPDF;
+export default exportLedgerPDF;
