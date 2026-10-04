@@ -621,11 +621,11 @@ const DailyReport = () => {
           );
 
         const settings =
-  response?.data?.pump ||
-  response?.data?.settings ||
-  response?.pump ||
-  response?.settings ||
-  {};
+          response?.data?.pump ||
+          response?.data?.settings ||
+          response?.pump ||
+          response?.settings ||
+          {};
 
         const logoUrl =
           getPumpLogo(
@@ -841,6 +841,12 @@ const DailyReport = () => {
         );
 
 
+      const ownerName =
+        getOwnerName(
+          pump
+        );
+
+
       const companyName =
         getCompanyName(
           pump
@@ -877,7 +883,9 @@ const DailyReport = () => {
         .join(", ");
 
 
-      /* OUTER BORDER */
+      /* =====================================================
+         OUTER BORDER
+      ===================================================== */
 
       doc.setDrawColor(
         COLORS.border
@@ -895,7 +903,9 @@ const DailyReport = () => {
       );
 
 
-      /* GST */
+      /* =====================================================
+         GST
+      ===================================================== */
 
       doc.setFont(
         "helvetica",
@@ -919,7 +929,9 @@ const DailyReport = () => {
       );
 
 
-      /* PHONE */
+      /* =====================================================
+         PHONE
+      ===================================================== */
 
       if (phone) {
 
@@ -936,7 +948,9 @@ const DailyReport = () => {
       }
 
 
-      /* LOGO */
+      /* =====================================================
+         LOGO
+      ===================================================== */
 
       if (logoData) {
 
@@ -967,7 +981,9 @@ const DailyReport = () => {
       }
 
 
-      /* PUMP NAME */
+      /* =====================================================
+         PUMP NAME
+      ===================================================== */
 
       doc.setFont(
         "helvetica",
@@ -993,7 +1009,42 @@ const DailyReport = () => {
       );
 
 
-      /* COMPANY */
+      /* =====================================================
+         OWNER NAME
+         SAME PROFILE-BASED LOGIC
+      ===================================================== */
+
+      if (ownerName) {
+
+        doc.setFont(
+          "helvetica",
+          "bold"
+        );
+
+        doc.setFontSize(
+          8
+        );
+
+        doc.setTextColor(
+          COLORS.text
+        );
+
+        doc.text(
+          `OWNER - ${ownerName}`,
+          pageWidth / 2,
+          25,
+          {
+            align:
+              "center",
+          }
+        );
+
+      }
+
+
+      /* =====================================================
+         COMPANY
+      ===================================================== */
 
       doc.setFont(
         "helvetica",
@@ -1009,7 +1060,9 @@ const DailyReport = () => {
           ? `DEALER - ${companyName.toUpperCase()}`
           : "DEALER",
         pageWidth / 2,
-        24,
+        ownerName
+          ? 30
+          : 25,
         {
           align:
             "center",
@@ -1017,7 +1070,14 @@ const DailyReport = () => {
       );
 
 
-      /* ADDRESS */
+      /* =====================================================
+         ADDRESS
+      ===================================================== */
+
+      const addressY =
+        ownerName
+          ? 36
+          : 31;
 
       if (address) {
 
@@ -1039,7 +1099,7 @@ const DailyReport = () => {
         doc.text(
           addressLines,
           pageWidth / 2,
-          30,
+          addressY,
           {
             align:
               "center",
@@ -1049,7 +1109,14 @@ const DailyReport = () => {
       }
 
 
-      /* REPORT TITLE */
+      /* =====================================================
+         REPORT TITLE
+      ===================================================== */
+
+      const reportTitleY =
+        ownerName
+          ? 49
+          : 43;
 
       doc.setFont(
         "helvetica",
@@ -1067,7 +1134,7 @@ const DailyReport = () => {
       doc.text(
         "DAILY REPORT",
         pageWidth / 2,
-        43,
+        reportTitleY,
         {
           align:
             "center",
@@ -1075,7 +1142,14 @@ const DailyReport = () => {
       );
 
 
-      /* REPORT PERIOD BOX */
+      /* =====================================================
+         REPORT PERIOD BOX
+      ===================================================== */
+
+      const reportBoxY =
+        ownerName
+          ? 54
+          : 48;
 
       doc.setFillColor(
         COLORS.sectionBar
@@ -1087,12 +1161,16 @@ const DailyReport = () => {
 
       doc.rect(
         10,
-        48,
+        reportBoxY,
         pageWidth - 20,
         19,
         "FD"
       );
 
+
+      /* =====================================================
+         REPORT BOX LABELS
+      ===================================================== */
 
       doc.setFont(
         "helvetica",
@@ -1110,21 +1188,25 @@ const DailyReport = () => {
       doc.text(
         "REPORT TYPE",
         15,
-        55
+        reportBoxY + 7
       );
 
       doc.text(
         "REPORT DATE",
         75,
-        55
+        reportBoxY + 7
       );
 
       doc.text(
         "GENERATED ON",
         150,
-        55
+        reportBoxY + 7
       );
 
+
+      /* =====================================================
+         REPORT BOX VALUES
+      ===================================================== */
 
       doc.setFont(
         "helvetica",
@@ -1142,13 +1224,13 @@ const DailyReport = () => {
       doc.text(
         "Daily Financial & Operational",
         15,
-        62
+        reportBoxY + 14
       );
 
       doc.text(
         getReportPeriod(),
         75,
-        62
+        reportBoxY + 14
       );
 
       doc.text(
@@ -1156,11 +1238,11 @@ const DailyReport = () => {
           new Date()
         ),
         150,
-        62
+        reportBoxY + 14
       );
 
 
-      return 73;
+      return reportBoxY + 25;
 
     };
 
@@ -1456,11 +1538,11 @@ const DailyReport = () => {
 
 
           const settings =
-  response?.data?.pump ||
-  response?.data?.settings ||
-  response?.pump ||
-  response?.settings ||
-  {};
+            response?.data?.pump ||
+            response?.data?.settings ||
+            response?.pump ||
+            response?.settings ||
+            {};
 
 
           const logoUrl =

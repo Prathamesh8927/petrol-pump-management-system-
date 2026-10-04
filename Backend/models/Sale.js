@@ -23,11 +23,21 @@ const saleSchema = new mongoose.Schema(
       default: undefined,
     },
 
+    /*
+     * Only QR/online payment sales need a paymentId.
+     *
+     * Normal sales such as:
+     * - cash
+     * - UPI
+     * - card
+     * - credit
+     *
+     * can have no paymentId.
+     */
     paymentId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Payment",
-      default: null,
-      index: true,
+      default: undefined,
     },
 
     fuelType: {
@@ -115,17 +125,31 @@ const saleSchema = new mongoose.Schema(
    INDEXES
 ===================================================== */
 
+/*
+ * Pump + sale date
+ *
+ * Useful for:
+ * - daily sales
+ * - reports
+ * - dashboard queries
+ */
 saleSchema.index({
   pumpId: 1,
   saleDate: -1,
 });
 
+/*
+ * Pump + date + source
+ */
 saleSchema.index({
   pumpId: 1,
   saleDate: 1,
   source: 1,
 });
 
+/*
+ * Pump + nozzle + date
+ */
 saleSchema.index({
   pumpId: 1,
   nozzleId: 1,
@@ -133,6 +157,10 @@ saleSchema.index({
 });
 
 /*
+ * =====================================================
+ * ONE SALE PER NOZZLE READING
+ * =====================================================
+ *
  * A nozzle reading should generate at most
  * one Sale.
  *
@@ -153,17 +181,60 @@ saleSchema.index(
   }
 );
 
+/*
+ * =====================================================
+ * USER / CREATOR QUERY INDEX
+ * =====================================================
+ */
 saleSchema.index({
   pumpId: 1,
   createdBy: 1,
   createdAt: -1,
 });
 
+/*
+ * =====================================================
+ * PAYMENT ID UNIQUE INDEX
+ * =====================================================
+ *
+ * IMPORTANT:
+ *
+ * Only actual Payment ObjectIds participate
+ * in this unique constraint.
+ *
+ * Therefore:
+ *
+ * paymentId: ObjectId("...")
+ *      -> must be unique
+ *
+ * paymentId: undefined
+ *      -> ignored
+ *
+ * paymentId: null
+ *      -> ignored
+ *
+ * This allows multiple normal sales without
+ * an online Payment record.
+ *
+ * Example:
+ *
+ * Sale 1 -> cash -> no paymentId
+ * Sale 2 -> cash -> no paymentId
+ * Sale 3 -> UPI  -> no paymentId
+ * Sale 4 -> card -> no paymentId
+ * Sale 5 -> QR   -> paymentId = ObjectId(...)
+ *
+ * All are valid.
+ */
 saleSchema.index(
   { paymentId: 1 },
   {
     unique: true,
-    sparse: true,
+    partialFilterExpression: {
+      paymentId: {
+        $type: "objectId",
+      },
+    },
     name: "uniq_sale_payment",
   }
 );

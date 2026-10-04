@@ -44,6 +44,24 @@ const ALLOWED_FUEL_TYPES = new Set([
   "diesel",
 ]);
 
+/*
+   Shift order is important when editing readings.
+
+   morning -> evening -> night
+
+   Example:
+   Morning 1000 -> 1200
+   Evening 1200 -> 1400
+
+   We cannot change Morning 1200 -> 1100 after
+   Evening has already been recorded.
+*/
+const SHIFT_ORDER = {
+  morning: 1,
+  evening: 2,
+  night: 3,
+};
+
 const MAX_HISTORY_LIMIT = 100;
 const DEFAULT_HISTORY_LIMIT = 50;
 
@@ -219,6 +237,88 @@ const isValidPaymentMethod = (
   ALLOWED_PAYMENT_METHODS.has(
     value
   );
+
+/* =====================================================
+   SHIFT HELPERS
+===================================================== */
+
+/*
+   Returns shifts which logically occur AFTER
+   the supplied shift on the same date.
+
+   morning -> ["evening", "night"]
+   evening -> ["night"]
+   night -> []
+*/
+const getLaterShifts = (
+  shiftName
+) => {
+  const currentOrder =
+    SHIFT_ORDER[shiftName] || 0;
+
+  return Object.entries(
+    SHIFT_ORDER
+  )
+    .filter(
+      ([, order]) =>
+        order > currentOrder
+    )
+    .map(
+      ([shift]) => shift
+    );
+};
+
+/*
+   Determines whether a reading is later than
+   another reading in business order.
+
+   Date first, then shift order.
+*/
+const isReadingLater = (
+  candidate,
+  base
+) => {
+  if (
+    String(
+      candidate.readingDate
+    ) >
+    String(
+      base.readingDate
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    String(
+      candidate.readingDate
+    ) <
+    String(
+      base.readingDate
+    )
+  ) {
+    return false;
+  }
+
+  const candidateOrder =
+    SHIFT_ORDER[
+      normalizeShiftName(
+        candidate.shiftName
+      )
+    ] || 0;
+
+  const baseOrder =
+    SHIFT_ORDER[
+      normalizeShiftName(
+        base.shiftName
+      )
+    ] || 0;
+
+  return (
+    candidateOrder >
+    baseOrder
+  );
+};
 
 /* =====================================================
    GET NOZZLES
@@ -1212,11 +1312,6 @@ export const addNozzleReading =
         async () => {
           /* =================================================
              VERIFY STAFF
-
-             Staff MUST:
-             - belong to same pump
-             - be active
-             - have valid business role
           ================================================= */
 
           const staff =
@@ -1318,23 +1413,6 @@ export const addNozzleReading =
 
           /* =================================================
              OPENING READING
-
-             The currentReading represents the latest
-             confirmed reading for this nozzle.
-
-             Example:
-
-             Morning:
-             opening 1000
-             closing 1200
-
-             Evening:
-             opening 1200
-             closing 1400
-
-             Night:
-             opening 1400
-             closing 1600
           ================================================= */
 
           const opening =
@@ -1396,9 +1474,6 @@ export const addNozzleReading =
 
           /* =================================================
              DUPLICATE SHIFT PROTECTION
-
-             One nozzle can have only one final reading
-             for a particular date + shift.
           ================================================= */
 
           const existingReading =
@@ -1609,9 +1684,6 @@ export const addNozzleReading =
 
           /* =================================================
              CREATE SALE
-
-             Reading and Sale share the same transaction.
-             If either fails, both are rolled back.
           ================================================= */
 
           const createdSales =
@@ -1661,9 +1733,6 @@ export const addNozzleReading =
 
           /* =================================================
              UPDATE FUEL STOCK
-
-             The $gte condition prevents stock from becoming
-             negative even during concurrent requests.
           ================================================= */
 
           const updatedStock =
@@ -1715,12 +1784,6 @@ export const addNozzleReading =
 
           /* =================================================
              UPDATE NOZZLE
-
-             currentReading must still equal the opening
-             reading.
-
-             This protects against two staff members
-             submitting readings simultaneously.
           ================================================= */
 
           const updatedNozzle =
@@ -1788,10 +1851,6 @@ export const addNozzleReading =
         }
       );
 
-      /* =================================================
-         VERIFY TRANSACTION RESULT
-      ================================================= */
-
       if (
         !transactionResult?.newReading
       ) {
@@ -1801,10 +1860,6 @@ export const addNozzleReading =
             "Reading transaction completed without a saved reading. Please try again.",
         });
       }
-
-      /* =================================================
-         SUCCESS RESPONSE
-      ================================================= */
 
       return res.status(201).json({
         success: true,
@@ -1896,10 +1951,6 @@ export const addNozzleReading =
             error?.name,
         }
       );
-
-      /* =================================================
-         KNOWN ERRORS
-      ================================================= */
 
       if (
         error?.code ===
@@ -2057,10 +2108,6 @@ export const addNozzleReading =
         });
       }
 
-      /* =================================================
-         MONGODB DUPLICATE KEY
-      ================================================= */
-
       if (
         error?.code === 11000
       ) {
@@ -2068,6 +2115,1688 @@ export const addNozzleReading =
           success: false,
           message:
             "A final reading already exists for this nozzle and shift.",
+        });
+      }
+
+      if (
+        error?.name ===
+        "ValidationError"
+      ) {
+        const validationMessages =
+          Object.values(
+            error.errors || {}
+          )
+            .map(
+              (item) =>
+                item?.message
+            )
+            .filter(Boolean);
+
+        return res.status(400).json({
+          success: false,
+
+          message:
+            validationMessages.length
+              ? validationMessages.join(
+                  ", "
+                )
+              : "Invalid nozzle reading data",
+        });
+      }
+
+      if (
+        error?.name ===
+        "CastError"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid data format",
+        });
+      }
+
+      if (
+        error?.errorLabels?.includes(
+          "TransientTransactionError"
+        ) ||
+        error?.errorLabels?.includes(
+          "UnknownTransactionCommitResult"
+        )
+      ) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "The transaction could not be safely completed. Please refresh and try again.",
+        });
+      }
+
+      return res.status(500).json({
+        success: false,
+
+        message:
+          error?.message &&
+          error.message.length <
+            250
+            ? error.message
+            : "Unable to add final shift reading",
+      });
+    } finally {
+      if (session) {
+        await session.endSession();
+      }
+    }
+  };
+
+/* =====================================================
+   UPDATE EXISTING NOZZLE SHIFT READING
+
+   PUT /api/nozzles/readings/:id
+   PATCH /api/nozzles/readings/:id
+
+   IMPORTANT ACCOUNTING RULES:
+
+   Existing reading:
+
+   Opening = 1000
+   Old closing = 1200
+   Old litres = 200
+
+   If changed to:
+
+   New closing = 1250
+   New litres = 250
+
+   Delta = +50
+
+   Therefore:
+   FuelStock.currentStock -> -50
+   FuelStock.totalSold    -> +50
+
+   If changed from 1200 -> 1150:
+
+   Delta = -50
+
+   Therefore:
+   FuelStock.currentStock -> +50
+   FuelStock.totalSold    -> -50
+
+   The linked Sale is also updated.
+
+   IMPORTANT:
+
+   nozzleId
+   readingDate
+   shiftName
+   openingReading
+   fuelType
+   pricePerLitre
+
+   are intentionally immutable.
+
+   A closing reading can only be changed when this
+   is the latest reading for the nozzle.
+
+   Staff/payment/note can still be edited even if
+   a later reading exists.
+===================================================== */
+
+export const updateNozzleReading =
+  async (req, res) => {
+    let session = null;
+
+    try {
+      const pumpId =
+        getPumpId(req);
+
+      const userId =
+        getUserId(req);
+
+      const { id } =
+        req.params;
+
+      /* =================================================
+         BASIC AUTH VALIDATION
+      ================================================= */
+
+      if (!pumpId) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Pump information not found",
+        });
+      }
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message:
+            "Authenticated user not found",
+        });
+      }
+
+      if (
+        !mongoose.Types.ObjectId.isValid(
+          id
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid reading ID",
+        });
+      }
+
+      /* =================================================
+         REQUEST DATA
+      ================================================= */
+
+      const {
+        closingReading,
+        reading,
+        staffId,
+        employeeId,
+        paymentMethod,
+        note,
+      } = req.body || {};
+
+      /*
+         Closing reading is optional.
+
+         If not supplied, existing closing reading
+         remains unchanged.
+
+         This allows metadata-only editing.
+      */
+
+      const hasClosingReading =
+        closingReading !==
+          undefined ||
+        reading !==
+          undefined;
+
+      let finalReading =
+        null;
+
+      if (hasClosingReading) {
+        finalReading =
+          toNonNegativeNumber(
+            closingReading ??
+              reading
+          );
+
+        if (
+          finalReading === null
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Enter valid closing reading",
+          });
+        }
+      }
+
+      /* =================================================
+         PAYMENT METHOD
+      ================================================= */
+
+      let finalPayment = null;
+
+      if (
+        paymentMethod !==
+        undefined
+      ) {
+        finalPayment =
+          normalizePaymentMethod(
+            paymentMethod
+          );
+
+        if (
+          !isValidPaymentMethod(
+            finalPayment
+          )
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Invalid payment method",
+          });
+        }
+      }
+
+      /* =================================================
+         NOTE
+      ================================================= */
+
+      let finalNote = null;
+
+      if (
+        note !== undefined
+      ) {
+        finalNote =
+          String(
+            note || ""
+          ).trim();
+
+        if (
+          finalNote.length >
+          MAX_NOTE_LENGTH
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Note cannot exceed 500 characters",
+          });
+        }
+      }
+
+      /* =================================================
+         STAFF
+      ================================================= */
+
+      let finalStaffId = null;
+
+      if (
+        staffId !== undefined ||
+        employeeId !== undefined
+      ) {
+        finalStaffId =
+          normalizeObjectId(
+            staffId ||
+              employeeId
+          );
+
+        if (!finalStaffId) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Valid staff member is required",
+          });
+        }
+      }
+
+      /* =================================================
+         TRANSACTION
+      ================================================= */
+
+      session =
+        await mongoose.startSession();
+
+      let transactionResult =
+        null;
+
+      await session.withTransaction(
+        async () => {
+          /* =================================================
+             FIND EXISTING READING
+
+             Strict pump isolation.
+          ================================================= */
+
+          const existingReading =
+            await NozzleReading.findOne({
+              _id: id,
+              pumpId,
+            }).session(
+              session
+            );
+
+          if (!existingReading) {
+            const error =
+              new Error(
+                "Reading not found"
+              );
+
+            error.code =
+              "READING_NOT_FOUND";
+
+            throw error;
+          }
+
+          /* =================================================
+             EXISTING VALUES
+          ================================================= */
+
+          const oldClosing =
+            toNonNegativeNumber(
+              existingReading.closingReading
+            );
+
+          const opening =
+            toNonNegativeNumber(
+              existingReading.openingReading
+            );
+
+          const oldLitres =
+            toNonNegativeNumber(
+              existingReading.litresSold
+            );
+
+          if (
+            oldClosing === null ||
+            opening === null ||
+            oldLitres === null
+          ) {
+            const error =
+              new Error(
+                "Existing reading contains invalid numerical data"
+              );
+
+            error.code =
+              "INVALID_EXISTING_READING";
+
+            throw error;
+          }
+
+          /*
+             If closing reading was not supplied,
+             preserve old closing.
+          */
+
+          const newClosing =
+            hasClosingReading
+              ? finalReading
+              : oldClosing;
+
+          /* =================================================
+             CLOSING MUST BE GREATER THAN OPENING
+          ================================================= */
+
+          if (
+            newClosing <=
+            opening
+          ) {
+            const error =
+              new Error(
+                "Closing reading must be greater than opening reading"
+              );
+
+            error.code =
+              "INVALID_UPDATED_CLOSING_READING";
+
+            error.opening =
+              opening;
+
+            throw error;
+          }
+
+          const newLitres =
+            roundToTwo(
+              newClosing -
+                opening
+            );
+
+          if (
+            newLitres <= 0
+          ) {
+            const error =
+              new Error(
+                "Invalid litres sold"
+              );
+
+            error.code =
+              "INVALID_UPDATED_LITRES";
+
+            throw error;
+          }
+
+          /* =================================================
+             CHECK FOR LATER READING
+
+             We only block changing the closing reading.
+
+             Metadata-only changes are safe.
+          ================================================= */
+
+          let laterReading =
+            null;
+
+          if (
+            newClosing !==
+            oldClosing
+          ) {
+            const laterShifts =
+              getLaterShifts(
+                normalizeShiftName(
+                  existingReading.shiftName
+                )
+              );
+
+            const laterConditions = [
+              {
+                readingDate: {
+                  $gt:
+                    existingReading.readingDate,
+                },
+              },
+            ];
+
+            if (
+              laterShifts.length >
+              0
+            ) {
+              laterConditions.push({
+                readingDate:
+                  existingReading.readingDate,
+
+                shiftName: {
+                  $in:
+                    laterShifts,
+                },
+              });
+            }
+
+            laterReading =
+              await NozzleReading.findOne({
+                pumpId,
+
+                nozzleId:
+                  existingReading.nozzleId,
+
+                $or:
+                  laterConditions,
+
+                _id: {
+                  $ne:
+                    existingReading._id,
+                },
+              })
+                .sort({
+                  readingDate: 1,
+                  createdAt: 1,
+                  _id: 1,
+                })
+                .session(
+                  session
+                );
+
+            if (laterReading) {
+              const error =
+                new Error(
+                  "A later reading already exists for this nozzle"
+                );
+
+              error.code =
+                "READING_HAS_LATER_READING";
+
+              error.laterReading =
+                laterReading;
+
+              throw error;
+            }
+          }
+
+          /* =================================================
+             VERIFY NOZZLE
+
+             Nozzle is fetched without requiring active status.
+
+             Historical reading may belong to a nozzle that
+             has since been made inactive.
+
+             This is safe because update is only allowed when
+             there is no later reading.
+          ================================================= */
+
+          const nozzle =
+            await Nozzle.findOne({
+              _id:
+                existingReading.nozzleId,
+
+              pumpId,
+            }).session(
+              session
+            );
+
+          if (!nozzle) {
+            const error =
+              new Error(
+                "Nozzle not found"
+              );
+
+            error.code =
+              "NOZZLE_NOT_FOUND";
+
+            throw error;
+          }
+
+          const fuelType =
+            normalizeFuelType(
+              existingReading.fuelType ||
+                nozzle.fuelType
+            );
+
+          if (
+            !ALLOWED_FUEL_TYPES.has(
+              fuelType
+            )
+          ) {
+            const error =
+              new Error(
+                "Invalid fuel type"
+              );
+
+            error.code =
+              "INVALID_FUEL_TYPE";
+
+            throw error;
+          }
+
+          /* =================================================
+             CONCURRENCY CHECK
+
+             If closing is being changed, this reading must
+             still represent the nozzle's current reading.
+
+             If only metadata is changing, this check is not
+             necessary.
+          ================================================= */
+
+          if (
+            newClosing !==
+            oldClosing
+          ) {
+            const currentNozzleReading =
+              toNonNegativeNumber(
+                nozzle.currentReading
+              );
+
+            if (
+              currentNozzleReading ===
+                null ||
+              currentNozzleReading !==
+                oldClosing
+            ) {
+              const error =
+                new Error(
+                  "Nozzle current reading has changed"
+                );
+
+              error.code =
+                "NOZZLE_READING_UPDATE_CONFLICT";
+
+              throw error;
+            }
+          }
+
+          /* =================================================
+             VERIFY STAFF
+
+             If staff is not supplied, retain existing staff.
+          ================================================= */
+
+          let staff = null;
+
+          if (
+            finalStaffId
+          ) {
+            staff =
+              await User.findOne({
+                _id:
+                  finalStaffId,
+
+                pumpId,
+
+                active: true,
+
+                role: {
+                  $in:
+                    Array.from(
+                      ALLOWED_STAFF_ROLES
+                    ),
+                },
+              })
+                .select(
+                  "_id name email role pumpId active"
+                )
+                .session(
+                  session
+                );
+
+            if (!staff) {
+              const error =
+                new Error(
+                  "Staff member not found or inactive"
+                );
+
+              error.code =
+                "STAFF_NOT_FOUND";
+
+              throw error;
+            }
+          }
+
+          /* =================================================
+             STAFF DISPLAY NAME
+          ================================================= */
+
+          const updatedStaffId =
+            staff?._id ||
+            existingReading.staffId;
+
+          const updatedStaffName =
+            staff
+              ? String(
+                  staff.name ||
+                    staff.email ||
+                    "Staff"
+                )
+                  .trim()
+                  .slice(
+                    0,
+                    MAX_NAME_LENGTH
+                  )
+              : String(
+                  existingReading.staffName ||
+                    "Staff"
+                )
+                  .trim()
+                  .slice(
+                    0,
+                    MAX_NAME_LENGTH
+                  );
+
+          /* =================================================
+             PAYMENT / NOTE
+          ================================================= */
+
+          const updatedPayment =
+            finalPayment !==
+            null
+              ? finalPayment
+              : normalizePaymentMethod(
+                  existingReading.paymentMethod
+                );
+
+          const updatedNote =
+            finalNote !==
+            null
+              ? finalNote
+              : String(
+                  existingReading.note ||
+                    ""
+                ).trim();
+
+          /* =================================================
+             PRICE
+
+             IMPORTANT:
+
+             We keep the ORIGINAL historical price.
+
+             We do NOT use the current FuelPrice because
+             editing an old sale must not change its historical
+             selling price.
+          ================================================= */
+
+          const pricePerLitre =
+            toNonNegativeNumber(
+              existingReading.pricePerLitre
+            );
+
+          if (
+            pricePerLitre === null ||
+            pricePerLitre <= 0
+          ) {
+            const error =
+              new Error(
+                "Historical fuel price is invalid"
+              );
+
+            error.code =
+              "INVALID_HISTORICAL_PRICE";
+
+            throw error;
+          }
+
+          /* =================================================
+             NEW TOTAL
+          ================================================= */
+
+          const newTotalAmount =
+            roundToTwo(
+              newLitres *
+                pricePerLitre
+            );
+
+          /* =================================================
+             ACCOUNTING DELTA
+
+             Example:
+
+             old = 200L
+             new = 250L
+
+             delta = +50L
+
+             Stock:
+             currentStock -50
+             totalSold +50
+
+             If:
+
+             old = 250L
+             new = 200L
+
+             delta = -50L
+
+             Stock:
+             currentStock +50
+             totalSold -50
+          ================================================= */
+
+          const delta =
+            roundToTwo(
+              newLitres -
+                oldLitres
+            );
+
+          let updatedStock =
+            await FuelStock.findOne({
+              pumpId,
+
+              fuelType,
+            }).session(
+              session
+            );
+
+          if (!updatedStock) {
+            const error =
+              new Error(
+                "Fuel stock not found"
+              );
+
+            error.code =
+              "FUEL_STOCK_NOT_FOUND";
+
+            throw error;
+          }
+
+          /* =================================================
+             UPDATE FUEL STOCK
+
+             Only required if litres changed.
+          ================================================= */
+
+          if (
+            delta > 0
+          ) {
+            /*
+               More litres were sold.
+
+               Example:
+               200 -> 250
+
+               Need 50 extra litres from stock.
+            */
+
+            const increaseSold =
+              delta;
+
+            const stockBefore =
+              toNonNegativeNumber(
+                updatedStock.currentStock
+              );
+
+            if (
+              stockBefore === null
+            ) {
+              const error =
+                new Error(
+                  "Current fuel stock is invalid"
+                );
+
+              error.code =
+                "INVALID_FUEL_STOCK";
+
+              throw error;
+            }
+
+            if (
+              stockBefore <
+              increaseSold
+            ) {
+              const error =
+                new Error(
+                  "Insufficient fuel stock for updated reading"
+                );
+
+              error.code =
+                "INSUFFICIENT_UPDATED_FUEL_STOCK";
+
+              error.available =
+                stockBefore;
+
+              error.required =
+                increaseSold;
+
+              throw error;
+            }
+
+            updatedStock =
+              await FuelStock.findOneAndUpdate(
+                {
+                  _id:
+                    updatedStock._id,
+
+                  pumpId,
+
+                  fuelType,
+
+                  currentStock: {
+                    $gte:
+                      increaseSold,
+                  },
+                },
+                {
+                  $inc: {
+                    currentStock:
+                      -increaseSold,
+
+                    totalSold:
+                      increaseSold,
+                  },
+                },
+                {
+                  returnDocument:
+                    "after",
+
+                  runValidators:
+                    true,
+
+                  session,
+                }
+              );
+
+            if (
+              !updatedStock
+            ) {
+              const error =
+                new Error(
+                  "Fuel stock changed while updating the reading"
+                );
+
+              error.code =
+                "UPDATED_STOCK_CONFLICT";
+
+              throw error;
+            }
+          } else if (
+            delta < 0
+          ) {
+            /*
+               Fewer litres were sold.
+
+               Example:
+               250 -> 200
+
+               Return 50 litres back to stock.
+
+               totalSold must decrease by 50.
+            */
+
+            const returnedLitres =
+              Math.abs(delta);
+
+            const totalSoldBefore =
+              toNonNegativeNumber(
+                updatedStock.totalSold
+              );
+
+            if (
+              totalSoldBefore === null
+            ) {
+              const error =
+                new Error(
+                  "Total sold stock value is invalid"
+                );
+
+              error.code =
+                "INVALID_TOTAL_SOLD";
+
+              throw error;
+            }
+
+            if (
+              totalSoldBefore <
+              returnedLitres
+            ) {
+              const error =
+                new Error(
+                  "Cannot reduce sold quantity below zero"
+                );
+
+              error.code =
+                "INVALID_TOTAL_SOLD_REDUCTION";
+
+              error.available =
+                totalSoldBefore;
+
+              error.required =
+                returnedLitres;
+
+              throw error;
+            }
+
+            updatedStock =
+              await FuelStock.findOneAndUpdate(
+                {
+                  _id:
+                    updatedStock._id,
+
+                  pumpId,
+
+                  fuelType,
+
+                  totalSold: {
+                    $gte:
+                      returnedLitres,
+                  },
+                },
+                {
+                  $inc: {
+                    currentStock:
+                      returnedLitres,
+
+                    totalSold:
+                      -returnedLitres,
+                  },
+                },
+                {
+                  returnDocument:
+                    "after",
+
+                  runValidators:
+                    true,
+
+                  session,
+                }
+              );
+
+            if (
+              !updatedStock
+            ) {
+              const error =
+                new Error(
+                  "Fuel stock changed while updating the reading"
+                );
+
+              error.code =
+                "UPDATED_STOCK_CONFLICT";
+
+              throw error;
+            }
+          }
+
+          /* =================================================
+             UPDATE NOZZLE READING
+
+             Only closing reading changes.
+
+             Opening reading remains immutable.
+          ================================================= */
+
+          let updatedNozzle =
+            nozzle;
+
+          if (
+            newClosing !==
+            oldClosing
+          ) {
+            updatedNozzle =
+              await Nozzle.findOneAndUpdate(
+                {
+                  _id:
+                    nozzle._id,
+
+                  pumpId,
+
+                  currentReading:
+                    oldClosing,
+                },
+                {
+                  $set: {
+                    currentReading:
+                      newClosing,
+                  },
+                },
+                {
+                  returnDocument:
+                    "after",
+
+                  runValidators:
+                    true,
+
+                  session,
+                }
+              );
+
+            if (
+              !updatedNozzle
+            ) {
+              const error =
+                new Error(
+                  "This nozzle was updated by another request"
+                );
+
+              error.code =
+                "NOZZLE_READING_UPDATE_CONFLICT";
+
+              throw error;
+            }
+          }
+
+          /* =================================================
+             UPDATE NOZZLE READING DOCUMENT
+          ================================================= */
+
+          const updatedReading =
+            await NozzleReading.findOneAndUpdate(
+              {
+                _id:
+                  existingReading._id,
+
+                pumpId,
+
+                /*
+                   Optimistic concurrency check.
+                   This ensures another update did not
+                   change the old closing value.
+                */
+                closingReading:
+                  oldClosing,
+              },
+              {
+                $set: {
+                  closingReading:
+                    newClosing,
+
+                  litresSold:
+                    newLitres,
+
+                  totalAmount:
+                    newTotalAmount,
+
+                  staffId:
+                    updatedStaffId,
+
+                  staffName:
+                    updatedStaffName,
+
+                  paymentMethod:
+                    updatedPayment,
+
+                  note:
+                    updatedNote,
+                },
+              },
+              {
+                returnDocument:
+                  "after",
+
+                runValidators:
+                  true,
+
+                session,
+              }
+            );
+
+          if (
+            !updatedReading
+          ) {
+            const error =
+              new Error(
+                "Reading was changed by another request"
+              );
+
+            error.code =
+              "READING_UPDATE_CONFLICT";
+
+            throw error;
+          }
+
+          /* =================================================
+             UPDATE LINKED SALE
+
+             Every nozzle reading created by addNozzleReading
+             has a corresponding Sale.
+          ================================================= */
+
+          const sale =
+            await Sale.findOne({
+              pumpId,
+
+              readingId:
+                existingReading._id,
+            }).session(
+              session
+            );
+
+          if (!sale) {
+            const error =
+              new Error(
+                "Linked sale not found for this reading"
+              );
+
+            error.code =
+              "SALE_NOT_FOUND";
+
+            throw error;
+          }
+
+          const updatedSale =
+            await Sale.findOneAndUpdate(
+              {
+                _id:
+                  sale._id,
+
+                pumpId,
+
+                readingId:
+                  existingReading._id,
+              },
+              {
+                $set: {
+                  quantity:
+                    newLitres,
+
+                  pricePerLitre:
+                    pricePerLitre,
+
+                  totalAmount:
+                    newTotalAmount,
+
+                  paymentMethod:
+                    updatedPayment,
+
+                  note:
+                    updatedNote,
+
+                  /*
+                     Keep original saleDate.
+
+                     Reading date is immutable.
+                  */
+
+                  fuelType:
+                    fuelType,
+
+                  nozzleId:
+                    existingReading.nozzleId,
+                },
+              },
+              {
+                returnDocument:
+                  "after",
+
+                runValidators:
+                  true,
+
+                session,
+              }
+            );
+
+          if (
+            !updatedSale
+          ) {
+            const error =
+              new Error(
+                "Linked sale could not be updated"
+              );
+
+            error.code =
+              "SALE_UPDATE_CONFLICT";
+
+            throw error;
+          }
+
+          /* =================================================
+             TRANSACTION RESULT
+          ================================================= */
+
+          transactionResult = {
+            updatedReading,
+
+            updatedSale,
+
+            updatedStock,
+
+            updatedNozzle,
+
+            oldClosing,
+
+            newClosing,
+
+            oldLitres,
+
+            newLitres,
+
+            delta,
+
+            pricePerLitre,
+
+            newTotalAmount,
+
+            staff,
+          };
+        }
+      );
+
+      /* =================================================
+         VERIFY TRANSACTION
+      ================================================= */
+
+      if (
+        !transactionResult?.updatedReading
+      ) {
+        return res.status(500).json({
+          success: false,
+          message:
+            "Reading update completed without a saved reading. Please refresh and try again.",
+        });
+      }
+
+      /* =================================================
+         SUCCESS RESPONSE
+      ================================================= */
+
+      return res.status(200).json({
+        success: true,
+
+        message:
+          "Nozzle shift reading updated successfully",
+
+        reading:
+          transactionResult
+            .updatedReading,
+
+        sale:
+          transactionResult
+            .updatedSale,
+
+        openingReading:
+          transactionResult
+            .updatedReading
+            .openingReading,
+
+        closingReading:
+          transactionResult
+            .updatedReading
+            .closingReading,
+
+        litresSold:
+          transactionResult
+            .updatedReading
+            .litresSold,
+
+        pricePerLitre:
+          transactionResult
+            .updatedReading
+            .pricePerLitre,
+
+        totalAmount:
+          transactionResult
+            .updatedReading
+            .totalAmount,
+
+        paymentMethod:
+          transactionResult
+            .updatedReading
+            .paymentMethod,
+
+        staffId:
+          transactionResult
+            .updatedReading
+            .staffId,
+
+        staffName:
+          transactionResult
+            .updatedReading
+            .staffName,
+
+        note:
+          transactionResult
+            .updatedReading
+            .note,
+
+        accounting: {
+          oldLitres:
+            transactionResult
+              .oldLitres,
+
+          newLitres:
+            transactionResult
+              .newLitres,
+
+          delta:
+            transactionResult
+              .delta,
+
+          stockAdjusted:
+            transactionResult
+              .delta !== 0,
+        },
+
+        nozzle: {
+          currentReading:
+            transactionResult
+              .updatedNozzle
+              .currentReading,
+        },
+
+        stock: {
+          currentStock:
+            transactionResult
+              .updatedStock
+              .currentStock,
+
+          totalSold:
+            transactionResult
+              .updatedStock
+              .totalSold,
+        },
+      });
+    } catch (error) {
+      console.error(
+        "UPDATE NOZZLE READING ERROR:",
+        {
+          code:
+            error?.code,
+
+          message:
+            error?.message,
+
+          name:
+            error?.name,
+        }
+      );
+
+      /* =================================================
+         READING NOT FOUND
+      ================================================= */
+
+      if (
+        error?.code ===
+        "READING_NOT_FOUND"
+      ) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Nozzle reading not found",
+        });
+      }
+
+      /* =================================================
+         LATER READING EXISTS
+      ================================================= */
+
+      if (
+        error?.code ===
+        "READING_HAS_LATER_READING"
+      ) {
+        return res.status(409).json({
+          success: false,
+
+          message:
+            "This reading cannot be changed because a later shift reading already exists for this nozzle. Edit the latest reading instead.",
+
+          laterReading: {
+            id:
+              error.laterReading
+                ?._id,
+
+            readingDate:
+              error.laterReading
+                ?.readingDate,
+
+            shiftName:
+              error.laterReading
+                ?.shiftName,
+
+            closingReading:
+              error.laterReading
+                ?.closingReading,
+          },
+        });
+      }
+
+      /* =================================================
+         INVALID EXISTING READING
+      ================================================= */
+
+      if (
+        error?.code ===
+        "INVALID_EXISTING_READING"
+      ) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "This saved reading contains invalid accounting data and cannot be safely edited.",
+        });
+      }
+
+      /* =================================================
+         INVALID UPDATED CLOSING
+      ================================================= */
+
+      if (
+        error?.code ===
+        "INVALID_UPDATED_CLOSING_READING"
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            `Closing reading must be greater than ${error.opening}`,
+
+          openingReading:
+            error.opening,
+        });
+      }
+
+      /* =================================================
+         INVALID LITRES
+      ================================================= */
+
+      if (
+        error?.code ===
+        "INVALID_UPDATED_LITRES"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid litres sold",
+        });
+      }
+
+      /* =================================================
+         NOZZLE
+      ================================================= */
+
+      if (
+        error?.code ===
+        "NOZZLE_NOT_FOUND"
+      ) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "The nozzle associated with this reading was not found.",
+        });
+      }
+
+      /* =================================================
+         FUEL TYPE
+      ================================================= */
+
+      if (
+        error?.code ===
+        "INVALID_FUEL_TYPE"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid fuel type",
+        });
+      }
+
+      /* =================================================
+         STAFF
+      ================================================= */
+
+      if (
+        error?.code ===
+        "STAFF_NOT_FOUND"
+      ) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Selected staff member was not found, inactive, or does not belong to this pump.",
+        });
+      }
+
+      /* =================================================
+         NOZZLE CONCURRENCY
+      ================================================= */
+
+      if (
+        error?.code ===
+        "NOZZLE_READING_UPDATE_CONFLICT"
+      ) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "The nozzle reading has changed since this record was loaded. Please refresh the reading history and try again.",
+        });
+      }
+
+      /* =================================================
+         FUEL PRICE
+      ================================================= */
+
+      if (
+        error?.code ===
+        "INVALID_HISTORICAL_PRICE"
+      ) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "The historical fuel price for this reading is invalid. The reading cannot be safely recalculated.",
+        });
+      }
+
+      /* =================================================
+         FUEL STOCK
+      ================================================= */
+
+      if (
+        error?.code ===
+        "FUEL_STOCK_NOT_FOUND"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Fuel stock not found for this fuel type.",
+        });
+      }
+
+      if (
+        error?.code ===
+        "INVALID_FUEL_STOCK"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Current fuel stock is invalid.",
+        });
+      }
+
+      if (
+        error?.code ===
+        "INSUFFICIENT_UPDATED_FUEL_STOCK"
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            `Insufficient fuel stock for this correction. Available: ${error.available}, required: ${error.required}.`,
+        });
+      }
+
+      if (
+        error?.code ===
+        "INVALID_TOTAL_SOLD"
+      ) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "Fuel stock total-sold value is invalid. The reading cannot be safely corrected.",
+        });
+      }
+
+      if (
+        error?.code ===
+        "INVALID_TOTAL_SOLD_REDUCTION"
+      ) {
+        return res.status(409).json({
+          success: false,
+
+          message:
+            "This correction would make total sold fuel negative, so the reading cannot be changed safely.",
+        });
+      }
+
+      if (
+        error?.code ===
+        "UPDATED_STOCK_CONFLICT"
+      ) {
+        return res.status(409).json({
+          success: false,
+
+          message:
+            "Fuel stock changed while updating this reading. Please refresh and try again.",
+        });
+      }
+
+      /* =================================================
+         SALE
+      ================================================= */
+
+      if (
+        error?.code ===
+        "SALE_NOT_FOUND"
+      ) {
+        return res.status(409).json({
+          success: false,
+
+          message:
+            "The sale linked to this nozzle reading was not found. The reading was not changed.",
+        });
+      }
+
+      if (
+        error?.code ===
+        "SALE_UPDATE_CONFLICT"
+      ) {
+        return res.status(409).json({
+          success: false,
+
+          message:
+            "The linked sale could not be updated. The reading was not changed.",
+        });
+      }
+
+      /* =================================================
+         READING UPDATE CONFLICT
+      ================================================= */
+
+      if (
+        error?.code ===
+        "READING_UPDATE_CONFLICT"
+      ) {
+        return res.status(409).json({
+          success: false,
+
+          message:
+            "This reading was changed by another request. Please refresh and try again.",
         });
       }
 
@@ -2111,13 +3840,29 @@ export const addNozzleReading =
       ) {
         return res.status(400).json({
           success: false,
+
           message:
             "Invalid data format",
         });
       }
 
       /* =================================================
-         TRANSACTION / DATABASE ERROR
+         DUPLICATE KEY
+      ================================================= */
+
+      if (
+        error?.code === 11000
+      ) {
+        return res.status(409).json({
+          success: false,
+
+          message:
+            "A conflicting nozzle reading already exists.",
+        });
+      }
+
+      /* =================================================
+         TRANSACTION ERROR
       ================================================= */
 
       if (
@@ -2130,6 +3875,7 @@ export const addNozzleReading =
       ) {
         return res.status(409).json({
           success: false,
+
           message:
             "The transaction could not be safely completed. Please refresh and try again.",
         });
@@ -2147,7 +3893,7 @@ export const addNozzleReading =
           error.message.length <
             250
             ? error.message
-            : "Unable to add final shift reading",
+            : "Unable to update nozzle shift reading",
       });
     } finally {
       if (session) {
@@ -2422,9 +4168,6 @@ export const getNozzleReadings =
 
       /* =================================================
          DATABASE
-
-         Both queries use the exact same pump-scoped
-         query to prevent cross-pump data leakage.
       ================================================= */
 
       const [

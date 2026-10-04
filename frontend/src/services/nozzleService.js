@@ -15,7 +15,10 @@ export const getNozzles = async () => {
 ===================================================== */
 
 export const addNozzle = async (payload) => {
-  const response = await api.post("/nozzles", payload);
+  const response = await api.post(
+    "/nozzles",
+    payload
+  );
 
   return response?.data ?? response;
 };
@@ -24,7 +27,10 @@ export const addNozzle = async (payload) => {
    UPDATE NOZZLE
 ===================================================== */
 
-export const updateNozzle = async (nozzleId, payload) => {
+export const updateNozzle = async (
+  nozzleId,
+  payload
+) => {
   const response = await api.put(
     `/nozzles/${nozzleId}`,
     payload
@@ -37,7 +43,9 @@ export const updateNozzle = async (nozzleId, payload) => {
    DELETE NOZZLE
 ===================================================== */
 
-export const deleteNozzle = async (nozzleId) => {
+export const deleteNozzle = async (
+  nozzleId
+) => {
   const response = await api.delete(
     `/nozzles/${nozzleId}`
   );
@@ -49,7 +57,9 @@ export const deleteNozzle = async (nozzleId) => {
    ADD NOZZLE READING
 ===================================================== */
 
-export const addNozzleReading = async (payload) => {
+export const addNozzleReading = async (
+  payload
+) => {
   const response = await api.post(
     "/nozzles/readings",
     payload
@@ -59,46 +69,57 @@ export const addNozzleReading = async (payload) => {
 };
 
 /* =====================================================
-   GET COMPLETE NOZZLE READING HISTORY
-
-   IMPORTANT
-   -----------------------------------------------------
-   ReadingHistory must use this function.
-
-   It intentionally does NOT send:
-   - page
-   - limit
-   - date
-   - shift
-   - staffId
-   - nozzleId
-   - paymentMethod
-
-   The ReadingHistory page receives the complete
-   collection and performs filtering on the frontend.
-
-   This is the same architecture used by
-   FuelPurchaseHistory.
+   UPDATE NOZZLE READING
 ===================================================== */
 
-export const getNozzleReadingHistory = async () => {
-  const response = await api.get("/nozzles/readings", {
-    params: {
-      history: true,
-    },
-  });
+export const updateNozzleReading = async (
+  readingId,
+  payload
+) => {
+  if (!readingId) {
+    throw new Error(
+      "Reading ID is required for update."
+    );
+  }
+
+  const response = await api.put(
+    `/nozzles/readings/${readingId}`,
+    payload
+  );
 
   return response?.data ?? response;
 };
+
+/* =====================================================
+   GET COMPLETE NOZZLE READING HISTORY
+
+   ReadingHistory uses this function.
+
+   It intentionally requests the complete collection
+   through the history flag.
+===================================================== */
+
+export const getNozzleReadingHistory =
+  async () => {
+    const response =
+      await api.get(
+        "/nozzles/readings",
+        {
+          params: {
+            history: true,
+          },
+        }
+      );
+
+    return response?.data ?? response;
+  };
 
 /* =====================================================
    GET NOZZLE READINGS
 
    Existing server-side API.
 
-   DO NOT USE THIS FROM ReadingHistory.
-
-   Keep it for screens that specifically require
+   Keep this for screens that specifically require
    server-side filtering/pagination.
 ===================================================== */
 
@@ -133,15 +154,17 @@ export const getNozzleReadings = async ({
   }
 
   if (paymentMethod) {
-    params.paymentMethod = paymentMethod;
+    params.paymentMethod =
+      paymentMethod;
   }
 
-  const response = await api.get(
-    "/nozzles/readings",
-    {
-      params,
-    }
-  );
+  const response =
+    await api.get(
+      "/nozzles/readings",
+      {
+        params,
+      }
+    );
 
   return response?.data ?? response;
 };
