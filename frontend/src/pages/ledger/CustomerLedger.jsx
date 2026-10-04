@@ -2205,7 +2205,7 @@ const CustomerLedger = () => {
               }}
             >
               <Wallet size={17} />
-              Add Advance Payment
+               Add Advance Payment
             </button>
 
             <button

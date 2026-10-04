@@ -453,13 +453,13 @@ const getEntryStatus = (entry) => {
   }
 
   /*
-     ADVANCE PARTIALLY COVERS PURCHASE
+     ADVANCE  COVERS PURCHASE
   */
   if (
     advance > 0 &&
     pending > 0
   ) {
-    return "Partially Advanced";
+    return " Advanced";
   }
 
   /*
@@ -562,7 +562,7 @@ const getAdvanceBalance = (
 
    The first summary table must always calculate
    its status from the actual advance + pending
-   values so that Advance / Partially Advanced
+   values so that Advance /  Advanced
    is displayed correctly.
 ===================================================== */
 
@@ -603,20 +603,20 @@ const getLedgerStatus = ({
     );
 
   /*
-     ADVANCE PARTIALLY USED
+     ADVANCE  USED
 
      Example:
      Advance Received = ₹30,000
      Advance Applied = ₹10,000
      Pending = ₹5,000
 
-     Status = Partially Advanced
+     Status =  Advanced
   */
   if (
     numericAdvanceApplied > 0 &&
     numericPending > 0
   ) {
-    return "Partially Advanced";
+    return " Advanced";
   }
 
   /*
@@ -1366,14 +1366,6 @@ export const exportLedgerPDF =
       customer?.date ||
       new Date();
 
-    const finalBillFrom =
-      safeString(
-        billFrom ||
-          customer?.billFrom ||
-          customer?.billingPeriod ||
-          ""
-      ) || "-";
-
     /* =================================================
        NORMALIZE ENTRIES
     ================================================= */
@@ -1382,6 +1374,65 @@ export const exportLedgerPDF =
       Array.isArray(entries)
         ? entries
         : [];
+
+    /* =================================================
+       BILL FROM DATE
+
+       Automatically uses the FIRST / OLDEST
+       transaction date from the customer ledger.
+
+       Example:
+       First ledger entry = 01/10/2026
+       Today = 04/10/2026
+
+       PDF:
+       Bill From : 01/10/2026
+
+       The original entries array is NOT mutated.
+    ================================================= */
+
+    const sortedLedgerEntries =
+      [...ledgerEntries].sort(
+        (a, b) => {
+          const dateA =
+            new Date(
+              getTransactionDate(a)
+            ).getTime();
+
+          const dateB =
+            new Date(
+              getTransactionDate(b)
+            ).getTime();
+
+          return (
+            (Number.isNaN(dateA)
+              ? Infinity
+              : dateA) -
+            (Number.isNaN(dateB)
+              ? Infinity
+              : dateB)
+          );
+        }
+      );
+
+    const firstLedgerDate =
+      sortedLedgerEntries.length > 0
+        ? getTransactionDate(
+            sortedLedgerEntries[0]
+          )
+        : null;
+
+    const finalBillFrom =
+      firstLedgerDate
+        ? formatDate(
+            firstLedgerDate
+          )
+        : safeString(
+            billFrom ||
+              customer?.billFrom ||
+              customer?.billingPeriod ||
+              ""
+          ) || "-";
 
     /* =================================================
        TOTAL QUANTITY
@@ -2461,7 +2512,7 @@ export const exportLedgerPDF =
              IMPORTANT:
              The status shown here comes from
              getLedgerStatus(), which calculates
-             Advance / Partially Advanced /
+             Advance /  Advanced /
              Pending / OK from actual values.
 
              Backend summary.status is NOT allowed
@@ -2480,7 +2531,7 @@ export const exportLedgerPDF =
               status ===
                 "Advanced" ||
               status ===
-                "Partially Advanced" ||
+                " Advanced" ||
               status ===
                 "Paid" ||
               status ===
@@ -2888,7 +2939,7 @@ export const exportLedgerPDF =
 
             if (
               status ===
-              "Partially Advanced"
+              " Advanced"
             ) {
               hookData.cell.styles.textColor =
                 COLORS.paid;

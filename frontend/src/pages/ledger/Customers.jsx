@@ -35,8 +35,6 @@ import {
 
 /* =========================================================
    COLORS
-   IMPORTANT:
-   These are kept the same as the previous Ledger List UI.
 ========================================================= */
 
 const COLORS = {
@@ -205,7 +203,10 @@ const Customers = () => {
 
       loadingRef.current = true;
 
-      if (!silent && mountedRef.current) {
+      if (
+        !silent &&
+        mountedRef.current
+      ) {
         setLoading(true);
       }
 
@@ -805,15 +806,114 @@ const Customers = () => {
     useCallback(
       (customer) => {
         const pending =
-          safeNumber(
-            customer?.currentBalance ??
-              customer?.pendingAmount ??
-              customer?.totalPending
+          Math.max(
+            safeNumber(
+              customer?.currentBalance ??
+                customer?.pendingAmount ??
+                customer?.totalPending
+            ),
+            0
           );
 
-        return pending > 0
-          ? "Pending"
-          : "Paid";
+        const advanceBalance =
+          Math.max(
+            safeNumber(
+              customer?.advanceBalance ??
+                customer?.remainingAdvance ??
+                customer?.advanceRemaining
+            ),
+            0
+          );
+
+        const advanceApplied =
+          Math.max(
+            safeNumber(
+              customer?.advanceAppliedAmount ??
+                customer?.totalAdvanceApplied ??
+                customer?.advanceApplied
+            ),
+            0
+          );
+
+        const advanceReceived =
+          Math.max(
+            safeNumber(
+              customer?.advanceAmount ??
+                customer?.totalAdvanceReceived ??
+                customer?.totalAdvance
+            ),
+            0
+          );
+
+        /* ==============================================
+           PARTIALLY ADVANCED
+        ============================================== */
+
+        if (
+          advanceApplied > 0 &&
+          pending > 0
+        ) {
+          return "Advanced";
+        }
+
+        /* ==============================================
+           ADVANCED - UNUSED ADVANCE
+        ============================================== */
+
+        if (
+          advanceBalance > 0 &&
+          pending <= 0
+        ) {
+          return "Advanced";
+        }
+
+        /* ==============================================
+           ADVANCED - ADVANCE FULLY CONSUMED
+        ============================================== */
+
+        if (
+          advanceApplied > 0 &&
+          pending <= 0
+        ) {
+          return "Advanced";
+        }
+
+        /* ==============================================
+           PENDING
+        ============================================== */
+
+        if (
+          pending > 0
+        ) {
+          return "Pending";
+        }
+
+        /* ==============================================
+           ADVANCED - RECEIVED BUT FULLY CONSUMED
+        ============================================== */
+
+        if (
+          advanceReceived > 0 &&
+          advanceBalance <= 0 &&
+          pending <= 0
+        ) {
+          return "Advanced";
+        }
+
+        /* ==============================================
+           OK
+        ============================================== */
+
+        if (
+          advanceBalance <= 0 &&
+          advanceApplied <= 0 &&
+          advanceReceived <= 0 &&
+          pending <= 0
+        ) {
+          return "OK";
+        }
+
+        return "OK";
       },
       []
     );
@@ -1425,6 +1525,8 @@ const Customers = () => {
                   Paid
                 </th>
 
+                {/* NET AMOUNT */}
+
                 <th
                   style={{
                     padding:
@@ -1436,10 +1538,10 @@ const Customers = () => {
                     fontWeight:
                       700,
                     minWidth:
-                      "120px",
+                      "140px",
                   }}
                 >
-                  Pending
+                  Net Amount
                 </th>
 
                 <th
@@ -1453,7 +1555,7 @@ const Customers = () => {
                     fontWeight:
                       700,
                     minWidth:
-                      "110px",
+                      "150px",
                   }}
                 >
                   Status
@@ -1526,6 +1628,10 @@ const Customers = () => {
                     customer,
                     index
                   ) => {
+                    /* ========================================
+                       CREDIT
+                    ======================================== */
+
                     const credit =
                       safeNumber(
                         customer?.totalPurchased ??
@@ -1534,11 +1640,19 @@ const Customers = () => {
                           customer?.totalAmount
                       );
 
+                    /* ========================================
+                       PAID
+                    ======================================== */
+
                     const paid =
                       safeNumber(
                         customer?.totalPaid ??
                           customer?.paidAmount
                       );
+
+                    /* ========================================
+                       CALCULATED PENDING
+                    ======================================== */
 
                     const calculatedPending =
                       Math.max(
@@ -1547,18 +1661,117 @@ const Customers = () => {
                         0
                       );
 
+                    /* ========================================
+                       PENDING
+                    ======================================== */
+
                     const pending =
-                      safeNumber(
-                        customer?.currentBalance ??
-                          customer?.pendingAmount ??
-                          customer?.totalPending ??
-                          calculatedPending
+                      Math.max(
+                        safeNumber(
+                          customer?.currentBalance ??
+                            customer?.pendingAmount ??
+                            customer?.totalPending ??
+                            calculatedPending
+                        ),
+                        0
                       );
+
+                    /* ========================================
+                       ADVANCE BALANCE
+                    ======================================== */
+
+                    const advanceBalance =
+                      Math.max(
+                        safeNumber(
+                          customer?.advanceBalance ??
+                            customer?.remainingAdvance ??
+                            customer?.advanceRemaining
+                        ),
+                        0
+                      );
+
+                    /* ========================================
+                       ADVANCE APPLIED
+                    ======================================== */
+
+                    const advanceApplied =
+                      Math.max(
+                        safeNumber(
+                          customer?.advanceAppliedAmount ??
+                            customer?.totalAdvanceApplied ??
+                            customer?.advanceApplied
+                        ),
+                        0
+                      );
+
+                    /* ========================================
+                       ADVANCE RECEIVED
+                    ======================================== */
+
+                    const advanceReceived =
+                      Math.max(
+                        safeNumber(
+                          customer?.advanceAmount ??
+                            customer?.totalAdvanceReceived ??
+                            customer?.totalAdvance
+                        ),
+                        0
+                      );
+
+                    /* ========================================
+                       STATUS
+                    ======================================== */
 
                     const status =
                       getStatus(
                         customer
                       );
+
+                    /* ========================================
+                       NET AMOUNT
+
+                       ADVANCED:
+                       Remaining advance balance.
+
+                       PARTIALLY ADVANCED:
+                       Advance amount - pending amount.
+
+                       PENDING:
+                       Pending amount.
+
+                       OK:
+                       Zero.
+
+                       ONLY THE AMOUNT IS DISPLAYED.
+                    ======================================== */
+
+                    let netAmount = 0;
+
+                    if (
+                      status ===
+                      "Advanced"
+                    ) {
+                      netAmount =
+                        advanceBalance;
+                    } else if (
+                      status ===
+                      "Partially Advanced"
+                    ) {
+                      netAmount =
+                        Math.max(
+                          advanceReceived -
+                            pending,
+                          0
+                        );
+                    } else if (
+                      status ===
+                      "Pending"
+                    ) {
+                      netAmount =
+                        pending;
+                    } else {
+                      netAmount = 0;
+                    }
 
                     const isDeleting =
                       deletingId ===
@@ -1573,13 +1786,11 @@ const Customers = () => {
                         key={
                           customer._id
                         }
-
                         onClick={() =>
                           handleCustomerRowClick(
                             customer
                           )
                         }
-
                         style={{
                           borderTop:
                             "1px solid " +
@@ -1594,14 +1805,12 @@ const Customers = () => {
                           transition:
                             "background 0.15s ease",
                         }}
-
                         onMouseEnter={(
                           e
                         ) => {
                           e.currentTarget.style.background =
                             COLORS.hover;
                         }}
-
                         onMouseLeave={(
                           e
                         ) => {
@@ -1760,7 +1969,7 @@ const Customers = () => {
                           )}
                         </td>
 
-                        {/* PENDING */}
+                        {/* NET AMOUNT */}
 
                         <td
                           style={{
@@ -1770,24 +1979,34 @@ const Customers = () => {
                             textAlign:
                               "right",
 
-                            fontSize:
-                              "13px",
-
-                            fontWeight:
-                              700,
-
-                            color:
-                              pending > 0
-                                ? COLORS.danger
-                                : COLORS.success,
-
                             verticalAlign:
                               "middle",
                           }}
                         >
-                          {formatMoney(
-                            pending
-                          )}
+                          <div
+                            style={{
+                              fontSize:
+                                "13px",
+
+                              fontWeight:
+                                800,
+
+                              color:
+                                status ===
+                                "Advanced" ||
+                                status ===
+                                  "Partially Advanced"
+                                  ? COLORS.success
+                                  : status ===
+                                      "Pending" 
+                                  ? COLORS.danger
+                                  : COLORS.muted,
+                            }}
+                          >
+                            {formatMoney(
+                              netAmount
+                            )}
+                          </div>
                         </td>
 
                         {/* STATUS */}
@@ -1816,7 +2035,13 @@ const Customers = () => {
                                 "center",
 
                               minWidth:
-                                "66px",
+                                status ===
+                                "Partially Advanced"
+                                  ? "130px"
+                                  : status ===
+                                      "Advanced"
+                                  ? "80px"
+                                  : "66px",
 
                               padding:
                                 "5px 11px",
@@ -1832,14 +2057,20 @@ const Customers = () => {
 
                               background:
                                 status ===
-                                "Pending"
+                                  "Pending"
                                   ? COLORS.dangerBackground
+                                  : status ===
+                                      "Partially Advanced"
+                                  ? "#fff7ed"
                                   : COLORS.successBackground,
 
                               color:
                                 status ===
-                                "Pending"
+                                  "Pending"
                                   ? COLORS.dangerDark
+                                  : status ===
+                                      "Partially Advanced"
+                                  ? "#c2410c"
                                   : COLORS.success,
                             }}
                           >
