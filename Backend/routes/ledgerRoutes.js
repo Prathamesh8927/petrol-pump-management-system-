@@ -11,23 +11,24 @@ import {
 
   addCustomerPurchase,
   addLedgerPayment,
+  addLedgerAdvance,
 
   getCustomerLedgerHistory,
-
   getPendingCredit,
   getTodayCreditSales,
 } from "../controllers/ledgerController.js";
 
-const router =
-  express.Router();
+const router = express.Router();
 
-router.use(
-  authMiddleware
-);
+// ======================================================
+// AUTHENTICATION
+// ======================================================
 
-/* =====================================================
-   SPECIAL ROUTES
-===================================================== */
+router.use(authMiddleware);
+
+// ======================================================
+// SPECIAL ROUTES
+// ======================================================
 
 router.get(
   "/pending",
@@ -39,14 +40,27 @@ router.get(
   getTodayCreditSales
 );
 
+// ======================================================
+// PAYMENT
+// ======================================================
+
 router.post(
   "/payment",
   addLedgerPayment
 );
 
-/* =====================================================
-   CUSTOMERS
-===================================================== */
+// ======================================================
+// ADVANCE PAYMENT
+// ======================================================
+
+router.post(
+  "/customers/:customerId/advance",
+  addLedgerAdvance
+);
+
+// ======================================================
+// CUSTOMERS
+// ======================================================
 
 router.get(
   "/customers",
@@ -58,27 +72,27 @@ router.post(
   addLedgerCustomer
 );
 
-/* =====================================================
-   CUSTOMER HISTORY
-===================================================== */
+// ======================================================
+// CUSTOMER HISTORY
+// ======================================================
 
 router.get(
   "/customers/:customerId/history",
   getCustomerLedgerHistory
 );
 
-/* =====================================================
-   CUSTOMER PURCHASE
-===================================================== */
+// ======================================================
+// CUSTOMER PURCHASE
+// ======================================================
 
 router.post(
   "/customers/:customerId/purchases",
   addCustomerPurchase
 );
 
-/* =====================================================
-   CUSTOMER DETAILS
-===================================================== */
+// ======================================================
+// CUSTOMER DETAILS
+// ======================================================
 
 router.get(
   "/customers/:id",

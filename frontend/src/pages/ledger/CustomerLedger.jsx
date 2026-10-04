@@ -17,6 +17,7 @@ import {
   ArrowLeft,
   Plus,
   IndianRupee,
+  Wallet,
 } from "lucide-react";
 
 import ProfessionalSearch from "../../components/ProfessionalSearch";
@@ -44,7 +45,11 @@ const EMPTY_SUMMARY = {
   totalPurchased: 0,
   totalPaid: 0,
   totalPending: 0,
+  advanceBalance: 0,
   purchaseCount: 0,
+  paymentCount: 0,
+  advancePaymentCount: 0,
+  status: "Pending",
 };
 
 /* =========================================================
@@ -55,11 +60,9 @@ const getToday = () => {
   const now = new Date();
 
   const year = now.getFullYear();
-
   const month = String(
     now.getMonth() + 1
   ).padStart(2, "0");
-
   const day = String(
     now.getDate()
   ).padStart(2, "0");
@@ -116,6 +119,31 @@ const money = (value) =>
       maximumFractionDigits: 2,
     }
   );
+
+const getLedgerStatus = (summary = {}) => {
+  if (
+    safeNumber(summary?.advanceBalance) >
+    0
+  ) {
+    return "Advanced";
+  }
+
+  if (
+    safeNumber(summary?.totalPending) <=
+    0
+  ) {
+    return "Paid";
+  }
+
+  if (
+    safeNumber(summary?.totalPaid) >
+    0
+  ) {
+    return "Partially Paid";
+  }
+
+  return "Pending";
+};
 
 const getErrorMessage = (
   error,
@@ -178,10 +206,8 @@ const CustomerLedger = () => {
   const mountedRef = useRef(true);
 
   const loadingLedgerRef = useRef(false);
-
   const loadingCustomersRef =
     useRef(false);
-
   const submittingRef = useRef(false);
 
   /* =====================================================
@@ -277,6 +303,19 @@ const CustomerLedger = () => {
   });
 
   /* =====================================================
+     ADVANCE PAYMENT
+  ===================================================== */
+
+  const [
+    advancePaymentForm,
+    setAdvancePaymentForm,
+  ] = useState({
+    amount: "",
+    entryDate: getToday(),
+    note: "",
+  });
+
+  /* =====================================================
      UI
   ===================================================== */
 
@@ -288,6 +327,11 @@ const CustomerLedger = () => {
   const [
     showPayment,
     setShowPayment,
+  ] = useState(false);
+
+  const [
+    showAdvancePayment,
+    setShowAdvancePayment,
   ] = useState(false);
 
   const [
@@ -314,27 +358,14 @@ const CustomerLedger = () => {
             "/settings/pump"
           );
 
-        /*
-         * IMPORTANT:
-         * Prefer the same response shape used by
-         * the Monthly Report:
-         *
-         * response.data.pump
-         *
-         * Then fall back to the other supported shapes.
-         */
         const settings =
-          response?.data?.pump ||
-          response?.data?.settings ||
-          response?.pump ||
           response?.settings ||
+          response?.data?.settings ||
           response?.data ||
           {};
 
         const logoUrl =
-          resolveLogoUrl(
-            settings
-          );
+          resolveLogoUrl(settings);
 
         const normalizedSettings = {
           ...settings,
@@ -387,10 +418,6 @@ const CustomerLedger = () => {
             settings?.email ||
             "",
 
-          /*
-           * Keep the Settings logo available for the
-           * PDF exporter.
-           */
           logoUrl:
             logoUrl || null,
 
@@ -406,11 +433,6 @@ const CustomerLedger = () => {
           );
         }
       } catch (error) {
-        console.warn(
-          "Unable to load pump settings:",
-          error
-        );
-
         if (mountedRef.current) {
           setPumpSettings(null);
         }
@@ -525,10 +547,29 @@ const CustomerLedger = () => {
               loadedSummary.totalPending
             ),
 
+          advanceBalance:
+            safeNumber(
+              loadedSummary.advanceBalance
+            ),
+
           purchaseCount:
             safeNumber(
               loadedSummary.purchaseCount
             ),
+
+          paymentCount:
+            safeNumber(
+              loadedSummary.paymentCount
+            ),
+
+          advancePaymentCount:
+            safeNumber(
+              loadedSummary.advancePaymentCount
+            ),
+
+          status:
+            loadedSummary.status ||
+            "Pending",
         });
 
         setCustomerForm({
@@ -579,7 +620,6 @@ const CustomerLedger = () => {
     mountedRef.current = true;
 
     loadPumpSettings();
-
     loadPreviousCustomers();
 
     if (customerId) {
@@ -806,6 +846,12 @@ const CustomerLedger = () => {
 
             currentBalance:
               summary.totalPending,
+
+            advanceBalance:
+              summary.advanceBalance,
+
+            ledgerStatus:
+              summary.status,
           },
 
           pump,
@@ -1044,8 +1090,7 @@ const CustomerLedger = () => {
             refreshedData =
               await getLedgerCustomers();
           } catch {
-            refreshedData =
-              null;
+            refreshedData = null;
           }
 
           const refreshedCustomers =
@@ -1390,11 +1435,9 @@ const CustomerLedger = () => {
             fuelType:
               purchaseForm.fuelType,
 
-            totalAmount:
-              total,
+            totalAmount: total,
 
-            paidAmount:
-              paid,
+            paidAmount: paid,
 
             entryDate:
               purchaseForm.entryDate,
@@ -1508,13 +1551,15 @@ const CustomerLedger = () => {
         setSaving(true);
 
         /*
-         * Backend expects paymentAmount.
+         * Backend ledger payment uses paymentAmount.
+         *
+         * addCustomerPayment(customerId, data)
+         * automatically injects customerId.
          */
         await addCustomerPayment(
           customerId,
           {
-            paymentAmount:
-              amount,
+            paymentAmount: amount,
 
             entryDate:
               paymentForm.entryDate,
@@ -1543,6 +1588,114 @@ const CustomerLedger = () => {
           getErrorMessage(
             error,
             "Unable to add payment"
+          )
+        );
+      } finally {
+        submittingRef.current = false;
+
+        if (mountedRef.current) {
+          setSaving(false);
+        }
+      }
+    };
+
+  /* =====================================================
+     ADD ADVANCE PAYMENT
+  ===================================================== */
+
+  const handleAddAdvancePayment =
+    async (event) => {
+      event.preventDefault();
+
+      if (
+        submittingRef.current ||
+        !customerId
+      ) {
+        return;
+      }
+
+      const amount =
+        Number(
+          advancePaymentForm.amount
+        );
+
+      if (
+        !Number.isFinite(amount) ||
+        amount <= 0
+      ) {
+        toast.error(
+          "Enter valid advance payment amount"
+        );
+
+        return;
+      }
+
+      if (
+        !isValidDate(
+          advancePaymentForm.entryDate
+        )
+      ) {
+        toast.error(
+          "Select a valid advance payment date"
+        );
+
+        return;
+      }
+
+      if (
+        advancePaymentForm.note.length >
+        500
+      ) {
+        toast.error(
+          "Note must be 500 characters or less"
+        );
+
+        return;
+      }
+
+      submittingRef.current = true;
+
+      try {
+        setSaving(true);
+
+        /*
+         * Backend route:
+         * POST /api/ledger/customers/:customerId/advance
+         *
+         * api already uses the /api base URL.
+         * customerId is therefore part of the URL,
+         * not the request body.
+         */
+        await api.post(
+          `/ledger/customers/${customerId}/advance`,
+          {
+            amount,
+            entryDate:
+              advancePaymentForm.entryDate,
+            note:
+              advancePaymentForm.note.trim(),
+          }
+        );
+
+        toast.success(
+          "Advance payment added successfully"
+        );
+
+        setAdvancePaymentForm({
+          amount: "",
+          entryDate: getToday(),
+          note: "",
+        });
+
+        setShowAdvancePayment(false);
+
+        await loadLedger();
+        await loadPreviousCustomers();
+      } catch (error) {
+        toast.error(
+          getErrorMessage(
+            error,
+            "Unable to add advance payment"
           )
         );
       } finally {
@@ -2006,6 +2159,7 @@ const CustomerLedger = () => {
                 );
 
                 setShowPayment(false);
+                setShowAdvancePayment(false);
               }}
               disabled={saving}
             >
@@ -2029,10 +2183,29 @@ const CustomerLedger = () => {
                 );
 
                 setShowPurchase(false);
+                setShowAdvancePayment(false);
               }}
             >
               <IndianRupee size={17} />
               Add Payment
+            </button>
+
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={saving}
+              onClick={() => {
+                setShowAdvancePayment(
+                  (previous) =>
+                    !previous
+                );
+
+                setShowPurchase(false);
+                setShowPayment(false);
+              }}
+            >
+              <Wallet size={17} />
+              Add Advance Payment
             </button>
 
             <button
@@ -2282,6 +2455,33 @@ const CustomerLedger = () => {
             <div className="stat-card">
 
               <h4>
+                Advance Balance
+              </h4>
+
+              <h2>
+                ₹{" "}
+                {money(
+                  summary.advanceBalance
+                )}
+              </h2>
+
+            </div>
+
+            <div className="stat-card">
+
+              <h4>
+                Status
+              </h4>
+
+              <h2>
+                {getLedgerStatus(summary)}
+              </h2>
+
+            </div>
+
+            <div className="stat-card">
+
+              <h4>
                 Pending
               </h4>
 
@@ -2461,10 +2661,8 @@ const CustomerLedger = () => {
                           "9px",
                       }}
                     >
-                      Pending for this purchase:{" "}
-                      <strong>
-                        ₹{" "}
-                        {money(
+                      {(() => {
+                        const purchaseBalance =
                           Math.max(
                             Number(
                               purchaseForm.totalAmount ||
@@ -2475,9 +2673,53 @@ const CustomerLedger = () => {
                                   0
                               ),
                             0
-                          )
-                        )}
-                      </strong>
+                          );
+
+                        const advanceUsed =
+                          Math.min(
+                            safeNumber(
+                              summary.advanceBalance
+                            ),
+                            purchaseBalance
+                          );
+
+                        const finalPending =
+                          Math.max(
+                            purchaseBalance -
+                              advanceUsed,
+                            0
+                          );
+
+                        return (
+                          <>
+                            Purchase Balance:{" "}
+                            <strong>
+                              ₹{" "}
+                              {money(
+                                purchaseBalance
+                              )}
+                            </strong>
+                            <br />
+
+                            Advance Applied:{" "}
+                            <strong>
+                              ₹{" "}
+                              {money(
+                                advanceUsed
+                              )}
+                            </strong>
+                            <br />
+
+                            Final Pending:{" "}
+                            <strong>
+                              ₹{" "}
+                              {money(
+                                finalPending
+                              )}
+                            </strong>
+                          </>
+                        );
+                      })()}
                     </div>
                   )}
 
@@ -2658,6 +2900,149 @@ const CustomerLedger = () => {
           )}
 
           {/* =================================================
+              ADD ADVANCE PAYMENT
+          ================================================= */}
+
+          {showAdvancePayment && (
+            <div className="content-panel">
+
+              <div className="content-panel-body">
+
+                <h2>
+                  Add Advance Payment
+                </h2>
+
+                <p
+                  style={{
+                    marginBottom:
+                      "20px",
+                  }}
+                >
+                  Current Advance Balance:{" "}
+                  <strong>
+                    ₹{" "}
+                    {money(
+                      summary.advanceBalance
+                    )}
+                  </strong>
+                  <br />
+                  <span
+                    style={{
+                      display:
+                        "inline-block",
+                      marginTop:
+                        "6px",
+                    }}
+                  >
+                    This advance will be automatically
+                    used against future purchases.
+                  </span>
+                </p>
+
+                <form
+                  onSubmit={
+                    handleAddAdvancePayment
+                  }
+                  noValidate
+                >
+
+                  <div className="form-row">
+
+                    <div className="form-group">
+
+                      <label>
+                        Advance Amount *
+                      </label>
+
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={
+                          advancePaymentForm.amount
+                        }
+                        onChange={(e) =>
+                          setAdvancePaymentForm(
+                            (previous) => ({
+                              ...previous,
+                              amount:
+                                e.target.value,
+                            })
+                          )
+                        }
+                      />
+
+                    </div>
+
+                    <div className="form-group">
+
+                      <label>
+                        Advance Date *
+                      </label>
+
+                      <input
+                        type="date"
+                        value={
+                          advancePaymentForm.entryDate
+                        }
+                        onChange={(e) =>
+                          setAdvancePaymentForm(
+                            (previous) => ({
+                              ...previous,
+                              entryDate:
+                                e.target.value,
+                            })
+                          )
+                        }
+                      />
+
+                    </div>
+
+                  </div>
+
+                  <div className="form-group">
+
+                    <label>
+                      Note
+                    </label>
+
+                    <textarea
+                      rows="3"
+                      maxLength={500}
+                      value={
+                        advancePaymentForm.note
+                      }
+                      onChange={(e) =>
+                        setAdvancePaymentForm(
+                          (previous) => ({
+                            ...previous,
+                            note:
+                              e.target.value,
+                          })
+                        )
+                      }
+                    />
+
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="primary-button"
+                    disabled={saving}
+                  >
+                    {saving
+                      ? "Saving..."
+                      : "Save Advance Payment"}
+                  </button>
+
+                </form>
+
+              </div>
+
+            </div>
+          )}
+
+          {/* =================================================
               COMPLETE LEDGER
           ================================================= */}
 
@@ -2713,6 +3098,10 @@ const CustomerLedger = () => {
                     </th>
 
                     <th>
+                      Advanced Payment
+                    </th>
+
+                    <th>
                       Pending
                     </th>
 
@@ -2734,7 +3123,7 @@ const CustomerLedger = () => {
                   0 ? (
                     <tr>
                       <td
-                        colSpan="9"
+                        colSpan="10"
                         className="empty-table"
                       >
                         No transactions found.
@@ -2769,6 +3158,9 @@ const CustomerLedger = () => {
                               entry?.entryType ===
                               "purchase"
                                 ? "Purchase"
+                                : entry?.entryType ===
+                                  "advance"
+                                ? "Advance"
                                 : "Payment"
                             }
                           </td>
@@ -2808,6 +3200,31 @@ const CustomerLedger = () => {
                                   )}`
                                 : "-"
                             }
+                          </td>
+
+                          {/* =================================================
+                              ADVANCED PAYMENT
+                              FIXED: Advance entries use advanceAmount
+                          ================================================= */}
+
+                          <td>
+                            {entry?.entryType ===
+                            "advance"
+                              ? `₹ ${money(
+                                  entry?.advanceAmount ??
+                                    entry?.paymentAmount ??
+                                    entry?.amount ??
+                                    0
+                                )}`
+                              : entry?.entryType ===
+                                  "purchase" &&
+                                safeNumber(
+                                  entry?.advanceAppliedAmount
+                                ) > 0
+                              ? `₹ ${money(
+                                  entry?.advanceAppliedAmount
+                                )}`
+                              : "-"}
                           </td>
 
                           <td>

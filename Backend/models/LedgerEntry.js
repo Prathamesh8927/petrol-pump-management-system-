@@ -29,7 +29,13 @@ const ledgerEntrySchema = new mongoose.Schema(
     // --------------------------------------------------
     entryType: {
       type: String,
-      enum: ["purchase", "payment"],
+
+      enum: [
+        "purchase",
+        "payment",
+        "advance",
+      ],
+
       required: true,
       lowercase: true,
       trim: true,
@@ -46,6 +52,32 @@ const ledgerEntrySchema = new mongoose.Schema(
       default: null,
       lowercase: true,
       trim: true,
+    },
+
+    // --------------------------------------------------
+    // PURCHASE FUEL RATE
+    // --------------------------------------------------
+    /*
+     * Selling rate per litre at the time
+     * of the customer purchase.
+     *
+     * Used by ledger/PDF to calculate:
+     *
+     * Quantity = Purchase Amount / Rate
+     *
+     * Example:
+     *
+     * Amount = ₹5000
+     * Rate   = ₹103.50
+     *
+     * Quantity = 5000 / 103.50
+     *
+     * Default is 0 for old/legacy entries.
+     */
+    rate: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
 
     // --------------------------------------------------
@@ -79,10 +111,46 @@ const ledgerEntrySchema = new mongoose.Schema(
     },
 
     // --------------------------------------------------
+    // ADVANCE PAYMENT
+    // --------------------------------------------------
+    /*
+     * Amount received as advance.
+     *
+     * Used mainly when:
+     * entryType === "advance"
+     */
+    advanceAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    /*
+     * Amount of customer's existing advance
+     * consumed by a purchase.
+     */
+    advanceAppliedAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    /*
+     * Remaining advance balance immediately
+     * after this transaction.
+     */
+    advanceBalance: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // --------------------------------------------------
     // ENTRY DATE
     // --------------------------------------------------
     /*
      * Business date.
+     *
      * Kept as String for compatibility with
      * the existing frontend/controller.
      *
@@ -137,7 +205,7 @@ ledgerEntrySchema.index({
 });
 
 /*
- * Customer purchase/payment filtering.
+ * Customer purchase/payment/advance filtering.
  */
 ledgerEntrySchema.index({
   pumpId: 1,
@@ -164,8 +232,7 @@ ledgerEntrySchema.index({
 });
 
 /*
- * Useful for payment/purchase reporting
- * by entry type across a pump.
+ * Useful for payment/purchase/advance reporting.
  */
 ledgerEntrySchema.index({
   pumpId: 1,

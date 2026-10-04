@@ -114,9 +114,7 @@ const getCustomerPhone = (customer) =>
   );
 
 const getCustomerAddress = (customer) =>
-  safeString(
-    customer?.address || ""
-  );
+  safeString(customer?.address || "");
 
 const getCustomerGstin = (customer) =>
   safeString(
@@ -137,6 +135,7 @@ const getVehicleNumber = (customer) =>
 ===================================================== */
 
 const getTransactionDate = (entry) =>
+  entry?.entryDate ||
   entry?.date ||
   entry?.transactionDate ||
   entry?.createdAt ||
@@ -144,12 +143,29 @@ const getTransactionDate = (entry) =>
   entry?.paymentDate ||
   null;
 
+/* =====================================================
+   TRANSACTION TYPE
+
+   Supported:
+   - Purchase
+   - Payment
+   - Advance
+===================================================== */
+
 const getTransactionType = (entry) => {
   const type = safeString(
-    entry?.type ||
+    entry?.entryType ||
+      entry?.type ||
       entry?.transactionType ||
       ""
   ).toLowerCase();
+
+  if (
+    type.includes("advance") ||
+    type.includes("advance payment")
+  ) {
+    return "Advance";
+  }
 
   if (
     type.includes("payment") ||
@@ -170,6 +186,91 @@ const getFuelType = (entry) =>
       "-"
   );
 
+/* =====================================================
+   FUEL RATE
+
+   Supports:
+   - rate
+   - fuelRate
+   - fuelPrice
+   - pricePerLitre
+   - pricePerLiter
+   - price
+   - unitPrice
+   - sellingPrice
+===================================================== */
+
+const getFuelRate = (entry) =>
+  Number(
+    entry?.rate ??
+      entry?.fuelRate ??
+      entry?.fuelPrice ??
+      entry?.pricePerLitre ??
+      entry?.pricePerLiter ??
+      entry?.price ??
+      entry?.unitPrice ??
+      entry?.sellingPrice ??
+      0
+  );
+
+/* =====================================================
+   QUANTITY
+
+   IMPORTANT:
+   Quantity is calculated from:
+
+   Purchase Amount / Fuel Rate
+
+   Example:
+   Amount = ₹3000
+   Rate   = ₹100/L
+   Quantity = 30 L
+
+   Existing quantity fields are used only as a
+   fallback when a valid rate is not available.
+===================================================== */
+
+const getQuantity = (entry) => {
+  const type = getTransactionType(entry);
+
+  if (type !== "Purchase") {
+    return 0;
+  }
+
+  const amount = Number(
+    entry?.amount ??
+      entry?.totalAmount ??
+      entry?.purchaseAmount ??
+      entry?.debit ??
+      0
+  );
+
+  const rate = getFuelRate(entry);
+
+  if (
+    Number.isFinite(amount) &&
+    amount > 0 &&
+    Number.isFinite(rate) &&
+    rate > 0
+  ) {
+    return amount / rate;
+  }
+
+  /* Fallback for old records where rate is unavailable */
+  return Number(
+    entry?.quantity ??
+      entry?.qty ??
+      entry?.fuelQuantity ??
+      entry?.litres ??
+      entry?.liters ??
+      0
+  );
+};
+
+/* =====================================================
+   TRANSACTION AMOUNT
+===================================================== */
+
 const getAmount = (entry) =>
   Number(
     entry?.amount ??
@@ -179,28 +280,97 @@ const getAmount = (entry) =>
       0
   );
 
-const getPaidAmount = (entry) =>
-  Number(
+/* =====================================================
+   PAID AMOUNT
+
+   For normal purchases:
+   paid / paidAmount / credit
+
+   For payment transactions:
+   paymentAmount
+
+   Advance amount is handled separately.
+===================================================== */
+
+const getPaidAmount = (entry) => {
+  const type = getTransactionType(entry);
+
+  if (type === "Advance") {
+    return 0;
+  }
+
+  if (type === "Payment") {
+    return Number(
+      entry?.paymentAmount ??
+        entry?.paid ??
+        entry?.paidAmount ??
+        entry?.credit ??
+        0
+    );
+  }
+
+  return Number(
     entry?.paid ??
       entry?.paidAmount ??
       entry?.paymentAmount ??
       entry?.credit ??
       0
   );
+};
+
+/* =====================================================
+   ADVANCE PAYMENT AMOUNT
+
+   Handles:
+   advanceAmount
+   advancePayment
+   paymentAmount for Advance transaction
+   advanceAppliedAmount for purchases
+===================================================== */
+
+const getAdvanceAmount = (entry) => {
+  const type = getTransactionType(entry);
+
+  if (type === "Advance") {
+    return Number(
+      entry?.advanceAmount ??
+        entry?.advancePayment ??
+        entry?.paymentAmount ??
+        entry?.amount ??
+        0
+    );
+  }
+
+  return Number(
+    entry?.advanceAppliedAmount ??
+      entry?.advanceApplied ??
+      entry?.appliedAdvance ??
+      entry?.advanceUsed ??
+      0
+  );
+};
+
+/* =====================================================
+   PENDING AMOUNT
+
+   Important:
+   If backend already provides pending/pendingAmount,
+   that value is used.
+
+   Otherwise:
+   Purchase amount
+   - paid amount
+   - advance applied amount
+===================================================== */
 
 const getPendingAmount = (entry) => {
-  const amount =
-    getAmount(entry);
-
-  const paid =
-    getPaidAmount(entry);
-
   if (
     entry?.pending !== undefined &&
     entry?.pending !== null
   ) {
-    return Number(
-      entry.pending || 0
+    return Math.max(
+      Number(entry.pending || 0),
+      0
     );
   }
 
@@ -208,15 +378,110 @@ const getPendingAmount = (entry) => {
     entry?.pendingAmount !== undefined &&
     entry?.pendingAmount !== null
   ) {
-    return Number(
-      entry.pendingAmount || 0
+    return Math.max(
+      Number(entry.pendingAmount || 0),
+      0
     );
   }
 
+  const type = getTransactionType(entry);
+
+  if (
+    type === "Advance" ||
+    type === "Payment"
+  ) {
+    return 0;
+  }
+
+  const amount =
+    getAmount(entry);
+
+  const paid =
+    getPaidAmount(entry);
+
+  const advance =
+    getAdvanceAmount(entry);
+
   return Math.max(
-    amount - paid,
+    amount -
+      paid -
+      advance,
     0
   );
+};
+
+/* =====================================================
+   ENTRY STATUS
+===================================================== */
+
+const getEntryStatus = (entry) => {
+  const type =
+    getTransactionType(entry);
+
+  /* ADVANCE PAYMENT */
+  if (type === "Advance") {
+    return "Advanced";
+  }
+
+  /* PAYMENT */
+  if (type === "Payment") {
+    return "Payment";
+  }
+
+  const advance = Math.max(
+    Number(
+      getAdvanceAmount(entry) || 0
+    ),
+    0
+  );
+
+  const pending = Math.max(
+    Number(
+      getPendingAmount(entry) || 0
+    ),
+    0
+  );
+
+  /*
+     ADVANCE FULLY COVERS PURCHASE
+  */
+  if (
+    advance > 0 &&
+    pending <= 0
+  ) {
+    return "Advanced";
+  }
+
+  /*
+     ADVANCE PARTIALLY COVERS PURCHASE
+  */
+  if (
+    advance > 0 &&
+    pending > 0
+  ) {
+    return "Partially Advanced";
+  }
+
+  /*
+     PURCHASE STILL PENDING
+  */
+  if (pending > 0) {
+    return "Pending";
+  }
+
+  /*
+     BOTH ARE ZERO
+     Advance = 0
+     Pending = 0
+  */
+  if (
+    advance <= 0 &&
+    pending <= 0
+  ) {
+    return "OK";
+  }
+
+  return "OK";
 };
 
 const getPaymentMode = (entry) =>
@@ -234,6 +499,193 @@ const getRemarks = (entry) =>
       entry?.description ||
       "-"
   );
+
+/* =====================================================
+   ADVANCE BALANCE HELPERS
+===================================================== */
+
+const getAdvanceBalance = (
+  summary = {},
+  customer = {},
+  entries = []
+) => {
+  const explicitBalance =
+    summary?.advanceBalance ??
+    customer?.advanceBalance;
+
+  if (
+    explicitBalance !== undefined &&
+    explicitBalance !== null
+  ) {
+    return Math.max(
+      Number(explicitBalance || 0),
+      0
+    );
+  }
+
+  let totalAdvanceReceived = 0;
+  let totalAdvanceApplied = 0;
+
+  entries.forEach((entry) => {
+    const type =
+      getTransactionType(entry);
+
+    if (type === "Advance") {
+      totalAdvanceReceived +=
+        Math.max(
+          getAdvanceAmount(entry),
+          0
+        );
+    }
+
+    if (type === "Purchase") {
+      totalAdvanceApplied +=
+        Math.max(
+          getAdvanceAmount(entry),
+          0
+        );
+    }
+  });
+
+  return Math.max(
+    totalAdvanceReceived -
+      totalAdvanceApplied,
+    0
+  );
+};
+
+/* =====================================================
+   LEDGER STATUS
+
+   IMPORTANT:
+   Do NOT use backend status/ledgerStatus directly.
+
+   The first summary table must always calculate
+   its status from the actual advance + pending
+   values so that Advance / Partially Advanced
+   is displayed correctly.
+===================================================== */
+
+const getLedgerStatus = ({
+  summary = {},
+  customer = {},
+  advanceBalance = 0,
+  totalPending = 0,
+  totalAdvanceApplied = 0,
+  totalAdvanceReceived = 0,
+}) => {
+  const numericAdvanceBalance =
+    Math.max(
+      Number(advanceBalance || 0),
+      0
+    );
+
+  const numericPending =
+    Math.max(
+      Number(totalPending || 0),
+      0
+    );
+
+  const numericAdvanceApplied =
+    Math.max(
+      Number(
+        totalAdvanceApplied || 0
+      ),
+      0
+    );
+
+  const numericAdvanceReceived =
+    Math.max(
+      Number(
+        totalAdvanceReceived || 0
+      ),
+      0
+    );
+
+  /*
+     ADVANCE PARTIALLY USED
+
+     Example:
+     Advance Received = ₹30,000
+     Advance Applied = ₹10,000
+     Pending = ₹5,000
+
+     Status = Partially Advanced
+  */
+  if (
+    numericAdvanceApplied > 0 &&
+    numericPending > 0
+  ) {
+    return "Partially Advanced";
+  }
+
+  /*
+     ADVANCE AVAILABLE / FULLY COVERED
+
+     Example:
+     Advance Balance = ₹20,000
+     Pending = ₹0
+
+     Status = Advanced
+  */
+  if (
+    numericAdvanceBalance > 0 &&
+    numericPending <= 0
+  ) {
+    return "Advanced";
+  }
+
+  /*
+     ADVANCE WAS USED AND EVERYTHING
+     IS FULLY SETTLED
+
+     Example:
+     Advance Applied = ₹30,000
+     Advance Balance = ₹0
+     Pending = ₹0
+
+     Status = Advanced
+  */
+  if (
+    numericAdvanceApplied > 0 &&
+    numericPending <= 0
+  ) {
+    return "Advanced";
+  }
+
+  /*
+     AMOUNT STILL PENDING
+  */
+  if (
+    numericPending > 0
+  ) {
+    return "Pending";
+  }
+
+  /*
+     Advance was received but has been
+     completely adjusted.
+  */
+  if (
+    numericAdvanceReceived > 0 &&
+    numericAdvanceBalance <= 0 &&
+    numericPending <= 0
+  ) {
+    return "Advanced";
+  }
+
+  /*
+     No advance and no pending amount.
+  */
+  if (
+    numericAdvanceBalance <= 0 &&
+    numericPending <= 0
+  ) {
+    return "OK";
+  }
+
+  return "OK";
+};
 
 /* =====================================================
    INDIAN CURRENCY WORDS
@@ -309,9 +761,7 @@ const numberToWordsIndian = (number) => {
 
     return `${ones[hundred]} Hundred${
       remainder
-        ? ` ${twoDigits(
-            remainder
-          )}`
+        ? ` ${twoDigits(remainder)}`
         : ""
     }`;
   };
@@ -326,9 +776,7 @@ const numberToWordsIndian = (number) => {
 
   if (crore) {
     parts.push(
-      `${threeDigits(
-        crore
-      )} Crore`
+      `${threeDigits(crore)} Crore`
     );
 
     remaining %= 10000000;
@@ -340,9 +788,7 @@ const numberToWordsIndian = (number) => {
 
   if (lakh) {
     parts.push(
-      `${twoDigits(
-        lakh
-      )} Lakh`
+      `${twoDigits(lakh)} Lakh`
     );
 
     remaining %= 100000;
@@ -354,9 +800,7 @@ const numberToWordsIndian = (number) => {
 
   if (thousand) {
     parts.push(
-      `${twoDigits(
-        thousand
-      )} Thousand`
+      `${twoDigits(thousand)} Thousand`
     );
 
     remaining %= 1000;
@@ -416,16 +860,6 @@ const getPumpName = (pump) =>
       "Petrol Pump"
   );
 
-/*
- * OWNER NAME
- *
- * Priority:
- * 1. ownerName from Settings
- * 2. owner from Settings
- * 3. nested settings ownerName
- * 4. fallback pump ownerName
- * 5. fallback pump owner
- */
 const getOwnerName = (pump) =>
   safeString(
     pump?.ownerName ||
@@ -513,7 +947,7 @@ const getPumpPincode = (pump) =>
   );
 
 /* =====================================================
-   LOGO RESOLUTION — SAME LOGIC AS MONTHLY REPORT
+   LOGO RESOLUTION
 ===================================================== */
 
 const resolveLogoValue = (
@@ -559,46 +993,46 @@ const resolveLogoValue = (
 
 const OIL_PROVIDER_DOMAINS = {
   "indian oil": "iocl.com",
-  "indianoil": "iocl.com",
-  "ioc": "iocl.com",
+  indianoil: "iocl.com",
+  ioc: "iocl.com",
 
   "bharat petroleum":
     "bharatpetroleum.in",
 
-  "bpcl":
+  bpcl:
     "bharatpetroleum.in",
 
-  "bharatpetroleum":
+  bharatpetroleum:
     "bharatpetroleum.in",
 
   "hindustan petroleum":
     "hindustanpetroleum.com",
 
-  "hpcl":
+  hpcl:
     "hindustanpetroleum.com",
 
-  "hindustanpetroleum":
+  hindustanpetroleum:
     "hindustanpetroleum.com",
 
-  "nayara":
+  nayara:
     "nayaraenergy.com",
 
   "nayara energy":
     "nayaraenergy.com",
 
-  "reliance":
+  reliance:
     "reliancepetroleum.com",
 
   "reliance petroleum":
     "reliancepetroleum.com",
 
-  "shell":
+  shell:
     "shell.in",
 
   "jio bp":
     "jiobp.com",
 
-  "jiobp":
+  jiobp:
     "jiobp.com",
 
   "jio-bp":
@@ -607,16 +1041,16 @@ const OIL_PROVIDER_DOMAINS = {
   "oil india":
     "oil-india.com",
 
-  "oilindia":
+  oilindia:
     "oil-india.com",
 
-  "adani":
+  adani:
     "adanigas.com",
 
   "adani total":
     "adanigas.com",
 
-  "gulf":
+  gulf:
     "gulf.com",
 };
 
@@ -807,6 +1241,7 @@ const loadImageAsDataURL =
           await response.blob();
 
         if (
+          !blob.type ||
           !blob.type.startsWith(
             "image/"
           )
@@ -940,6 +1375,46 @@ export const exportLedgerPDF =
       ) || "-";
 
     /* =================================================
+       NORMALIZE ENTRIES
+    ================================================= */
+
+    const ledgerEntries =
+      Array.isArray(entries)
+        ? entries
+        : [];
+
+    /* =================================================
+       TOTAL QUANTITY
+
+       Purchase entries only.
+
+       Quantity for every purchase is calculated as:
+
+       Purchase Amount / Fuel Rate
+
+       Advance and Payment entries
+       do not contribute to quantity.
+    ================================================= */
+
+    const totalQuantity =
+      ledgerEntries
+        .filter(
+          (entry) =>
+            getTransactionType(
+              entry
+            ) === "Purchase"
+        )
+        .reduce(
+          (sum, entry) =>
+            sum +
+            Math.max(
+              getQuantity(entry),
+              0
+            ),
+          0
+        );
+
+    /* =================================================
        LOAD LATEST SETTINGS
     ================================================= */
 
@@ -1033,6 +1508,8 @@ export const exportLedgerPDF =
 
     /* =================================================
        SUMMARY
+
+       Advance-aware calculation
     ================================================= */
 
     const totalPurchased =
@@ -1040,7 +1517,22 @@ export const exportLedgerPDF =
         summary?.totalPurchased ??
           customer?.totalPurchased ??
           customer?.totalAmount ??
-          0
+          ledgerEntries
+            .filter(
+              (entry) =>
+                getTransactionType(
+                  entry
+                ) === "Purchase"
+            )
+            .reduce(
+              (sum, entry) =>
+                sum +
+                Math.max(
+                  getAmount(entry),
+                  0
+                ),
+              0
+            )
       );
 
     const totalPaid =
@@ -1048,14 +1540,59 @@ export const exportLedgerPDF =
         summary?.totalPaid ??
           customer?.totalPaid ??
           customer?.paidAmount ??
-          0
+          ledgerEntries
+            .filter(
+              (entry) =>
+                getTransactionType(
+                  entry
+                ) !== "Advance"
+            )
+            .reduce(
+              (sum, entry) =>
+                sum +
+                Math.max(
+                  getPaidAmount(
+                    entry
+                  ),
+                  0
+                ),
+              0
+            )
       );
+
+    const advanceBalance =
+      getAdvanceBalance(
+        summary,
+        customer,
+        ledgerEntries
+      );
+
+    const calculatedPending =
+      ledgerEntries
+        .filter(
+          (entry) =>
+            getTransactionType(
+              entry
+            ) === "Purchase"
+        )
+        .reduce(
+          (sum, entry) =>
+            sum +
+            Math.max(
+              getPendingAmount(
+                entry
+              ),
+              0
+            ),
+          0
+        );
 
     const totalPending =
       Number(
         summary?.totalPending ??
           customer?.totalPending ??
           customer?.currentBalance ??
+          calculatedPending ??
           Math.max(
             totalPurchased -
               totalPaid,
@@ -1067,12 +1604,109 @@ export const exportLedgerPDF =
       Number(
         summary?.purchaseCount ??
           customer?.purchaseCount ??
-          entries.filter(
+          ledgerEntries.filter(
             (entry) =>
               getTransactionType(
                 entry
               ) === "Purchase"
           ).length
+      );
+
+    /* =================================================
+       ADVANCE TOTALS
+    ================================================= */
+
+    const totalAdvanceReceived =
+      Number(
+        summary?.totalAdvanceReceived ??
+          summary?.advanceReceived ??
+          customer?.totalAdvanceReceived ??
+          ledgerEntries
+            .filter(
+              (entry) =>
+                getTransactionType(
+                  entry
+                ) === "Advance"
+            )
+            .reduce(
+              (sum, entry) =>
+                sum +
+                Math.max(
+                  getAdvanceAmount(
+                    entry
+                  ),
+                  0
+                ),
+              0
+            )
+      );
+
+    const totalAdvanceApplied =
+      Number(
+        summary?.totalAdvanceApplied ??
+          summary?.advanceApplied ??
+          customer?.totalAdvanceApplied ??
+          ledgerEntries
+            .filter(
+              (entry) =>
+                getTransactionType(
+                  entry
+                ) === "Purchase"
+            )
+            .reduce(
+              (sum, entry) =>
+                sum +
+                Math.max(
+                  getAdvanceAmount(
+                    entry
+                  ),
+                  0
+                ),
+              0
+            )
+      );
+
+    /* =================================================
+       LEDGER STATUS
+
+       Uses the SAME advance/pending logic as
+       transaction status.
+    ================================================= */
+
+    const ledgerStatus =
+      getLedgerStatus({
+        summary,
+        customer,
+        advanceBalance,
+        totalPending,
+        totalAdvanceApplied,
+        totalAdvanceReceived,
+      });
+
+    /* =================================================
+       FINAL ADVANCE / NET AMOUNT
+
+       If Advance > Pending:
+       Remaining Advance = Advance - Pending
+       Net Amount = 0
+
+       If Pending > Advance:
+       Net Amount = Pending - Advance
+       Remaining Advance = 0
+    ================================================= */
+
+    const remainingAdvance =
+      Math.max(
+        advanceBalance -
+          totalPending,
+        0
+      );
+
+    const netAmount =
+      Math.max(
+        totalPending -
+          advanceBalance,
+        0
       );
 
     /* =================================================
@@ -1169,8 +1803,6 @@ export const exportLedgerPDF =
        PDF HEADER
     ================================================= */
 
-    /* OUTER BORDER */
-
     doc.setDrawColor(
       COLORS.border
     );
@@ -1210,8 +1842,7 @@ export const exportLedgerPDF =
     );
 
     /* =================================================
-       OWNER NAME FROM SETTINGS
-       DISPLAYED ABOVE PHONE NUMBER
+       OWNER NAME
     ================================================= */
 
     if (ownerName) {
@@ -1220,13 +1851,7 @@ export const exportLedgerPDF =
         "bold"
       );
 
-      doc.setFontSize(
-        7
-      );
-
-      doc.setTextColor(
-        COLORS.text
-      );
+      doc.setFontSize(7);
 
       doc.text(
         ` ${ownerName}`,
@@ -1293,9 +1918,7 @@ export const exportLedgerPDF =
       "bold"
     );
 
-    doc.setFontSize(
-      15
-    );
+    doc.setFontSize(15);
 
     doc.setTextColor(
       COLORS.text
@@ -1306,8 +1929,7 @@ export const exportLedgerPDF =
       pageWidth / 2,
       19,
       {
-        align:
-          "center",
+        align: "center",
       }
     );
 
@@ -1320,9 +1942,7 @@ export const exportLedgerPDF =
       "normal"
     );
 
-    doc.setFontSize(
-      7.5
-    );
+    doc.setFontSize(7.5);
 
     doc.text(
       companyName
@@ -1331,8 +1951,7 @@ export const exportLedgerPDF =
       pageWidth / 2,
       24,
       {
-        align:
-          "center",
+        align: "center",
       }
     );
 
@@ -1340,13 +1959,12 @@ export const exportLedgerPDF =
        ADDRESS
     ================================================= */
 
-    const addressParts =
-      [
-        pumpAddress,
-        pumpCity,
-        pumpState,
-        pumpPincode,
-      ].filter(Boolean);
+    const addressParts = [
+      pumpAddress,
+      pumpCity,
+      pumpState,
+      pumpPincode,
+    ].filter(Boolean);
 
     const addressText =
       addressParts.join(", ");
@@ -1357,9 +1975,7 @@ export const exportLedgerPDF =
         "bold"
       );
 
-      doc.setFontSize(
-        6.5
-      );
+      doc.setFontSize(6.5);
 
       const addressLines =
         doc.splitTextToSize(
@@ -1372,8 +1988,7 @@ export const exportLedgerPDF =
         pageWidth / 2,
         30,
         {
-          align:
-            "center",
+          align: "center",
         }
       );
     }
@@ -1387,9 +2002,7 @@ export const exportLedgerPDF =
       "bold"
     );
 
-    doc.setFontSize(
-      12
-    );
+    doc.setFontSize(12);
 
     doc.setTextColor(
       COLORS.mainHeader
@@ -1400,8 +2013,7 @@ export const exportLedgerPDF =
       pageWidth / 2,
       43,
       {
-        align:
-          "center",
+        align: "center",
       }
     );
 
@@ -1409,24 +2021,19 @@ export const exportLedgerPDF =
        BUYER / BILL INFORMATION
     ================================================= */
 
-    const infoY =
-      60;
+    const infoY = 60;
 
-    const leftX =
-      margin;
+    const leftX = margin;
 
     const rightX =
-      pageWidth / 2 +
-      8;
+      pageWidth / 2 + 8;
 
     doc.setFont(
       "helvetica",
       "normal"
     );
 
-    doc.setFontSize(
-      7
-    );
+    doc.setFontSize(7);
 
     /* =================================================
        LEFT — BUYER
@@ -1455,7 +2062,7 @@ export const exportLedgerPDF =
     );
 
     /* =================================================
-       RIGHT — BILL NO.
+       RIGHT — BILL NO
     ================================================= */
 
     doc.setFont(
@@ -1502,8 +2109,7 @@ export const exportLedgerPDF =
 
     const customerAddressLines =
       doc.splitTextToSize(
-        customerAddress ||
-          "-",
+        customerAddress || "-",
         75
       );
 
@@ -1562,8 +2168,7 @@ export const exportLedgerPDF =
     );
 
     doc.text(
-      customerGstin ||
-        "-",
+      customerGstin || "-",
       leftX + 15,
       infoY + 10
     );
@@ -1653,9 +2258,7 @@ export const exportLedgerPDF =
       "bold"
     );
 
-    doc.setFontSize(
-      11
-    );
+    doc.setFontSize(11);
 
     doc.setTextColor(
       COLORS.text
@@ -1666,8 +2269,7 @@ export const exportLedgerPDF =
       pageWidth / 2,
       separatorY + 8,
       {
-        align:
-          "center",
+        align: "center",
       }
     );
 
@@ -1680,9 +2282,7 @@ export const exportLedgerPDF =
       "normal"
     );
 
-    doc.setFontSize(
-      7
-    );
+    doc.setFontSize(7);
 
     doc.text(
       `Customer: ${customerName}`,
@@ -1705,8 +2305,7 @@ export const exportLedgerPDF =
       pageWidth - margin,
       separatorY + 14,
       {
-        align:
-          "right",
+        align: "right",
       }
     );
 
@@ -1718,26 +2317,23 @@ export const exportLedgerPDF =
       separatorY + 21;
 
     autoTable(doc, {
-      startY:
-        summaryY,
+      startY: summaryY,
 
       margin: {
-        left:
-          margin,
-        right:
-          margin,
+        left: margin,
+        right: margin,
       },
 
       tableWidth:
         contentWidth,
 
-      theme:
-        "grid",
+      theme: "grid",
 
       head: [
         [
           "TOTAL PURCHASES",
           "TOTAL PAID",
+          "ADVANCE BALANCE",
           "TOTAL PENDING",
           "TRANSACTIONS",
           "STATUS",
@@ -1755,6 +2351,10 @@ export const exportLedgerPDF =
           )}`,
 
           `Rs. ${formatMoney(
+            advanceBalance
+          )}`,
+
+          `Rs. ${formatMoney(
             totalPending
           )}`,
 
@@ -1762,18 +2362,14 @@ export const exportLedgerPDF =
             purchaseCount
           ),
 
-          totalPending > 0
-            ? "Pending"
-            : "Paid",
+          ledgerStatus,
         ],
       ],
 
       styles: {
-        font:
-          "helvetica",
+        font: "helvetica",
 
-        fontSize:
-          6.5,
+        fontSize: 5.8,
 
         textColor:
           COLORS.text,
@@ -1781,17 +2377,13 @@ export const exportLedgerPDF =
         lineColor:
           COLORS.border,
 
-        lineWidth:
-          0.3,
+        lineWidth: 0.3,
 
-        cellPadding:
-          2,
+        cellPadding: 1.8,
 
-        halign:
-          "center",
+        halign: "center",
 
-        valign:
-          "middle",
+        valign: "middle",
       },
 
       headStyles: {
@@ -1801,49 +2393,34 @@ export const exportLedgerPDF =
         textColor:
           COLORS.white,
 
-        fontStyle:
-          "bold",
+        fontStyle: "bold",
 
-        fontSize:
-          6,
+        fontSize: 5.4,
 
-        halign:
-          "center",
+        halign: "center",
 
-        valign:
-          "middle",
+        valign: "middle",
       },
 
       bodyStyles: {
         fillColor:
           COLORS.white,
 
-        fontSize:
-          6.5,
+        fontSize: 5.8,
       },
 
       didParseCell:
         (hookData) => {
           if (
-            hookData.section ===
-              "body" &&
-            hookData.column.index ===
-              2
+            hookData.section !==
+            "body"
           ) {
-            hookData.cell.styles.textColor =
-              totalPending > 0
-                ? COLORS.pending
-                : COLORS.paid;
-
-            hookData.cell.styles.fontStyle =
-              "bold";
+            return;
           }
 
           if (
-            hookData.section ===
-              "body" &&
             hookData.column.index ===
-              1
+            1
           ) {
             hookData.cell.styles.textColor =
               COLORS.paid;
@@ -1853,10 +2430,21 @@ export const exportLedgerPDF =
           }
 
           if (
-            hookData.section ===
-              "body" &&
             hookData.column.index ===
-              4
+            2
+          ) {
+            hookData.cell.styles.textColor =
+              advanceBalance > 0
+                ? COLORS.paid
+                : COLORS.muted;
+
+            hookData.cell.styles.fontStyle =
+              "bold";
+          }
+
+          if (
+            hookData.column.index ===
+            3
           ) {
             hookData.cell.styles.textColor =
               totalPending > 0
@@ -1865,6 +2453,67 @@ export const exportLedgerPDF =
 
             hookData.cell.styles.fontStyle =
               "bold";
+          }
+
+          /*
+             FIRST TABLE STATUS
+
+             IMPORTANT:
+             The status shown here comes from
+             getLedgerStatus(), which calculates
+             Advance / Partially Advanced /
+             Pending / OK from actual values.
+
+             Backend summary.status is NOT allowed
+             to override this result.
+          */
+          if (
+            hookData.column.index ===
+            5
+          ) {
+            const status =
+              safeString(
+                hookData.cell.raw
+              );
+
+            if (
+              status ===
+                "Advanced" ||
+              status ===
+                "Partially Advanced" ||
+              status ===
+                "Paid" ||
+              status ===
+                "OK"
+            ) {
+              hookData.cell.styles.textColor =
+                COLORS.paid;
+
+              hookData.cell.styles.fontStyle =
+                "bold";
+            }
+
+            if (
+              status ===
+              "Pending"
+            ) {
+              hookData.cell.styles.textColor =
+                COLORS.pending;
+
+              hookData.cell.styles.fontStyle =
+                "bold";
+            }
+
+            if (
+              status ===
+              "Payment"
+            ) {
+              hookData.cell.styles.textColor =
+                COLORS.paid;
+
+              hookData.cell.styles.fontStyle =
+                "bold";
+            }
           }
         },
     });
@@ -1898,9 +2547,7 @@ export const exportLedgerPDF =
       "bold"
     );
 
-    doc.setFontSize(
-      8
-    );
+    doc.setFontSize(8);
 
     doc.setTextColor(
       COLORS.text
@@ -1909,22 +2556,40 @@ export const exportLedgerPDF =
     doc.text(
       "TRANSACTION HISTORY",
       margin + 3,
-      transactionStartY +
-        5.5
+      transactionStartY + 5.5
     );
 
     /* =================================================
        TRANSACTION ROWS
+
+       Quantity is calculated from:
+
+       Purchase Amount / Fuel Rate
+
+       Advance and Payment transactions
+       show "-".
+
+       Advance Used column intentionally removed.
     ================================================= */
 
     const transactionRows =
-      entries.map(
+      ledgerEntries.map(
         (
           entry,
           index
         ) => {
+          const type =
+            getTransactionType(
+              entry
+            );
+
           const amount =
             getAmount(
+              entry
+            );
+
+          const quantity =
+            getQuantity(
               entry
             );
 
@@ -1938,6 +2603,23 @@ export const exportLedgerPDF =
               entry
             );
 
+          const status =
+            getEntryStatus(
+              entry
+            );
+
+          let displayAmount =
+            amount;
+
+          if (
+            type === "Advance"
+          ) {
+            displayAmount =
+              getAdvanceAmount(
+                entry
+              );
+          }
+
           return [
             String(
               index + 1
@@ -1949,16 +2631,18 @@ export const exportLedgerPDF =
               )
             ),
 
-            getTransactionType(
-              entry
-            ),
+            type,
 
             getFuelType(
               entry
             ),
 
+            type === "Purchase"
+              ? `${quantity.toFixed(2)}`
+              : "-",
+
             `Rs. ${formatMoney(
-              amount
+              displayAmount
             )}`,
 
             `Rs. ${formatMoney(
@@ -1968,6 +2652,8 @@ export const exportLedgerPDF =
             `Rs. ${formatMoney(
               pending
             )}`,
+
+            status,
 
             getPaymentMode(
               entry
@@ -1986,17 +2672,14 @@ export const exportLedgerPDF =
         8,
 
       margin: {
-        left:
-          margin,
-        right:
-          margin,
+        left: margin,
+        right: margin,
       },
 
       tableWidth:
         contentWidth,
 
-      theme:
-        "grid",
+      theme: "grid",
 
       head: [
         [
@@ -2004,9 +2687,11 @@ export const exportLedgerPDF =
           "Date",
           "Type",
           "Fuel",
+          "Quantity",
           "Amount",
           "Paid",
           "Pending",
+          "Status",
           "Payment Mode",
           "Remarks",
         ],
@@ -2022,20 +2707,20 @@ export const exportLedgerPDF =
                 "-",
                 "-",
                 "-",
+                "-",
                 "Rs. 0.00",
                 "Rs. 0.00",
                 "Rs. 0.00",
+                "-",
                 "-",
                 "-",
               ],
             ],
 
       styles: {
-        font:
-          "helvetica",
+        font: "helvetica",
 
-        fontSize:
-          6.2,
+        fontSize: 5.3,
 
         textColor:
           COLORS.text,
@@ -2043,17 +2728,13 @@ export const exportLedgerPDF =
         lineColor:
           COLORS.border,
 
-        lineWidth:
-          0.25,
+        lineWidth: 0.25,
 
-        cellPadding:
-          1.5,
+        cellPadding: 1.2,
 
-        valign:
-          "middle",
+        valign: "middle",
 
-        halign:
-          "center",
+        halign: "center",
       },
 
       headStyles: {
@@ -2063,17 +2744,13 @@ export const exportLedgerPDF =
         textColor:
           COLORS.white,
 
-        fontStyle:
-          "bold",
+        fontStyle: "bold",
 
-        fontSize:
-          5.8,
+        fontSize: 4.9,
 
-        halign:
-          "center",
+        halign: "center",
 
-        valign:
-          "middle",
+        valign: "middle",
       },
 
       bodyStyles: {
@@ -2086,40 +2763,47 @@ export const exportLedgerPDF =
 
       columnStyles: {
         0: {
-          cellWidth: 8,
+          cellWidth: 6,
         },
 
         1: {
-          cellWidth: 21,
+          cellWidth: 16,
         },
 
         2: {
-          cellWidth: 19,
+          cellWidth: 15,
         },
 
         3: {
-          cellWidth: 19,
+          cellWidth: 15,
         },
 
         4: {
-          cellWidth: 25,
+          cellWidth: 13,
         },
 
         5: {
-          cellWidth: 25,
+          cellWidth: 18,
         },
 
         6: {
-          cellWidth: 25,
+          cellWidth: 18,
         },
 
         7: {
-          cellWidth: 27,
+          cellWidth: 18,
         },
 
         8: {
-          cellWidth:
-            "auto",
+          cellWidth: 19,
+        },
+
+        9: {
+          cellWidth: 21,
+        },
+
+        10: {
+          cellWidth: "auto",
         },
       },
 
@@ -2132,25 +2816,15 @@ export const exportLedgerPDF =
             return;
           }
 
-          if (
-            hookData.column.index ===
-            5
-          ) {
-            hookData.cell.styles.textColor =
-              COLORS.paid;
-          }
-
+          /* PAID */
           if (
             hookData.column.index ===
             6
           ) {
-            const rawValue =
-              hookData.cell.raw;
-
             const numericValue =
               Number(
                 String(
-                  rawValue
+                  hookData.cell.raw
                 ).replace(
                   /[^0-9.-]/g,
                   ""
@@ -2158,11 +2832,99 @@ export const exportLedgerPDF =
               );
 
             if (
-              numericValue >
-              0
+              numericValue > 0
+            ) {
+              hookData.cell.styles.textColor =
+                COLORS.paid;
+            }
+          }
+
+          /* PENDING */
+          if (
+            hookData.column.index ===
+            7
+          ) {
+            const numericValue =
+              Number(
+                String(
+                  hookData.cell.raw
+                ).replace(
+                  /[^0-9.-]/g,
+                  ""
+                )
+              );
+
+            if (
+              numericValue > 0
             ) {
               hookData.cell.styles.textColor =
                 COLORS.pending;
+
+              hookData.cell.styles.fontStyle =
+                "bold";
+            }
+          }
+
+          /* STATUS */
+          if (
+            hookData.column.index ===
+            8
+          ) {
+            const status =
+              safeString(
+                hookData.cell.raw
+              );
+
+            if (
+              status ===
+              "Advanced"
+            ) {
+              hookData.cell.styles.textColor =
+                COLORS.paid;
+
+              hookData.cell.styles.fontStyle =
+                "bold";
+            }
+
+            if (
+              status ===
+              "Partially Advanced"
+            ) {
+              hookData.cell.styles.textColor =
+                COLORS.paid;
+
+              hookData.cell.styles.fontStyle =
+                "bold";
+            }
+
+            if (
+              status ===
+              "Pending"
+            ) {
+              hookData.cell.styles.textColor =
+                COLORS.pending;
+
+              hookData.cell.styles.fontStyle =
+                "bold";
+            }
+
+            if (
+              status ===
+              "Paid"
+            ) {
+              hookData.cell.styles.textColor =
+                COLORS.paid;
+
+              hookData.cell.styles.fontStyle =
+                "bold";
+            }
+
+            if (
+              status ===
+              "OK"
+            ) {
+              hookData.cell.styles.textColor =
+                COLORS.paid;
 
               hookData.cell.styles.fontStyle =
                 "bold";
@@ -2172,32 +2934,67 @@ export const exportLedgerPDF =
     });
 
     /* =================================================
-       LEDGER SUMMARY
+       TOTAL QUANTITY
+
+       Displayed BELOW transaction table.
+
+       Calculated from:
+       Purchase Amount / Fuel Rate
     ================================================= */
 
-    let summaryYPosition =
-      doc.lastAutoTable.finalY +
-      8;
-
-    const summaryX =
-      pageWidth / 2 +
-      8;
-
-    const summaryLabelX =
-      summaryX;
-
-    const summaryValueX =
-      pageWidth -
-      margin;
+    const totalQuantityY =
+      doc.lastAutoTable.finalY + 5;
 
     doc.setFont(
       "helvetica",
       "bold"
     );
 
-    doc.setFontSize(
-      7
+    doc.setFontSize(7);
+
+    doc.setTextColor(
+      COLORS.text
     );
+
+    doc.text(
+      "Total Quantity:",
+      margin,
+      totalQuantityY
+    );
+
+    doc.setTextColor(
+      COLORS.mainHeader
+    );
+
+    doc.text(
+      `${totalQuantity.toFixed(2)} L`,
+      margin + 28,
+      totalQuantityY
+    );
+
+    /* =================================================
+       LEDGER SUMMARY
+    ================================================= */
+
+    let summaryYPosition =
+      totalQuantityY +
+      8;
+
+    const summaryX =
+      pageWidth / 2 + 8;
+
+    const summaryLabelX =
+      summaryX;
+
+    const summaryValueX =
+      pageWidth - margin;
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(7);
 
     doc.setTextColor(
       COLORS.text
@@ -2209,8 +3006,7 @@ export const exportLedgerPDF =
       summaryYPosition
     );
 
-    summaryYPosition +=
-      5;
+    summaryYPosition += 5;
 
     const drawSummaryLine =
       (
@@ -2224,9 +3020,7 @@ export const exportLedgerPDF =
           "normal"
         );
 
-        doc.setFontSize(
-          6.5
-        );
+        doc.setFontSize(6.5);
 
         doc.setTextColor(
           COLORS.text
@@ -2254,13 +3048,11 @@ export const exportLedgerPDF =
           summaryValueX,
           summaryYPosition,
           {
-            align:
-              "right",
+            align: "right",
           }
         );
 
-        summaryYPosition +=
-          4;
+        summaryYPosition += 4;
       };
 
     drawSummaryLine(
@@ -2272,6 +3064,38 @@ export const exportLedgerPDF =
       "Total Paid",
       totalPaid,
       COLORS.paid
+    );
+
+    /* =================================================
+       ADVANCE RECEIVED
+    ================================================= */
+
+    drawSummaryLine(
+      "Advance Received",
+      totalAdvanceReceived,
+      COLORS.paid
+    );
+
+    /* =================================================
+       ADVANCE APPLIED
+    ================================================= */
+
+    drawSummaryLine(
+      "Advance Applied",
+      totalAdvanceApplied,
+      COLORS.paid
+    );
+
+    /* =================================================
+       REMAINING ADVANCE BALANCE
+    ================================================= */
+
+    drawSummaryLine(
+      "Advance Balance",
+      advanceBalance,
+      advanceBalance > 0
+        ? COLORS.paid
+        : COLORS.muted
     );
 
     drawSummaryLine(
@@ -2295,12 +3119,6 @@ export const exportLedgerPDF =
           totalPaid
       );
 
-    const adjustmentAmount =
-      Number(
-        summary?.adjustmentAmount ||
-          0
-      );
-
     drawSummaryLine(
       "Previous Balance",
       previousBalance
@@ -2312,23 +3130,15 @@ export const exportLedgerPDF =
       COLORS.paid
     );
 
-    drawSummaryLine(
-      "Adjustment Amount",
-      adjustmentAmount
-    );
-
     /* =================================================
        NET AMOUNT
+
+       Net Amount = Pending - Advance Balance
+
+       Minimum value is always 0.
     ================================================= */
 
-    const netAmount =
-      Number(
-        summary?.netAmount ??
-          totalPending
-      );
-
-    summaryYPosition +=
-      2;
+    summaryYPosition += 2;
 
     doc.setDrawColor(
       COLORS.border
@@ -2345,17 +3155,14 @@ export const exportLedgerPDF =
       summaryYPosition
     );
 
-    summaryYPosition +=
-      5;
+    summaryYPosition += 5;
 
     doc.setFont(
       "helvetica",
       "bold"
     );
 
-    doc.setFontSize(
-      8
-    );
+    doc.setFontSize(8);
 
     doc.setTextColor(
       COLORS.text
@@ -2380,9 +3187,76 @@ export const exportLedgerPDF =
       summaryValueX,
       summaryYPosition,
       {
-        align:
-          "right",
+        align: "right",
       }
+    );
+
+    /* =================================================
+       ADVANCE STATUS BOX
+
+       Remaining Advance = Advance Balance - Pending
+
+       If remaining advance > 0:
+       REMAINING ADVANCE — Rs. X
+
+       If no remaining advance and net is pending:
+       NO REMAINING ADVANCE
+
+       If everything is adjusted:
+       ADVANCE FULLY ADJUSTED
+    ================================================= */
+
+    const advanceStatusY =
+      summaryYPosition + 6;
+
+    doc.setDrawColor(
+      COLORS.border
+    );
+
+    doc.setFillColor(
+      remainingAdvance > 0
+        ? "#ECFDF5"
+        : COLORS.sectionBar
+    );
+
+    doc.roundedRect(
+      summaryLabelX,
+      advanceStatusY,
+      pageWidth -
+        margin -
+        summaryLabelX,
+      10,
+      1.5,
+      1.5,
+      "FD"
+    );
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(6.5);
+
+    doc.setTextColor(
+      remainingAdvance > 0
+        ? COLORS.paid
+        : COLORS.text
+    );
+
+    const advanceStatusText =
+      remainingAdvance > 0
+        ? `REMAINING ADVANCE — Rs. ${formatMoney(
+            remainingAdvance
+          )}`
+        : netAmount > 0
+        ? "NO REMAINING ADVANCE"
+        : "ADVANCE FULLY ADJUSTED";
+
+    doc.text(
+      advanceStatusText,
+      summaryLabelX + 3,
+      advanceStatusY + 6
     );
 
     /* =================================================
@@ -2390,17 +3264,14 @@ export const exportLedgerPDF =
     ================================================= */
 
     const amountWordsY =
-      summaryYPosition +
-      9;
+      advanceStatusY + 16;
 
     doc.setFont(
       "helvetica",
       "bold"
     );
 
-    doc.setFontSize(
-      7
-    );
+    doc.setFontSize(7);
 
     doc.setTextColor(
       COLORS.text
@@ -2417,16 +3288,9 @@ export const exportLedgerPDF =
       "normal"
     );
 
-    doc.setFontSize(
-      6.5
-    );
+    doc.setFontSize(6.5);
 
     const words =
-      safeString(
-        summary?.amountInWords ||
-          summary?.netAmountWords ||
-          ""
-      ) ||
       amountInWords(
         netAmount
       );
@@ -2471,9 +3335,7 @@ export const exportLedgerPDF =
       "bold"
     );
 
-    doc.setFontSize(
-      6.5
-    );
+    doc.setFontSize(6.5);
 
     doc.setTextColor(
       COLORS.text
@@ -2490,9 +3352,7 @@ export const exportLedgerPDF =
       "normal"
     );
 
-    doc.setFontSize(
-      5.7
-    );
+    doc.setFontSize(5.7);
 
     const termsText =
       safeString(
@@ -2546,9 +3406,7 @@ export const exportLedgerPDF =
       "normal"
     );
 
-    doc.setFontSize(
-      5.8
-    );
+    doc.setFontSize(5.8);
 
     doc.setTextColor(
       COLORS.text
@@ -2579,17 +3437,14 @@ export const exportLedgerPDF =
       "bold"
     );
 
-    doc.setFontSize(
-      6
-    );
+    doc.setFontSize(6);
 
     doc.text(
       `For ${pumpName}`,
       pageWidth - margin,
       signatureY - 7,
       {
-        align:
-          "right",
+        align: "right",
       }
     );
 
@@ -2604,8 +3459,7 @@ export const exportLedgerPDF =
       pageWidth - margin,
       signatureY + 1,
       {
-        align:
-          "right",
+        align: "right",
       }
     );
 
@@ -2614,23 +3468,20 @@ export const exportLedgerPDF =
       pageWidth - margin,
       signatureY + 5,
       {
-        align:
-          "right",
+        align: "right",
       }
     );
 
     /* =================================================
        FOOTER
-       
-       SHIVSHAMBHO LOGO IS NOW DIRECTLY IN FRONT OF
-       THE SHIVSHAMBHO NAME — SIDE BY SIDE.
+
+       SHIVSHAMBHO LOGO + NAME
     ================================================= */
 
     const footerCenterX =
       pageWidth / 2;
 
-    const footerLogoSize =
-      7;
+    const footerLogoSize = 7;
 
     const footerLogoX =
       footerCenterX - 26;
@@ -2643,11 +3494,6 @@ export const exportLedgerPDF =
 
     const footerNameY =
       pageHeight - 9.5;
-
-    /*
-     * SHIVSHAMBHO LOGO
-     * Positioned immediately to the left of the name.
-     */
 
     if (
       shivshambhoLogoData
@@ -2671,19 +3517,12 @@ export const exportLedgerPDF =
       }
     }
 
-    /*
-     * SHIVSHAMBHO NAME
-     * Logo is directly in front of this text.
-     */
-
     doc.setFont(
       "helvetica",
       "bold"
     );
 
-    doc.setFontSize(
-      7
-    );
+    doc.setFontSize(7);
 
     doc.setTextColor(
       COLORS.mainHeader
@@ -2695,18 +3534,16 @@ export const exportLedgerPDF =
       footerNameY
     );
 
-    /*
-     * BILL INFORMATION
-     */
+    /* =================================================
+       BILL INFORMATION
+    ================================================= */
 
     doc.setFont(
       "helvetica",
       "normal"
     );
 
-    doc.setFontSize(
-      4.8
-    );
+    doc.setFontSize(4.8);
 
     doc.setTextColor(
       COLORS.muted
@@ -2719,8 +3556,7 @@ export const exportLedgerPDF =
       pageWidth / 2,
       pageHeight - 6.5,
       {
-        align:
-          "center",
+        align: "center",
       }
     );
 
@@ -2768,6 +3604,23 @@ export const exportLedgerPDF =
         finalBillDate,
 
       fileName,
+
+      advanceBalance,
+
+      remainingAdvance,
+
+      netAmount,
+
+      totalAdvanceReceived,
+
+      totalAdvanceApplied,
+
+      totalQuantity,
+
+      totalPending,
+
+      status:
+        ledgerStatus,
     };
   };
 
@@ -2783,5 +3636,9 @@ export const printLedger =
       options
     );
   };
+
+/* =====================================================
+   DEFAULT EXPORT
+===================================================== */
 
 export default exportLedgerPDF;
