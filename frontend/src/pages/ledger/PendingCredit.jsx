@@ -609,19 +609,7 @@ const PendingCredit = () => {
                                   "Unknown Customer"}
                               </div>
 
-                              <div
-                                style={{
-                                  fontSize:
-                                    "11px",
-                                  color:
-                                    "#64748b",
-                                  marginTop:
-                                    "2px",
-                                }}
-                              >
-                                Click to view
-                                ledger
-                              </div>
+                              
                             </div>
                           </div>
                         </td>
