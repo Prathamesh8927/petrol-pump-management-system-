@@ -6,13 +6,12 @@ import {
   getDashboardSummary,
 } from "../controllers/dashboardController.js";
 
-const router =
-  express.Router();
+const router = express.Router();
 
-router.use(
-  authMiddleware
-);
+// Dashboard requires authentication.
+router.use(authMiddleware);
 
+// GET /api/dashboard/summary
 router.get(
   "/summary",
   getDashboardSummary

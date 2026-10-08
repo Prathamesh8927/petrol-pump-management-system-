@@ -22,7 +22,6 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
       maxlength: 254,
-      index: true,
     },
 
     password: {
@@ -47,7 +46,6 @@ const userSchema = new mongoose.Schema(
         "employee",
       ],
       default: "staff",
-      index: true,
     },
 
     /* =====================================================
@@ -58,7 +56,6 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Pump",
       default: null,
-      index: true,
     },
 
     /* =====================================================
@@ -69,9 +66,6 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Employee",
       default: null,
-      index: true,
-      unique: true,
-      sparse: true,
     },
 
     /* =====================================================
@@ -81,22 +75,16 @@ const userSchema = new mongoose.Schema(
     active: {
       type: Boolean,
       default: true,
-      index: true,
     },
 
     /* =====================================================
        SESSION SECURITY
        
-       tokenVersion is included in JWTs.
+       Included in JWTs.
 
-       When incremented:
-       all previously issued JWTs become invalid.
-
-       This is used for:
-       - password reset
-       - logout-all
-       - forced session revocation
-       - security incidents
+       Incrementing this value invalidates previously
+       issued JWTs when the authentication middleware
+       checks the token version.
     ===================================================== */
 
     tokenVersion: {
@@ -108,21 +96,122 @@ const userSchema = new mongoose.Schema(
 
     /* =====================================================
        PASSWORD SECURITY AUDIT
-
-       Records the last successful password change.
-
-       This does not contain the password or any secret.
     ===================================================== */
 
     passwordChangedAt: {
       type: Date,
       default: null,
-      index: true,
     },
   },
   {
     timestamps: true,
     strict: true,
+  }
+);
+
+/* =========================================================
+   INDEXES
+========================================================= */
+
+/*
+ * 1. EMAIL
+ *
+ * `unique: true` already creates the required unique index.
+ *
+ * No separate `index: true` is necessary.
+ */
+userSchema.index(
+  {
+    email: 1,
+  },
+  {
+    unique: true,
+    name: "uniq_user_email",
+  }
+);
+
+/*
+ * 2. EMPLOYEE LINK
+ *
+ * One User can be linked to one Employee.
+ *
+ * sparse is important because:
+ *
+ * - superadmin may have no employeeId
+ * - owner may have no employeeId
+ * - manager may have no employeeId
+ * - staff may have no employeeId
+ *
+ * Multiple null/missing values are therefore allowed.
+ */
+userSchema.index(
+  {
+    employeeId: 1,
+  },
+  {
+    unique: true,
+    sparse: true,
+    name: "uniq_user_employee",
+  }
+);
+
+/*
+ * 3. PUMP + ACTIVE
+ *
+ * Useful for pump-specific user management:
+ *
+ * User.find({
+ *   pumpId,
+ *   active: true
+ * })
+ *
+ * This is especially useful for your employee/user
+ * management screens.
+ */
+userSchema.index(
+  {
+    pumpId: 1,
+    active: 1,
+  },
+  {
+    name: "idx_user_pump_active",
+  }
+);
+
+/*
+ * 4. PUMP + ROLE
+ *
+ * Useful for RBAC/user management queries such as:
+ *
+ * - owners of a pump
+ * - managers of a pump
+ * - staff of a pump
+ * - employees of a pump
+ */
+userSchema.index(
+  {
+    pumpId: 1,
+    role: 1,
+  },
+  {
+    name: "idx_user_pump_role",
+  }
+);
+
+/*
+ * 5. PUMP + ROLE + ACTIVE
+ *
+ * Useful when the application requests active users
+ * of a particular role inside a pump.
+ */
+userSchema.index(
+  {
+    pumpId: 1,
+    role: 1,
+    active: 1,
+  },
+  {
+    name: "idx_user_pump_role_active",
   }
 );
 
@@ -144,10 +233,10 @@ const isBcryptHash = (value) => {
 userSchema.pre("save", async function (next) {
   try {
     /*
-     * Only hash when the password was actually changed.
+     * Do nothing when password was not changed.
      *
-     * This prevents already-hashed passwords from being
-     * hashed again during unrelated user updates.
+     * This prevents unrelated user updates from
+     * re-hashing an already hashed password.
      */
     if (
       !this.isModified("password") ||
@@ -173,11 +262,11 @@ userSchema.pre("save", async function (next) {
 
 userSchema.pre("save", function (next) {
   /*
-   * Whenever the password changes through a normal
-   * document save, record the change time.
+   * Record the time whenever an existing user's
+   * password changes.
    *
-   * If passwordChangedAt was explicitly supplied during
-   * creation, preserve it.
+   * During initial account creation, we leave the
+   * explicitly supplied/default value untouched.
    */
   if (
     this.isModified("password") &&

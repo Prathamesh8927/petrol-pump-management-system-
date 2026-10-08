@@ -1,26 +1,21 @@
 import express from "express";
 
 import authMiddleware from "../middleware/authMiddleware.js";
-
 import allowRoles from "../middleware/roleMiddleware.js";
 
 import {
   getAuditLogs,
 } from "../controllers/auditController.js";
 
-const router =
-  express.Router();
+const router = express.Router();
 
-router.use(
-  authMiddleware
-);
+// All audit-log routes require authentication.
+router.use(authMiddleware);
 
+// Only owner and manager can access audit logs.
 router.get(
   "/",
-  allowRoles(
-    "owner",
-    "manager"
-  ),
+  allowRoles("owner", "manager"),
   getAuditLogs
 );
 

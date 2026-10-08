@@ -1,13 +1,65 @@
 import {
   createContext,
+  useCallback,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 
 import api from "../services/api";
 
+/* =====================================================
+   AUTH CONTEXT
+===================================================== */
+
 export const AuthContext =
   createContext(null);
+
+/* =====================================================
+   SESSION STORAGE HELPERS
+===================================================== */
+
+const getSessionItem = (key) => {
+  try {
+    return sessionStorage.getItem(key);
+  } catch (error) {
+    console.error(
+      `Unable to read sessionStorage key "${key}":`,
+      error
+    );
+
+    return null;
+  }
+};
+
+const setSessionItem = (key, value) => {
+  try {
+    sessionStorage.setItem(key, value);
+    return true;
+  } catch (error) {
+    console.error(
+      `Unable to write sessionStorage key "${key}":`,
+      error
+    );
+
+    return false;
+  }
+};
+
+const removeSessionItem = (key) => {
+  try {
+    sessionStorage.removeItem(key);
+  } catch (error) {
+    console.error(
+      `Unable to remove sessionStorage key "${key}":`,
+      error
+    );
+  }
+};
+
+/* =====================================================
+   AUTH PROVIDER
+===================================================== */
 
 export const AuthProvider = ({
   children,
@@ -30,16 +82,14 @@ export const AuthProvider = ({
        * Authentication is intentionally stored
        * in sessionStorage.
        *
-       * Each browser tab/window has its own
-       * authentication session.
+       * This keeps authentication isolated
+       * per browser tab/window.
        */
 
       const token =
-        sessionStorage.getItem(
-          "token"
-        );
+        getSessionItem("token");
 
-      if (!token) {
+      if (!token?.trim()) {
         if (isMounted) {
           setUser(null);
           setLoading(false);
@@ -48,67 +98,57 @@ export const AuthProvider = ({
         return;
       }
 
-      /*
-       * Restore cached user immediately.
-       *
-       * This improves page-refresh UX while
-       * /auth/me validates the session below.
-       */
+      /* -----------------------------------------------
+         RESTORE CACHED USER
+      ------------------------------------------------ */
 
-      try {
-        const cachedUser =
-          sessionStorage.getItem(
-            "user"
-          );
+      const cachedUser =
+        getSessionItem("user");
 
-        if (cachedUser) {
+      if (cachedUser) {
+        try {
           const parsedUser =
-            JSON.parse(
-              cachedUser
-            );
+            JSON.parse(cachedUser);
 
           if (
             parsedUser &&
-            typeof parsedUser ===
-              "object"
+            typeof parsedUser === "object" &&
+            !Array.isArray(parsedUser)
           ) {
             if (isMounted) {
-              setUser(
-                parsedUser
-              );
+              setUser(parsedUser);
             }
+          } else {
+            removeSessionItem("user");
           }
-        }
-      } catch (error) {
-        console.error(
-          "CACHED USER ERROR:",
-          error.message
-        );
+        } catch (error) {
+          console.error(
+            "CACHED USER ERROR:",
+            error
+          );
 
-        sessionStorage.removeItem(
-          "user"
-        );
+          removeSessionItem("user");
+        }
       }
 
-      /*
-       * Validate the token and retrieve
-       * authoritative user information
-       * from the backend.
-       */
+      /* -----------------------------------------------
+         VALIDATE TOKEN WITH BACKEND
+      ------------------------------------------------ */
 
       try {
         const response =
-          await api.get(
-            "/auth/me"
-          );
+          await api.get("/auth/me");
 
         const currentUser =
           response.data?.user ||
           response.data;
 
-        if (!currentUser) {
+        if (
+          !currentUser ||
+          typeof currentUser !== "object"
+        ) {
           throw new Error(
-            "User information was not returned"
+            "User information was not returned."
           );
         }
 
@@ -116,40 +156,33 @@ export const AuthProvider = ({
           return;
         }
 
-        setUser(
-          currentUser
-        );
+        /*
+         * Backend is authoritative.
+         * Replace cached user with current user.
+         */
+        setUser(currentUser);
 
-        sessionStorage.setItem(
+        setSessionItem(
           "user",
-          JSON.stringify(
-            currentUser
-          )
+          JSON.stringify(currentUser)
         );
       } catch (error) {
-        console.error(
-          "AUTH LOAD ERROR:",
-          error.response?.data
-            ?.message ||
-            error.message ||
-            error
-        );
-
         /*
-         * Invalid/expired token,
-         * inactive account, or unavailable
-         * authenticated session.
-         *
-         * Clear only this tab's session.
+         * Do not keep an invalid/expired
+         * authentication session.
          */
 
-        sessionStorage.removeItem(
-          "token"
-        );
+        if (import.meta.env.DEV) {
+          console.error(
+            "AUTH LOAD ERROR:",
+            error.response?.data?.message ||
+              error.message ||
+              error
+          );
+        }
 
-        sessionStorage.removeItem(
-          "user"
-        );
+        removeSessionItem("token");
+        removeSessionItem("user");
 
         if (isMounted) {
           setUser(null);
@@ -172,198 +205,201 @@ export const AuthProvider = ({
      LOGIN
   ===================================================== */
 
-  const login = async (
-    email,
-    password
-  ) => {
-    try {
-      const normalizedEmail =
-        String(email || "")
-          .trim()
-          .toLowerCase();
+  const login = useCallback(
+    async (email, password) => {
+      try {
+        const normalizedEmail =
+          String(email || "")
+            .trim()
+            .toLowerCase();
 
-      if (!normalizedEmail) {
-        throw new Error(
-          "Email is required"
+        /* ---------------------------------------------
+           INPUT VALIDATION
+        --------------------------------------------- */
+
+        if (!normalizedEmail) {
+          throw new Error(
+            "Email is required."
+          );
+        }
+
+        if (normalizedEmail.length > 254) {
+          throw new Error(
+            "Email address is too long."
+          );
+        }
+
+        if (!password) {
+          throw new Error(
+            "Password is required."
+          );
+        }
+
+        if (String(password).length > 128) {
+          throw new Error(
+            "Password is too long."
+          );
+        }
+
+        /* ---------------------------------------------
+           LOGIN REQUEST
+        --------------------------------------------- */
+
+        const response =
+          await api.post(
+            "/auth/login",
+            {
+              email: normalizedEmail,
+              password,
+            }
+          );
+
+        if (
+          response.data?.success === false
+        ) {
+          throw new Error(
+            response.data?.message ||
+              "Login failed."
+          );
+        }
+
+        const token =
+          response.data?.token;
+
+        const loggedInUser =
+          response.data?.user;
+
+        if (!token) {
+          throw new Error(
+            "Login token was not returned."
+          );
+        }
+
+        if (
+          !loggedInUser ||
+          typeof loggedInUser !== "object"
+        ) {
+          throw new Error(
+            "User information was not returned."
+          );
+        }
+
+        /* ---------------------------------------------
+           STORE CURRENT SESSION
+        --------------------------------------------- */
+
+        setSessionItem(
+          "token",
+          token
         );
-      }
 
-      if (
-        normalizedEmail.length >
-        254
-      ) {
-        throw new Error(
-          "Email address is too long"
-        );
-      }
-
-      if (!password) {
-        throw new Error(
-          "Password is required"
-        );
-      }
-
-      if (
-        String(password).length >
-        128
-      ) {
-        throw new Error(
-          "Password is too long"
-        );
-      }
-
-      const response =
-        await api.post(
-          "/auth/login",
-          {
-            email:
-              normalizedEmail,
-            password,
-          }
+        setSessionItem(
+          "user",
+          JSON.stringify(
+            loggedInUser
+          )
         );
 
-      if (
-        response.data?.success ===
-        false
-      ) {
-        throw new Error(
-          response.data?.message ||
-            "Login failed"
-        );
-      }
+        if (loggedInUser) {
+          setUser(loggedInUser);
+        }
 
-      const token =
-        response.data?.token;
+        return {
+          success: true,
+          token,
+          user: loggedInUser,
+        };
+      } catch (error) {
+        if (import.meta.env.DEV) {
+          console.error(
+            "LOGIN ERROR:",
+            error.response?.data?.message ||
+              error.message ||
+              error
+          );
+        }
 
-      const loggedInUser =
-        response.data?.user;
+        /*
+         * Login failure must never leave
+         * a partially authenticated session.
+         */
 
-      if (!token) {
-        throw new Error(
-          "Login token was not returned"
-        );
-      }
+        removeSessionItem("token");
+        removeSessionItem("user");
 
-      if (!loggedInUser) {
-        throw new Error(
-          "User information was not returned"
-        );
-      }
+        setUser(null);
 
-      /*
-       * Store authentication only
-       * in the current browser tab.
-       */
-
-      sessionStorage.setItem(
-        "token",
-        token
-      );
-
-      sessionStorage.setItem(
-        "user",
-        JSON.stringify(
-          loggedInUser
-        )
-      );
-
-      setUser(
-        loggedInUser
-      );
-
-      return {
-        success: true,
-        token,
-        user: loggedInUser,
-      };
-    } catch (error) {
-      console.error(
-        "LOGIN ERROR:",
-        error.response?.data
-          ?.message ||
+        const message =
+          error.response?.data?.message ||
           error.message ||
-          error
-      );
+          "Login failed.";
 
-      /*
-       * Clear only this tab's
-       * authentication session.
-       */
-
-      sessionStorage.removeItem(
-        "token"
-      );
-
-      sessionStorage.removeItem(
-        "user"
-      );
-
-      setUser(null);
-
-      const message =
-        error.response?.data
-          ?.message ||
-        error.message ||
-        "Login failed";
-
-      throw new Error(
-        message
-      );
-    }
-  };
+        throw new Error(message);
+      }
+    },
+    []
+  );
 
   /* =====================================================
      LOGOUT
   ===================================================== */
 
-  const logout = () => {
+  const logout = useCallback(() => {
     /*
      * AuthContext is the single owner
      * of authentication state.
      */
 
-    sessionStorage.removeItem(
-      "token"
-    );
-
-    sessionStorage.removeItem(
-      "user"
-    );
+    removeSessionItem("token");
+    removeSessionItem("user");
 
     /*
-     * Password-reset request is also
-     * session-specific.
+     * Clear session-specific application
+     * state associated with authentication.
      */
 
-    sessionStorage.removeItem(
+    removeSessionItem(
       "passwordResetRequestId"
     );
 
-    sessionStorage.removeItem(
+    removeSessionItem(
       "shivshambho_active_payment"
     );
 
-    sessionStorage.removeItem(
+    removeSessionItem(
       "activePayment"
     );
 
     setUser(null);
-  };
+  }, []);
 
   /* =====================================================
-     CONTEXT
+     CONTEXT VALUE
+  ===================================================== */
+
+  const contextValue = useMemo(
+    () => ({
+      user,
+      loading,
+      login,
+      logout,
+      isAuthenticated: Boolean(user),
+    }),
+    [
+      user,
+      loading,
+      login,
+      logout,
+    ]
+  );
+
+  /* =====================================================
+     PROVIDER
   ===================================================== */
 
   return (
     <AuthContext.Provider
-      value={{
-        user,
-        loading,
-        login,
-        logout,
-        isAuthenticated:
-          Boolean(user),
-      }}
+      value={contextValue}
     >
       {children}
     </AuthContext.Provider>

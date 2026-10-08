@@ -3,22 +3,19 @@ import mongoose from "mongoose";
 const ledgerCustomerSchema =
   new mongoose.Schema(
     {
-      /* -----------------------------------------
-         PUMP
-      ----------------------------------------- */
-
+      // ==================================================
+      // PUMP
+      // ==================================================
       pumpId: {
-        type:
-          mongoose.Schema.Types.ObjectId,
+        type: mongoose.Schema.Types.ObjectId,
         ref: "Pump",
         required: true,
-        index: true,
+        immutable: true,
       },
 
-      /* -----------------------------------------
-         CUSTOMER NAME
-      ----------------------------------------- */
-
+      // ==================================================
+      // CUSTOMER NAME
+      // ==================================================
       name: {
         type: String,
         required: true,
@@ -26,10 +23,9 @@ const ledgerCustomerSchema =
         maxlength: 150,
       },
 
-      /* -----------------------------------------
-         PHONE
-      ----------------------------------------- */
-
+      // ==================================================
+      // PHONE
+      // ==================================================
       phone: {
         type: String,
         default: "",
@@ -37,10 +33,9 @@ const ledgerCustomerSchema =
         maxlength: 20,
       },
 
-      /* -----------------------------------------
-         VEHICLE NUMBER
-      ----------------------------------------- */
-
+      // ==================================================
+      // VEHICLE NUMBER
+      // ==================================================
       vehicleNumber: {
         type: String,
         default: "",
@@ -49,10 +44,9 @@ const ledgerCustomerSchema =
         maxlength: 30,
       },
 
-      /* -----------------------------------------
-         ADDRESS
-      ----------------------------------------- */
-
+      // ==================================================
+      // ADDRESS
+      // ==================================================
       address: {
         type: String,
         default: "",
@@ -60,20 +54,18 @@ const ledgerCustomerSchema =
         maxlength: 500,
       },
 
-      /* -----------------------------------------
-         CURRENT BALANCE
-      ----------------------------------------- */
-
+      // ==================================================
+      // CURRENT BALANCE
+      // ==================================================
       currentBalance: {
         type: Number,
         default: 0,
         min: 0,
       },
 
-      /* -----------------------------------------
-         STATUS
-      ----------------------------------------- */
-
+      // ==================================================
+      // STATUS
+      // ==================================================
       status: {
         type: String,
         enum: [
@@ -81,13 +73,13 @@ const ledgerCustomerSchema =
           "inactive",
         ],
         default: "active",
-        index: true,
+        lowercase: true,
+        trim: true,
       },
 
-      /* -----------------------------------------
-         NOTE
-      ----------------------------------------- */
-
+      // ==================================================
+      // NOTE
+      // ==================================================
       note: {
         type: String,
         default: "",
@@ -97,62 +89,94 @@ const ledgerCustomerSchema =
     },
     {
       timestamps: true,
+      strict: true,
     }
   );
 
-/* =========================================
+/* =====================================================
    INDEXES
-========================================= */
+===================================================== */
 
 /*
-   Common ledger customer listing/search.
-*/
-
-ledgerCustomerSchema.index({
-  pumpId: 1,
-  name: 1,
-});
-
-/*
-   Phone-based customer search.
-*/
-
-ledgerCustomerSchema.index({
-  pumpId: 1,
-  phone: 1,
-});
+ * Customer name search/listing.
+ */
+ledgerCustomerSchema.index(
+  {
+    pumpId: 1,
+    name: 1,
+  },
+  {
+    name: "idx_customer_pump_name",
+  }
+);
 
 /*
-   Important for soft-delete filtering.
-
-   Example:
-   {
-     pumpId,
-     status: "active"
-   }
-*/
-
-ledgerCustomerSchema.index({
-  pumpId: 1,
-  status: 1,
-});
+ * Phone lookup.
+ */
+ledgerCustomerSchema.index(
+  {
+    pumpId: 1,
+    phone: 1,
+  },
+  {
+    name: "idx_customer_pump_phone",
+  }
+);
 
 /*
-   Useful for vehicle-based customer lookup.
-*/
+ * Vehicle number lookup.
+ */
+ledgerCustomerSchema.index(
+  {
+    pumpId: 1,
+    vehicleNumber: 1,
+  },
+  {
+    name: "idx_customer_pump_vehicle",
+  }
+);
 
-ledgerCustomerSchema.index({
-  pumpId: 1,
-  vehicleNumber: 1,
-});
+/*
+ * Active/inactive customer filtering.
+ */
+ledgerCustomerSchema.index(
+  {
+    pumpId: 1,
+    status: 1,
+  },
+  {
+    name: "idx_customer_pump_status",
+  }
+);
 
-/* =========================================
+/*
+ * Dashboard / credit report.
+ *
+ * Supports:
+ *
+ * {
+ *   pumpId,
+ *   status: "active",
+ *   currentBalance: { $gt: 0 }
+ * }
+ */
+ledgerCustomerSchema.index(
+  {
+    pumpId: 1,
+    status: 1,
+    currentBalance: 1,
+  },
+  {
+    name: "idx_customer_active_balance",
+  }
+);
+
+/* =====================================================
    MODEL
-========================================= */
+===================================================== */
 
 const LedgerCustomer =
-  mongoose.models
-    .LedgerCustomer ||
+  mongoose.models.LedgerCustomer ||
   mongoose.model(
     "LedgerCustomer",
     ledgerCustomerSchema

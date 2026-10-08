@@ -4,55 +4,63 @@ import api from "./api";
    DAILY SALES
 ===================================================== */
 
-export const getDailySales =
-  async (date) => {
-    const response =
-      await api.get(
-        "/sales/daily",
-        {
-          params: date
-            ? { date }
-            : {},
-        }
-      );
+export const getDailySales = async (
+  date
+) => {
+  const response = await api.get(
+    "/sales/daily",
+    {
+      params: date
+        ? { date }
+        : {},
+    }
+  );
 
-    return response.data;
-  };
+  return response.data;
+};
 
 /* =====================================================
    SALES HISTORY
 ===================================================== */
 
-export const getSalesHistory =
-  async (
-    params = {}
-  ) => {
-    const response =
-      await api.get(
-        "/sales/history",
-        {
-          params,
-        }
-      );
+export const getSalesHistory = async (
+  params = {}
+) => {
+  const response = await api.get(
+    "/sales/history",
+    {
+      params,
+    }
+  );
 
-    return response.data;
-  };
+  return response.data;
+};
 
 /* =====================================================
    PAYMENT SUMMARY
 ===================================================== */
 
-export const getPaymentSummary =
-  async (date) => {
-    const response =
-      await api.get(
-        "/sales/payment-summary",
-        {
-          params: date
-            ? { date }
-            : {},
-        }
-      );
+export const getPaymentSummary = async (
+  date
+) => {
+  const response = await api.get(
+    "/sales/payment-summary",
+    {
+      params: date
+        ? { date }
+        : {},
+    }
+  );
 
-    return response.data;
-  };
+  return response.data;
+};
+
+/* =====================================================
+   DEFAULT EXPORT
+===================================================== */
+
+export default {
+  getDailySales,
+  getSalesHistory,
+  getPaymentSummary,
+};

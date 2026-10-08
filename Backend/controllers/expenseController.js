@@ -9,10 +9,10 @@ import {
 } from "../services/recoveryService.js";
 
 /* =====================================================
-   EXPENSE CATEGORIES
+   CONSTANTS
 ===================================================== */
 
-const VALID_CATEGORIES = [
+const VALID_CATEGORIES = new Set([
   "salary",
   "electricity",
   "maintenance",
@@ -21,146 +21,309 @@ const VALID_CATEGORIES = [
   "food",
   "repair",
   "miscellaneous",
-];
+]);
 
-const VALID_PAYMENT_METHODS = [
+const VALID_PAYMENT_METHODS = new Set([
   "cash",
   "upi",
   "bank",
   "card",
-];
+]);
 
-/* =====================================================
-   SHIFT HELPERS
-===================================================== */
-
-/*
- * Shift time is stored as HH:mm.
- *
- * Examples:
- * 06:00
- * 14:00
- * 22:00
- */
 const SHIFT_TIME_REGEX =
   /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+
+const EMAIL_REGEX =
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const MAX_NAME_LENGTH = 100;
+const MAX_PHONE_LENGTH = 30;
+const MAX_DESIGNATION_LENGTH = 100;
+const MAX_NOTE_LENGTH = 2000;
+const MAX_TITLE_LENGTH = 200;
+const MAX_LOGIN_PASSWORD_LENGTH = 128;
+const MIN_LOGIN_PASSWORD_LENGTH = 6;
+
+/* =====================================================
+   HELPERS
+===================================================== */
+
+const getPumpId = (req) => {
+  return (
+    req.user?.pumpId?._id ||
+    req.user?.pumpId ||
+    req.user?.pumpID ||
+    req.user?.pump?.pumpId ||
+    null
+  );
+};
+
+const getUserId = (req) => {
+  return (
+    req.user?._id ||
+    req.user?.id ||
+    null
+  );
+};
+
+const isValidObjectId = (id) => {
+  return mongoose.Types.ObjectId.isValid(
+    String(id || "")
+  );
+};
+
+const normalizeString = (
+  value,
+  fallback = ""
+) => {
+  return String(
+    value ?? fallback
+  ).trim();
+};
+
+const normalizeEmail = (value) => {
+  return normalizeString(
+    value
+  ).toLowerCase();
+};
+
+const isValidEmail = (email) => {
+  return (
+    typeof email === "string" &&
+    email.length <= 254 &&
+    EMAIL_REGEX.test(email)
+  );
+};
+
+const parseNonNegativeNumber = (
+  value
+) => {
+  const number = Number(value);
+
+  if (
+    !Number.isFinite(number) ||
+    number < 0
+  ) {
+    return null;
+  }
+
+  return number;
+};
+
+const parsePositiveNumber = (
+  value
+) => {
+  const number = Number(value);
+
+  if (
+    !Number.isFinite(number) ||
+    number <= 0
+  ) {
+    return null;
+  }
+
+  return number;
+};
 
 /* =====================================================
    ADD EXPENSE
 ===================================================== */
 
-export const addExpense = async (
-  req,
-  res
-) => {
-  try {
-    const {
-      title,
-      category,
-      amount,
-      paymentMethod = "cash",
-      expenseDate,
-      note = "",
-    } = req.body;
-
-    if (!title?.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: "Expense title is required",
-      });
-    }
-
-    if (
-      !VALID_CATEGORIES.includes(category)
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid expense category",
-      });
-    }
-
-    const amountValue =
-      Number(amount);
-
-    if (
-      !Number.isFinite(amountValue) ||
-      amountValue <= 0
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Expense amount must be greater than zero",
-      });
-    }
-
-    if (!expenseDate) {
-      return res.status(400).json({
-        success: false,
-        message: "Expense date is required",
-      });
-    }
-
-    if (
-      !VALID_PAYMENT_METHODS.includes(
-        paymentMethod
-      )
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid payment method",
-      });
-    }
-
-    const expense =
-      await Expense.create({
-        pumpId: req.user.pumpId,
-
-        title:
-          title.trim(),
-
+export const addExpense =
+  async (req, res) => {
+    try {
+      const {
+        title,
         category,
-
-        amount:
-          amountValue,
-
-        paymentMethod,
-
+        amount,
+        paymentMethod = "cash",
         expenseDate,
+        note = "",
+      } = req.body || {};
 
-        note:
-          String(
-            note || ""
-          ).trim(),
+      const pumpId =
+        getPumpId(req);
 
-        createdBy:
-          req.user._id,
+      const userId =
+        getUserId(req);
+
+      /* =====================================
+         ACCESS VALIDATION
+      ===================================== */
+
+      if (!pumpId) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Pump access is required",
+        });
+      }
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message:
+            "Authenticated user not found",
+        });
+      }
+
+      /* =====================================
+         TITLE
+      ===================================== */
+
+      const cleanTitle =
+        normalizeString(title);
+
+      if (!cleanTitle) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Expense title is required",
+        });
+      }
+
+      if (
+        cleanTitle.length >
+        MAX_TITLE_LENGTH
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Expense title is too long",
+        });
+      }
+
+      /* =====================================
+         CATEGORY
+      ===================================== */
+
+      const normalizedCategory =
+        normalizeString(
+          category
+        ).toLowerCase();
+
+      if (
+        !VALID_CATEGORIES.has(
+          normalizedCategory
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid expense category",
+        });
+      }
+
+      /* =====================================
+         AMOUNT
+      ===================================== */
+
+      const amountValue =
+        parsePositiveNumber(
+          amount
+        );
+
+      if (amountValue === null) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Expense amount must be greater than zero",
+        });
+      }
+
+      /* =====================================
+         DATE
+      ===================================== */
+
+      const cleanExpenseDate =
+        normalizeString(
+          expenseDate
+        );
+
+      if (!cleanExpenseDate) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Expense date is required",
+        });
+      }
+
+      /* =====================================
+         PAYMENT METHOD
+      ===================================== */
+
+      const normalizedPaymentMethod =
+        normalizeString(
+          paymentMethod
+        ).toLowerCase();
+
+      if (
+        !VALID_PAYMENT_METHODS.has(
+          normalizedPaymentMethod
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid payment method",
+        });
+      }
+
+      /* =====================================
+         CREATE
+      ===================================== */
+
+      const expense =
+        await Expense.create({
+          pumpId,
+
+          title:
+            cleanTitle,
+
+          category:
+            normalizedCategory,
+
+          amount:
+            amountValue,
+
+          paymentMethod:
+            normalizedPaymentMethod,
+
+          expenseDate:
+            cleanExpenseDate,
+
+          note:
+            normalizeString(note),
+
+          createdBy:
+            userId,
+        });
+
+      return res.status(201).json({
+        success: true,
+
+        message:
+          "Expense added successfully",
+
+        expense,
       });
+    } catch (error) {
+      console.error(
+        "ADD EXPENSE ERROR:",
+        error
+      );
 
-    return res.status(201).json({
-      success: true,
+      return res.status(500).json({
+        success: false,
 
-      message:
-        "Expense added successfully",
+        message:
+          "Unable to add expense",
 
-      expense,
-    });
-  } catch (error) {
-    console.error(
-      "ADD EXPENSE ERROR:",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-
-      message:
-        "Unable to add expense",
-
-      error:
-        error.message,
-    });
-  }
-};
+        error:
+          error.message,
+      });
+    }
+  };
 
 /* =====================================================
    GET EXPENSES
@@ -169,38 +332,113 @@ export const addExpense = async (
 export const getExpenses =
   async (req, res) => {
     try {
+      const pumpId =
+        getPumpId(req);
+
+      if (!pumpId) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Pump access is required",
+        });
+      }
+
       const {
         from,
         to,
         category,
-      } = req.query;
+      } = req.query || {};
+
+      /* =====================================
+         FILTER
+      ===================================== */
 
       const filter = {
-        pumpId:
-          req.user.pumpId,
+        pumpId,
       };
 
-      if (category) {
+      if (
+        typeof category ===
+          "string" &&
+        category.trim()
+      ) {
+        const normalizedCategory =
+          category
+            .trim()
+            .toLowerCase();
+
+        if (
+          !VALID_CATEGORIES.has(
+            normalizedCategory
+          )
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Invalid expense category",
+          });
+        }
+
         filter.category =
-          category;
+          normalizedCategory;
       }
 
-      if (from || to) {
+      if (
+        typeof from ===
+          "string" ||
+        typeof to ===
+          "string"
+      ) {
         filter.expenseDate = {};
 
-        if (from) {
+        if (
+          typeof from ===
+            "string" &&
+          from.trim()
+        ) {
           filter.expenseDate.$gte =
-            from;
+            from.trim();
         }
 
-        if (to) {
+        if (
+          typeof to ===
+            "string" &&
+          to.trim()
+        ) {
           filter.expenseDate.$lte =
-            to;
+            to.trim();
+        }
+
+        if (
+          Object.keys(
+            filter.expenseDate
+          ).length === 0
+        ) {
+          delete filter.expenseDate;
         }
       }
+
+      /* =====================================
+         QUERY
+      ===================================== */
 
       const expenses =
         await Expense.find(filter)
+          .select(
+            [
+              "pumpId",
+              "title",
+              "category",
+              "amount",
+              "paymentMethod",
+              "expenseDate",
+              "employeeId",
+              "note",
+              "createdBy",
+              "createdAt",
+              "updatedAt",
+            ].join(" ")
+          )
           .populate(
             "employeeId",
             "name designation salary"
@@ -212,7 +450,12 @@ export const getExpenses =
           .sort({
             expenseDate: -1,
             createdAt: -1,
-          });
+          })
+          .lean();
+
+      /* =====================================
+         TOTAL
+      ===================================== */
 
       const totalExpense =
         expenses.reduce(
@@ -261,8 +504,7 @@ export const getExpenses =
 
 export const deleteExpense =
   async (req, res) => {
-    const session =
-      await mongoose.startSession();
+    let session = null;
 
     try {
       const {
@@ -270,15 +512,18 @@ export const deleteExpense =
       } = req.params;
 
       const pumpId =
-        req.user?.pumpId;
+        getPumpId(req);
 
       const deletedBy =
-        req.user?._id;
+        getUserId(req);
+
+      /* =====================================
+         VALIDATION
+      ===================================== */
 
       if (!pumpId) {
         return res.status(403).json({
           success: false,
-
           message:
             "Pump access is required",
         });
@@ -287,35 +532,27 @@ export const deleteExpense =
       if (!deletedBy) {
         return res.status(401).json({
           success: false,
-
           message:
             "Authenticated user not found",
         });
       }
 
       if (
-        !mongoose.Types.ObjectId.isValid(
-          id
-        )
+        !isValidObjectId(id)
       ) {
         return res.status(400).json({
           success: false,
-
           message:
             "Invalid expense ID",
         });
       }
 
-      /*
-       * Recovery snapshot + physical deletion
-       * happen inside the same transaction.
-       *
-       * This guarantees:
-       *
-       * recovery saved + delete succeeded
-       * OR
-       * neither operation is committed.
-       */
+      /* =====================================
+         TRANSACTION
+      ===================================== */
+
+      session =
+        await mongoose.startSession();
 
       await session.withTransaction(
         async () => {
@@ -332,6 +569,10 @@ export const deleteExpense =
               "Expense not found"
             );
           }
+
+          /* ===============================
+             RECOVERY SNAPSHOT
+          =============================== */
 
           await createDeletedRecord({
             document:
@@ -355,19 +596,9 @@ export const deleteExpense =
             session,
           });
 
-          if (employee.userId) {
-            await User.updateOne(
-              {
-                _id: employee.userId,
-                pumpId,
-              },
-              {
-                $set: {
-                  active: false,
-                },
-              }
-            ).session(session);
-          }
+          /* ===============================
+             DELETE
+          =============================== */
 
           const deleted =
             await Expense.deleteOne({
@@ -408,7 +639,6 @@ export const deleteExpense =
       ) {
         return res.status(404).json({
           success: false,
-
           message:
             "Expense not found",
         });
@@ -424,7 +654,9 @@ export const deleteExpense =
           error.message,
       });
     } finally {
-      await session.endSession();
+      if (session) {
+        await session.endSession();
+      }
     }
   };
 
@@ -445,106 +677,101 @@ export const addEmployee =
         joiningDate,
         note = "",
 
-        /*
-         * Shift details
-         */
         shiftName = "",
         shiftStartTime = "",
         shiftEndTime = "",
+
         loginEmail = "",
         loginPassword = "",
         enableLogin = false,
-      } = req.body;
+      } = req.body || {};
 
-      /* ---------------------------------------------
+      const pumpId =
+        getPumpId(req);
+
+      /* =====================================
+         PUMP VALIDATION
+      ===================================== */
+
+      if (!pumpId) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Pump access is required",
+        });
+      }
+
+      /* =====================================
          BASIC VALIDATION
-      --------------------------------------------- */
+      ===================================== */
 
-      if (!name?.trim()) {
+      const cleanName =
+        normalizeString(name);
+
+      if (!cleanName) {
         return res.status(400).json({
           success: false,
-
           message:
             "Employee name is required",
         });
       }
 
-      const salaryValue =
-        Number(salary);
-
       if (
-        !Number.isFinite(
-          salaryValue
-        ) ||
-        salaryValue < 0
+        cleanName.length >
+        MAX_NAME_LENGTH
       ) {
         return res.status(400).json({
           success: false,
+          message:
+            "Employee name is too long",
+        });
+      }
 
+      const salaryValue =
+        parseNonNegativeNumber(
+          salary
+        );
+
+      if (salaryValue === null) {
+        return res.status(400).json({
+          success: false,
           message:
             "Invalid salary",
         });
       }
 
-      if (!joiningDate) {
+      if (
+        !joiningDate
+      ) {
         return res.status(400).json({
           success: false,
-
           message:
             "Joining date is required",
         });
       }
 
-      /* ---------------------------------------------
-         NORMALIZE SHIFT DETAILS
-      --------------------------------------------- */
+      /* =====================================
+         NORMALIZE SHIFT
+      ===================================== */
 
       const normalizedShiftName =
-        String(
-          shiftName || ""
-        ).trim();
+        normalizeString(
+          shiftName
+        );
 
       const normalizedShiftStartTime =
-        String(
-          shiftStartTime || ""
-        ).trim();
+        normalizeString(
+          shiftStartTime
+        );
 
       const normalizedShiftEndTime =
-        String(
-          shiftEndTime || ""
-        ).trim();
+        normalizeString(
+          shiftEndTime
+        );
 
-      const normalizedLoginEmail =
-        String(loginEmail || "")
-          .trim()
-          .toLowerCase();
-
-      const shouldEnableLogin =
-        enableLogin === true ||
-        enableLogin === "true";
-
-      if (shouldEnableLogin) {
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedLoginEmail)) {
-          return res.status(400).json({
-            success: false,
-            message: "A valid employee login email is required",
-          });
-        }
-
-        if (
-          String(loginPassword || "").length < 6 ||
-          String(loginPassword || "").length > 128
-        ) {
-          return res.status(400).json({
-            success: false,
-            message: "Employee login password must contain 6 to 128 characters",
-          });
-        }
-      }
-
-      /* ---------------------------------------------
-         SHIFT TIME VALIDATION
-      --------------------------------------------- */
+      /* =====================================
+         SHIFT VALIDATION
+      ===================================== */
 
       if (
         normalizedShiftStartTime &&
@@ -554,7 +781,6 @@ export const addEmployee =
       ) {
         return res.status(400).json({
           success: false,
-
           message:
             "Invalid shift start time. Use HH:mm format.",
         });
@@ -568,16 +794,11 @@ export const addEmployee =
       ) {
         return res.status(400).json({
           success: false,
-
           message:
             "Invalid shift end time. Use HH:mm format.",
         });
       }
 
-      /*
-       * If one time is provided,
-       * the other one must also be provided.
-       */
       if (
         Boolean(
           normalizedShiftStartTime
@@ -588,96 +809,202 @@ export const addEmployee =
       ) {
         return res.status(400).json({
           success: false,
-
           message:
             "Both shift start time and shift end time are required.",
         });
       }
 
-      /* ---------------------------------------------
-         CREATE EMPLOYEE
-      --------------------------------------------- */
+      /* =====================================
+         LOGIN
+      ===================================== */
 
-      session = await mongoose.startSession();
+      const shouldEnableLogin =
+        enableLogin === true ||
+        enableLogin === "true";
+
+      const normalizedLoginEmail =
+        normalizeEmail(
+          loginEmail
+        );
+
+      const normalizedLoginPassword =
+        String(
+          loginPassword || ""
+        );
+
+      if (shouldEnableLogin) {
+        if (
+          !isValidEmail(
+            normalizedLoginEmail
+          )
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "A valid employee login email is required",
+          });
+        }
+
+        if (
+          normalizedLoginPassword.length <
+            MIN_LOGIN_PASSWORD_LENGTH ||
+          normalizedLoginPassword.length >
+            MAX_LOGIN_PASSWORD_LENGTH
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Employee login password must contain 6 to 128 characters",
+          });
+        }
+      }
+
+      /* =====================================
+         CREATE TRANSACTION
+      ===================================== */
+
+      session =
+        await mongoose.startSession();
+
       let employee = null;
 
-      await session.withTransaction(async () => {
-        if (shouldEnableLogin) {
-          const existingLogin = await User.findOne({
-            email: normalizedLoginEmail,
-          }).session(session);
+      await session.withTransaction(
+        async () => {
+          /* ===============================
+             LOGIN DUPLICATE CHECK
+          =============================== */
 
-          if (existingLogin) {
-            const error = new Error(
-              "A user with this employee login already exists"
+          if (
+            shouldEnableLogin
+          ) {
+            const existingLogin =
+              await User.findOne({
+                email:
+                  normalizedLoginEmail,
+              })
+                .select("_id")
+                .session(
+                  session
+                )
+                .lean();
+
+            if (existingLogin) {
+              const error =
+                new Error(
+                  "A user with this employee login already exists"
+                );
+
+              error.code =
+                "EMPLOYEE_LOGIN_EXISTS";
+
+              throw error;
+            }
+          }
+
+          /* ===============================
+             EMPLOYEE
+          =============================== */
+
+          const createdEmployees =
+            await Employee.create(
+              [
+                {
+                  pumpId,
+
+                  name:
+                    cleanName,
+
+                  phone:
+                    normalizeString(
+                      phone
+                    ),
+
+                  designation:
+                    normalizeString(
+                      designation ||
+                        "Staff"
+                    ),
+
+                  salary:
+                    salaryValue,
+
+                  joiningDate,
+
+                  status:
+                    "active",
+
+                  note:
+                    normalizeString(
+                      note
+                    ),
+
+                  shiftName:
+                    normalizedShiftName,
+
+                  shiftStartTime:
+                    normalizedShiftStartTime,
+
+                  shiftEndTime:
+                    normalizedShiftEndTime,
+
+                  loginEnabled:
+                    shouldEnableLogin,
+                },
+              ],
+              {
+                session,
+              }
             );
-            error.code = "EMPLOYEE_LOGIN_EXISTS";
-            throw error;
+
+          employee =
+            createdEmployees[0];
+
+          /* ===============================
+             USER LOGIN
+          =============================== */
+
+          if (
+            shouldEnableLogin
+          ) {
+            const createdUsers =
+              await User.create(
+                [
+                  {
+                    name:
+                      cleanName,
+
+                    email:
+                      normalizedLoginEmail,
+
+                    password:
+                      normalizedLoginPassword,
+
+                    role:
+                      "employee",
+
+                    pumpId,
+
+                    employeeId:
+                      employee._id,
+
+                    active:
+                      true,
+                  },
+                ],
+                {
+                  session,
+                }
+              );
+
+            employee.userId =
+              createdUsers[0]._id;
+
+            await employee.save({
+              session,
+            });
           }
         }
-
-        const createdEmployees = await Employee.create([{
-          pumpId:
-            req.user.pumpId,
-
-          name:
-            name.trim(),
-
-          phone:
-            String(
-              phone || ""
-            ).trim(),
-
-          designation:
-            String(
-              designation ||
-                "Staff"
-            ).trim(),
-
-          salary:
-            salaryValue,
-
-          joiningDate,
-
-          status:
-            "active",
-
-          note:
-            String(
-              note || ""
-            ).trim(),
-
-          /* Shift details */
-          shiftName:
-            normalizedShiftName,
-
-          shiftStartTime:
-            normalizedShiftStartTime,
-
-          shiftEndTime:
-            normalizedShiftEndTime,
-
-          loginEnabled:
-            shouldEnableLogin,
-        }], { session });
-
-        employee = createdEmployees[0];
-
-        if (shouldEnableLogin) {
-          const createdUsers = await User.create([{
-            name: name.trim(),
-            email: normalizedLoginEmail,
-            password: String(loginPassword),
-            role: "employee",
-            pumpId: req.user.pumpId,
-            employeeId: employee._id,
-            active: true,
-          }], { session });
-
-          employee.userId = createdUsers[0]._id;
-          await employee.save({ session });
-        }
-      });
+      );
 
       return res.status(201).json({
         success: true,
@@ -694,11 +1021,13 @@ export const addEmployee =
       );
 
       if (
-        error?.code === "EMPLOYEE_LOGIN_EXISTS" ||
+        error?.code ===
+          "EMPLOYEE_LOGIN_EXISTS" ||
         error?.code === 11000
       ) {
         return res.status(409).json({
           success: false,
+
           message:
             "A user with this employee login already exists",
         });
@@ -727,13 +1056,44 @@ export const addEmployee =
 export const getEmployees =
   async (req, res) => {
     try {
+      const pumpId =
+        getPumpId(req);
+
+      if (!pumpId) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Pump access is required",
+        });
+      }
+
       const employees =
         await Employee.find({
-          pumpId:
-            req.user.pumpId,
-        }).sort({
-          createdAt: -1,
-        });
+          pumpId,
+        })
+          .select(
+            [
+              "pumpId",
+              "userId",
+              "loginEnabled",
+              "name",
+              "phone",
+              "designation",
+              "salary",
+              "joiningDate",
+              "status",
+              "note",
+              "shiftName",
+              "shiftStartTime",
+              "shiftEndTime",
+              "createdAt",
+              "updatedAt",
+            ].join(" ")
+          )
+          .sort({
+            createdAt: -1,
+          })
+          .lean();
 
       const totalMonthlySalary =
         employees
@@ -749,8 +1109,7 @@ export const getEmployees =
             ) =>
               total +
               Number(
-                employee.salary ||
-                  0
+                employee.salary || 0
               ),
             0
           );
@@ -789,19 +1148,29 @@ export const getEmployees =
 
 export const updateEmployee =
   async (req, res) => {
+    let session = null;
+
     try {
       const {
         id,
       } = req.params;
 
+      const pumpId =
+        getPumpId(req);
+
+      if (!pumpId) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Pump access is required",
+        });
+      }
+
       if (
-        !mongoose.Types.ObjectId.isValid(
-          id
-        )
+        !isValidObjectId(id)
       ) {
         return res.status(400).json({
           success: false,
-
           message:
             "Invalid employee ID",
         });
@@ -810,15 +1179,12 @@ export const updateEmployee =
       const employee =
         await Employee.findOne({
           _id: id,
-
-          pumpId:
-            req.user.pumpId,
+          pumpId,
         });
 
       if (!employee) {
         return res.status(404).json({
           success: false,
-
           message:
             "Employee not found",
         });
@@ -833,35 +1199,45 @@ export const updateEmployee =
         status,
         note,
 
-        /*
-         * Shift details
-         */
         shiftName,
         shiftStartTime,
         shiftEndTime,
+
         loginEmail,
         loginPassword,
         enableLogin,
-      } = req.body;
+      } = req.body || {};
 
-      /* ---------------------------------------------
+      /* =====================================
          NAME
-      --------------------------------------------- */
+      ===================================== */
 
       if (
         name !== undefined
       ) {
         const normalizedName =
-          String(
+          normalizeString(
             name
-          ).trim();
+          );
 
-        if (!normalizedName) {
+        if (
+          !normalizedName
+        ) {
           return res.status(400).json({
             success: false,
-
             message:
               "Employee name is required",
+          });
+        }
+
+        if (
+          normalizedName.length >
+          MAX_NAME_LENGTH
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Employee name is too long",
           });
         }
 
@@ -869,66 +1245,90 @@ export const updateEmployee =
           normalizedName;
       }
 
-      /* ---------------------------------------------
+      /* =====================================
          PHONE
-      --------------------------------------------- */
+      ===================================== */
 
       if (
         phone !== undefined
       ) {
-        employee.phone =
-          String(
+        const normalizedPhone =
+          normalizeString(
             phone
-          ).trim();
+          );
+
+        if (
+          normalizedPhone.length >
+          MAX_PHONE_LENGTH
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Phone number is too long",
+          });
+        }
+
+        employee.phone =
+          normalizedPhone;
       }
 
-      /* ---------------------------------------------
+      /* =====================================
          DESIGNATION
-      --------------------------------------------- */
+      ===================================== */
 
       if (
         designation !==
         undefined
       ) {
-        employee.designation =
-          String(
+        const normalizedDesignation =
+          normalizeString(
             designation
-          ).trim();
+          );
+
+        if (
+          normalizedDesignation.length >
+          MAX_DESIGNATION_LENGTH
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Designation is too long",
+          });
+        }
+
+        employee.designation =
+          normalizedDesignation;
       }
 
-      /* ---------------------------------------------
+      /* =====================================
          SALARY
-      --------------------------------------------- */
+      ===================================== */
 
       if (
         salary !== undefined
       ) {
         const salaryValue =
-          Number(salary);
+          parseNonNegativeNumber(
+            salary
+          );
 
         if (
-          !Number.isFinite(
-            salaryValue
-          ) ||
-          salaryValue < 0
+          salaryValue === null
         ) {
-          return res
-            .status(400)
-            .json({
-              success: false,
-
-              message:
-                "Invalid salary",
-            });
+          return res.status(400).json({
+            success: false,
+            message:
+              "Invalid salary",
+          });
         }
 
         employee.salary =
           salaryValue;
       }
 
-      /* ---------------------------------------------
+      /* =====================================
          JOINING DATE
-      --------------------------------------------- */
+      ===================================== */
 
       if (
         joiningDate !==
@@ -938,102 +1338,106 @@ export const updateEmployee =
           joiningDate;
       }
 
-      /* ---------------------------------------------
+      /* =====================================
          STATUS
-      --------------------------------------------- */
+      ===================================== */
 
       if (
         status !== undefined
       ) {
+        const normalizedStatus =
+          normalizeString(
+            status
+          ).toLowerCase();
+
         if (
           ![
             "active",
             "inactive",
-          ].includes(status)
+          ].includes(
+            normalizedStatus
+          )
         ) {
-          return res
-            .status(400)
-            .json({
-              success: false,
-
-              message:
-                "Invalid employee status",
-            });
+          return res.status(400).json({
+            success: false,
+            message:
+              "Invalid employee status",
+          });
         }
 
         employee.status =
-          status;
+          normalizedStatus;
       }
 
-      /* ---------------------------------------------
+      /* =====================================
          NOTE
-      --------------------------------------------- */
+      ===================================== */
 
       if (
         note !== undefined
       ) {
-        employee.note =
-          String(
+        const normalizedNote =
+          normalizeString(
             note
-          ).trim();
+          );
+
+        if (
+          normalizedNote.length >
+          MAX_NOTE_LENGTH
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Employee note is too long",
+          });
+        }
+
+        employee.note =
+          normalizedNote;
       }
 
-      /* ---------------------------------------------
-         SHIFT NAME
-      --------------------------------------------- */
+      /* =====================================
+         SHIFT
+      ===================================== */
 
       if (
         shiftName !== undefined
       ) {
         employee.shiftName =
-          String(
-            shiftName || ""
-          ).trim();
+          normalizeString(
+            shiftName
+          );
       }
-
-      /* ---------------------------------------------
-         SHIFT START TIME
-      --------------------------------------------- */
 
       if (
         shiftStartTime !==
         undefined
       ) {
         employee.shiftStartTime =
-          String(
-            shiftStartTime || ""
-          ).trim();
+          normalizeString(
+            shiftStartTime
+          );
       }
-
-      /* ---------------------------------------------
-         SHIFT END TIME
-      --------------------------------------------- */
 
       if (
         shiftEndTime !==
         undefined
       ) {
         employee.shiftEndTime =
-          String(
-            shiftEndTime || ""
-          ).trim();
+          normalizeString(
+            shiftEndTime
+          );
       }
 
-      /* ---------------------------------------------
-         FINAL SHIFT VALIDATION
-      --------------------------------------------- */
-
       const finalShiftStartTime =
-        String(
-          employee.shiftStartTime ||
-            ""
-        ).trim();
+        normalizeString(
+          employee.shiftStartTime
+        );
 
       const finalShiftEndTime =
-        String(
-          employee.shiftEndTime ||
-            ""
-        ).trim();
+        normalizeString(
+          employee.shiftEndTime
+        );
 
       if (
         finalShiftStartTime &&
@@ -1043,7 +1447,6 @@ export const updateEmployee =
       ) {
         return res.status(400).json({
           success: false,
-
           message:
             "Invalid shift start time. Use HH:mm format.",
         });
@@ -1057,16 +1460,11 @@ export const updateEmployee =
       ) {
         return res.status(400).json({
           success: false,
-
           message:
             "Invalid shift end time. Use HH:mm format.",
         });
       }
 
-      /*
-       * Both shift times must be present
-       * or both must be empty.
-       */
       if (
         Boolean(
           finalShiftStartTime
@@ -1077,67 +1475,314 @@ export const updateEmployee =
       ) {
         return res.status(400).json({
           success: false,
-
           message:
             "Both shift start time and shift end time are required.",
         });
       }
 
-      const shouldEnableLogin =
-        enableLogin === undefined
-          ? employee.loginEnabled
-          : enableLogin === true || enableLogin === "true";
+      /* =====================================
+         LOGIN UPDATE
+      ===================================== */
 
-      if (loginEmail !== undefined || loginPassword !== undefined || enableLogin !== undefined) {
-        const normalizedLoginEmail = String(loginEmail || "").trim().toLowerCase();
+      const loginFieldsProvided =
+        loginEmail !==
+          undefined ||
+        loginPassword !==
+          undefined ||
+        enableLogin !==
+          undefined;
 
-        if (shouldEnableLogin && !employee.userId && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedLoginEmail)) {
-          return res.status(400).json({ success: false, message: "A valid employee login email is required" });
-        }
+      if (
+        loginFieldsProvided
+      ) {
+        const shouldEnableLogin =
+          enableLogin ===
+            undefined
+            ? employee.loginEnabled
+            : enableLogin ===
+                true ||
+              enableLogin ===
+                "true";
 
-        if (loginPassword !== undefined && (String(loginPassword).length < 6 || String(loginPassword).length > 128)) {
-          return res.status(400).json({ success: false, message: "Employee login password must contain 6 to 128 characters" });
-        }
+        const normalizedLoginEmail =
+          normalizeEmail(
+            loginEmail
+          );
 
-        let user = employee.userId
-          ? await User.findOne({ _id: employee.userId, pumpId: req.user.pumpId })
-          : null;
+        const normalizedPassword =
+          loginPassword !==
+          undefined
+            ? String(
+                loginPassword
+              )
+            : "";
 
-        if (shouldEnableLogin && !user) {
-          user = await User.create({
-            name: employee.name,
-            email: normalizedLoginEmail,
-            password: String(loginPassword || ""),
-            role: "employee",
-            pumpId: req.user.pumpId,
-            employeeId: employee._id,
-            active: true,
+        /* =================================
+           VALIDATE NEW LOGIN
+        ================================= */
+
+        if (
+          shouldEnableLogin &&
+          !employee.userId &&
+          !isValidEmail(
+            normalizedLoginEmail
+          )
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "A valid employee login email is required",
           });
-          employee.userId = user._id;
-        } else if (user) {
-          if (loginEmail !== undefined) {
-            const duplicate = await User.findOne({ email: normalizedLoginEmail, _id: { $ne: user._id } });
-            if (duplicate) {
-              return res.status(409).json({ success: false, message: "A user with this login email already exists" });
+        }
+
+        if (
+          loginEmail !==
+            undefined &&
+          shouldEnableLogin &&
+          !isValidEmail(
+            normalizedLoginEmail
+          )
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "A valid employee login email is required",
+          });
+        }
+
+        if (
+          loginPassword !==
+            undefined &&
+          (
+            normalizedPassword.length <
+              MIN_LOGIN_PASSWORD_LENGTH ||
+            normalizedPassword.length >
+              MAX_LOGIN_PASSWORD_LENGTH
+          )
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Employee login password must contain 6 to 128 characters",
+          });
+        }
+
+        /* =================================
+           TRANSACTION
+        ================================= */
+
+        session =
+          await mongoose.startSession();
+
+        await session.withTransaction(
+          async () => {
+            let user = null;
+
+            if (
+              employee.userId
+            ) {
+              user =
+                await User.findOne({
+                  _id:
+                    employee.userId,
+
+                  pumpId,
+                }).session(
+                  session
+                );
             }
-            user.email = normalizedLoginEmail;
+
+            /* =============================
+               CREATE USER
+            ============================= */
+
+            if (
+              shouldEnableLogin &&
+              !user
+            ) {
+              const existingUser =
+                await User.findOne({
+                  email:
+                    normalizedLoginEmail,
+                })
+                  .select("_id")
+                  .session(
+                    session
+                  )
+                  .lean();
+
+              if (
+                existingUser
+              ) {
+                const error =
+                  new Error(
+                    "A user with this login email already exists"
+                  );
+
+                error.code =
+                  "EMPLOYEE_LOGIN_EXISTS";
+
+                throw error;
+              }
+
+              const createdUsers =
+                await User.create(
+                  [
+                    {
+                      name:
+                        employee.name,
+
+                      email:
+                        normalizedLoginEmail,
+
+                      password:
+                        normalizedPassword,
+
+                      role:
+                        "employee",
+
+                      pumpId,
+
+                      employeeId:
+                        employee._id,
+
+                      active:
+                        employee.status ===
+                        "active",
+                    },
+                  ],
+                  {
+                    session,
+                  }
+                );
+
+              user =
+                createdUsers[0];
+
+              employee.userId =
+                user._id;
+            }
+
+            /* =============================
+               UPDATE EXISTING USER
+            ============================= */
+
+            if (user) {
+              if (
+                loginEmail !==
+                undefined
+              ) {
+                if (
+                  !isValidEmail(
+                    normalizedLoginEmail
+                  )
+                ) {
+                  return;
+                }
+
+                const duplicate =
+                  await User.findOne({
+                    email:
+                      normalizedLoginEmail,
+
+                    _id: {
+                      $ne:
+                        user._id,
+                    },
+                  })
+                    .select("_id")
+                    .session(
+                      session
+                    )
+                    .lean();
+
+                if (
+                  duplicate
+                ) {
+                  const error =
+                    new Error(
+                      "A user with this login email already exists"
+                    );
+
+                  error.code =
+                    "EMPLOYEE_LOGIN_EXISTS";
+
+                  throw error;
+                }
+
+                user.email =
+                  normalizedLoginEmail;
+              }
+
+              if (
+                loginPassword !==
+                undefined
+              ) {
+                user.password =
+                  normalizedPassword;
+              }
+
+              user.active =
+                shouldEnableLogin &&
+                employee.status ===
+                  "active";
+
+              await user.save({
+                session,
+              });
+            }
+
+            employee.loginEnabled =
+              shouldEnableLogin;
+
+            if (
+              user &&
+              !shouldEnableLogin
+            ) {
+              user.active =
+                false;
+
+              await user.save({
+                session,
+              });
+            }
+
+            await employee.save({
+              session,
+            });
           }
-          if (loginPassword !== undefined) user.password = String(loginPassword);
-          user.active = shouldEnableLogin && employee.status === "active";
-          await user.save();
+        );
+      } else {
+        /* =================================
+           STATUS → LOGIN SYNC
+        ================================= */
+
+        if (
+          employee.userId &&
+          employee.status ===
+            "inactive"
+        ) {
+          await User.updateOne(
+            {
+              _id:
+                employee.userId,
+
+              pumpId,
+            },
+            {
+              $set: {
+                active:
+                  false,
+              },
+            }
+          );
+
+          employee.loginEnabled =
+            false;
         }
 
-        employee.loginEnabled = shouldEnableLogin;
-        if (user && !shouldEnableLogin) {
-          user.active = false;
-          await user.save();
-        }
-      } else if (employee.userId && employee.status === "inactive") {
-        await User.updateOne({ _id: employee.userId, pumpId: req.user.pumpId }, { $set: { active: false } });
-        employee.loginEnabled = false;
+        await employee.save();
       }
-
-      await employee.save();
 
       return res.status(200).json({
         success: true,
@@ -1153,6 +1798,19 @@ export const updateEmployee =
         error
       );
 
+      if (
+        error?.code ===
+          "EMPLOYEE_LOGIN_EXISTS" ||
+        error?.code === 11000
+      ) {
+        return res.status(409).json({
+          success: false,
+
+          message:
+            "A user with this login email already exists",
+        });
+      }
+
       return res.status(500).json({
         success: false,
 
@@ -1162,6 +1820,10 @@ export const updateEmployee =
         error:
           error.message,
       });
+    } finally {
+      if (session) {
+        await session.endSession();
+      }
     }
   };
 
@@ -1171,8 +1833,7 @@ export const updateEmployee =
 
 export const deleteEmployee =
   async (req, res) => {
-    const session =
-      await mongoose.startSession();
+    let session = null;
 
     try {
       const {
@@ -1180,15 +1841,14 @@ export const deleteEmployee =
       } = req.params;
 
       const pumpId =
-        req.user?.pumpId;
+        getPumpId(req);
 
       const deletedBy =
-        req.user?._id;
+        getUserId(req);
 
       if (!pumpId) {
         return res.status(403).json({
           success: false,
-
           message:
             "Pump access is required",
         });
@@ -1197,24 +1857,23 @@ export const deleteEmployee =
       if (!deletedBy) {
         return res.status(401).json({
           success: false,
-
           message:
             "Authenticated user not found",
         });
       }
 
       if (
-        !mongoose.Types.ObjectId.isValid(
-          id
-        )
+        !isValidObjectId(id)
       ) {
         return res.status(400).json({
           success: false,
-
           message:
             "Invalid employee ID",
         });
       }
+
+      session =
+        await mongoose.startSession();
 
       await session.withTransaction(
         async () => {
@@ -1231,6 +1890,10 @@ export const deleteEmployee =
               "Employee not found"
             );
           }
+
+          /* ===============================
+             RECOVERY
+          =============================== */
 
           await createDeletedRecord({
             document:
@@ -1254,6 +1917,10 @@ export const deleteEmployee =
             session,
           });
 
+          /* ===============================
+             DELETE EMPLOYEE
+          =============================== */
+
           const deleted =
             await Employee.deleteOne({
               _id:
@@ -1270,6 +1937,31 @@ export const deleteEmployee =
           ) {
             throw new Error(
               "Employee deletion failed"
+            );
+          }
+
+          /* ===============================
+             DISABLE LOGIN
+          =============================== */
+
+          if (
+            employee.userId
+          ) {
+            await User.updateOne(
+              {
+                _id:
+                  employee.userId,
+
+                pumpId,
+              },
+              {
+                $set: {
+                  active:
+                    false,
+                },
+              }
+            ).session(
+              session
             );
           }
         }
@@ -1293,7 +1985,6 @@ export const deleteEmployee =
       ) {
         return res.status(404).json({
           success: false,
-
           message:
             "Employee not found",
         });
@@ -1309,7 +2000,9 @@ export const deleteEmployee =
           error.message,
       });
     } finally {
-      await session.endSession();
+      if (session) {
+        await session.endSession();
+      }
     }
   };
 
@@ -1326,20 +2019,42 @@ export const payEmployeeSalary =
 
       const {
         paymentDate,
-        paymentMethod =
-          "cash",
+        paymentMethod = "cash",
         amount,
         note = "",
-      } = req.body;
+      } = req.body || {};
+
+      const pumpId =
+        getPumpId(req);
+
+      const userId =
+        getUserId(req);
+
+      /* =====================================
+         VALIDATION
+      ===================================== */
+
+      if (!pumpId) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Pump access is required",
+        });
+      }
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message:
+            "Authenticated user not found",
+        });
+      }
 
       if (
-        !mongoose.Types.ObjectId.isValid(
-          id
-        )
+        !isValidObjectId(id)
       ) {
         return res.status(400).json({
           success: false,
-
           message:
             "Invalid employee ID",
         });
@@ -1348,15 +2063,12 @@ export const payEmployeeSalary =
       const employee =
         await Employee.findOne({
           _id: id,
-
-          pumpId:
-            req.user.pumpId,
-        });
+          pumpId,
+        }).lean();
 
       if (!employee) {
         return res.status(404).json({
           success: false,
-
           message:
             "Employee not found",
         });
@@ -1368,60 +2080,71 @@ export const payEmployeeSalary =
       ) {
         return res.status(400).json({
           success: false,
-
           message:
             "Cannot pay salary to inactive employee",
         });
       }
 
       const salaryAmount =
-        amount !== undefined &&
+        amount !==
+          undefined &&
         amount !== ""
-          ? Number(amount)
-          : Number(
+          ? parsePositiveNumber(
+              amount
+            )
+          : parsePositiveNumber(
               employee.salary
             );
 
       if (
-        !Number.isFinite(
-          salaryAmount
-        ) ||
-        salaryAmount <= 0
+        salaryAmount === null
       ) {
         return res.status(400).json({
           success: false,
-
           message:
             "Invalid salary amount",
         });
       }
 
-      if (!paymentDate) {
+      const cleanPaymentDate =
+        normalizeString(
+          paymentDate
+        );
+
+      if (
+        !cleanPaymentDate
+      ) {
         return res.status(400).json({
           success: false,
-
           message:
             "Payment date is required",
         });
       }
 
-      if (
-        !VALID_PAYMENT_METHODS.includes(
+      const normalizedPaymentMethod =
+        normalizeString(
           paymentMethod
+        ).toLowerCase();
+
+      if (
+        !VALID_PAYMENT_METHODS.has(
+          normalizedPaymentMethod
         )
       ) {
         return res.status(400).json({
           success: false,
-
           message:
             "Invalid payment method",
         });
       }
 
+      /* =====================================
+         CREATE SALARY EXPENSE
+      ===================================== */
+
       const expense =
         await Expense.create({
-          pumpId:
-            req.user.pumpId,
+          pumpId,
 
           title:
             `Salary - ${employee.name}`,
@@ -1432,21 +2155,22 @@ export const payEmployeeSalary =
           amount:
             salaryAmount,
 
-          paymentMethod,
+          paymentMethod:
+            normalizedPaymentMethod,
 
           expenseDate:
-            paymentDate,
+            cleanPaymentDate,
 
           employeeId:
             employee._id,
 
           note:
-            String(
-              note || ""
-            ).trim(),
+            normalizeString(
+              note
+            ),
 
           createdBy:
-            req.user._id,
+            userId,
         });
 
       return res.status(201).json({

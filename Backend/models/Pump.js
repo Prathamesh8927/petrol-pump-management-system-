@@ -1,24 +1,41 @@
 import mongoose from "mongoose";
 
+/* =========================================================
+   BANK ACCOUNT
+========================================================= */
+
 const bankAccountSchema = new mongoose.Schema(
   {
     accountHolderName: {
       type: String,
       default: "",
       trim: true,
+      maxlength: 150,
     },
 
     bankName: {
       type: String,
       default: "",
       trim: true,
+      maxlength: 150,
     },
 
+    /*
+     * Sensitive information.
+     *
+     * select:false prevents the complete account number
+     * from being returned by normal Pump queries.
+     *
+     * Explicitly request it only when required:
+     *
+     * .select("+bankAccount.accountNumber")
+     */
     accountNumber: {
       type: String,
       default: "",
       trim: true,
       select: false,
+      maxlength: 50,
     },
 
     ifsc: {
@@ -26,12 +43,14 @@ const bankAccountSchema = new mongoose.Schema(
       default: "",
       trim: true,
       uppercase: true,
+      maxlength: 20,
     },
 
     branchName: {
       type: String,
       default: "",
       trim: true,
+      maxlength: 150,
     },
 
     accountType: {
@@ -52,8 +71,13 @@ const bankAccountSchema = new mongoose.Schema(
   },
   {
     _id: false,
+    strict: true,
   }
 );
+
+/* =========================================================
+   PAYMENT CONFIGURATION
+========================================================= */
 
 const paymentConfigSchema = new mongoose.Schema(
   {
@@ -72,18 +96,21 @@ const paymentConfigSchema = new mongoose.Schema(
       type: String,
       default: "",
       trim: true,
+      maxlength: 150,
     },
 
     terminalId: {
       type: String,
       default: "",
       trim: true,
+      maxlength: 150,
     },
 
     merchantVpa: {
       type: String,
       default: "",
       trim: true,
+      maxlength: 150,
     },
 
     dynamicQrEnabled: {
@@ -114,27 +141,39 @@ const paymentConfigSchema = new mongoose.Schema(
   },
   {
     _id: false,
+    strict: true,
   }
 );
 
+/* =========================================================
+   PUMP
+========================================================= */
+
 const pumpSchema = new mongoose.Schema(
   {
+    // =====================================================
+    // BASIC PUMP INFORMATION
+    // =====================================================
+
     pumpName: {
       type: String,
       default: "",
       trim: true,
+      maxlength: 150,
     },
 
     ownerName: {
       type: String,
       default: "",
       trim: true,
+      maxlength: 150,
     },
 
     phone: {
       type: String,
       default: "",
       trim: true,
+      maxlength: 30,
     },
 
     email: {
@@ -142,49 +181,66 @@ const pumpSchema = new mongoose.Schema(
       default: "",
       trim: true,
       lowercase: true,
+      maxlength: 254,
     },
 
     companyName: {
       type: String,
       default: "",
       trim: true,
+      maxlength: 150,
     },
 
     dealerCode: {
       type: String,
       default: "",
       trim: true,
+      maxlength: 100,
     },
 
     gstin: {
       type: String,
       default: "",
       trim: true,
+      uppercase: true,
+      maxlength: 20,
     },
+
+    // =====================================================
+    // ADDRESS
+    // =====================================================
 
     address: {
       type: String,
       default: "",
       trim: true,
+      maxlength: 500,
     },
 
     city: {
       type: String,
       default: "",
       trim: true,
+      maxlength: 100,
     },
 
     state: {
       type: String,
       default: "",
       trim: true,
+      maxlength: 100,
     },
 
     pincode: {
       type: String,
       default: "",
       trim: true,
+      maxlength: 20,
     },
+
+    // =====================================================
+    // FUEL STOCK ALERT
+    // =====================================================
 
     lowStockAlert: {
       type: Number,
@@ -197,29 +253,39 @@ const pumpSchema = new mongoose.Schema(
       default: true,
     },
 
+    // =====================================================
+    // PAYMENT CONFIGURATION
+    // =====================================================
+
     /*
-     * Payment provider configuration.
+     * Controls payment processing.
      *
-     * This controls how payments are processed.
-     * It does NOT contain owner's bank account details.
+     * This is separate from bankAccount because it
+     * contains payment-provider configuration rather
+     * than settlement-bank details.
      */
     paymentConfig: {
       type: paymentConfigSchema,
       default: () => ({}),
     },
 
+    // =====================================================
+    // OWNER BANK ACCOUNT
+    // =====================================================
+
     /*
-     * Owner settlement bank account.
+     * Sensitive settlement account information.
      *
-     * This is intentionally separate from paymentConfig.
-     *
-     * accountNumber uses select:false so normal Pump queries
-     * do not expose the full bank account number.
+     * accountNumber is select:false inside bankAccount.
      */
     bankAccount: {
       type: bankAccountSchema,
       default: () => ({}),
     },
+
+    // =====================================================
+    // STATUS
+    // =====================================================
 
     active: {
       type: Boolean,
@@ -228,8 +294,62 @@ const pumpSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
+    strict: true,
   }
 );
+
+/* =========================================================
+   INDEXES
+========================================================= */
+
+/*
+ * Pump name lookup/listing.
+ *
+ * Useful for SuperAdmin pump management.
+ */
+pumpSchema.index(
+  {
+    pumpName: 1,
+  },
+  {
+    name: "idx_pump_name",
+  }
+);
+
+/*
+ * Active pump filtering.
+ *
+ * Useful for SuperAdmin dashboards and pump lists.
+ */
+pumpSchema.index(
+  {
+    active: 1,
+  },
+  {
+    name: "idx_pump_active",
+  }
+);
+
+/*
+ * Dealer code lookup.
+ *
+ * Keep this non-unique because the current business model
+ * does not explicitly require dealerCode to be globally
+ * unique.
+ */
+pumpSchema.index(
+  {
+    dealerCode: 1,
+  },
+  {
+    name: "idx_pump_dealer_code",
+    sparse: true,
+  }
+);
+
+/* =========================================================
+   MODEL
+========================================================= */
 
 const Pump =
   mongoose.models.Pump ||

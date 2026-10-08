@@ -5,6 +5,35 @@ import User from "../models/User.js";
 import RegistrationRequest from "../models/RegistrationRequest.js";
 
 /* =====================================================
+   CONSTANTS
+===================================================== */
+
+const MIN_PASSWORD_LENGTH = 12;
+const MAX_PASSWORD_LENGTH = 128;
+
+const BCRYPT_SALT_ROUNDS = 12;
+
+const DEFAULT_JWT_EXPIRATION = "7d";
+
+const ALLOWED_ROLES = new Set([
+  "superadmin",
+  "owner",
+  "manager",
+  "staff",
+  "employee",
+]);
+
+/*
+ * Used when an account does not exist.
+ *
+ * This prevents the nonexistent-email path from being
+ * dramatically cheaper than the password verification
+ * path.
+ */
+const DUMMY_PASSWORD_HASH =
+  "$2b$12$C6UzMDM.H6dfI/f/IKcEe.Vk7pM8v8e4KxRjJ9L4m4x6q5Kx1uJ2a";
+
+/* =====================================================
    JWT CONFIGURATION
 ===================================================== */
 
@@ -23,18 +52,15 @@ const getJwtSecret = () => {
   return secret;
 };
 
-/* =====================================================
-   JWT EXPIRATION CONFIGURATION
-===================================================== */
-
 const getJwtExpiration = () => {
-  const expiresIn = process.env.JWT_EXPIRES_IN;
+  const expiresIn =
+    process.env.JWT_EXPIRES_IN;
 
   if (
     typeof expiresIn !== "string" ||
     !expiresIn.trim()
   ) {
-    return "7d";
+    return DEFAULT_JWT_EXPIRATION;
   }
 
   return expiresIn.trim();
@@ -49,7 +75,8 @@ const isValidEmail = (email) => {
     return false;
   }
 
-  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedEmail =
+    email.trim().toLowerCase();
 
   if (
     !normalizedEmail ||
@@ -58,67 +85,53 @@ const isValidEmail = (email) => {
     return false;
   }
 
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const emailRegex =
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  return emailRegex.test(normalizedEmail);
+  return emailRegex.test(
+    normalizedEmail
+  );
 };
 
 /* =====================================================
-   PASSWORD CONFIGURATION
+   JWT GENERATION
 ===================================================== */
 
-const MIN_PASSWORD_LENGTH = 12;
-const MAX_PASSWORD_LENGTH = 128;
+/*
+ * JWT intentionally contains only:
+ *
+ * - userId
+ * - tokenVersion
+ *
+ * Role, pumpId and permissions are always loaded from
+ * the database by authentication middleware.
+ */
+const generateToken = (
+  userId,
+  tokenVersion = 0
+) => {
+  const numericVersion =
+    Number(tokenVersion);
 
-/* =====================================================
-   DUMMY BCRYPT HASH
-
-   Used when an account does not exist so that login
-   attempts do not return significantly faster simply
-   because the email address is unknown.
-
-   This hash is intentionally static and is NOT a real
-   user's password.
-===================================================== */
-
-const DUMMY_PASSWORD_HASH =
-  "$2b$12$C6UzMDM.H6dfI/f/IKcEe.Vk7pM8v8e4KxRjJ9L4m4x6q5Kx1uJ2a";
-
-/* =====================================================
-   GENERATE JWT
-
-   IMPORTANT:
-   JWT intentionally does NOT contain:
-
-   - role
-   - pumpId
-   - permissions
-   - employeeId
-
-   These values must always come from the database.
-
-   tokenVersion is included only for server-side
-   session revocation.
-
-   When User.tokenVersion changes, all older tokens
-   become invalid.
-===================================================== */
-
-const generateToken = (userId, tokenVersion = 0) => {
-  const normalizedTokenVersion = Number.isInteger(
-    Number(tokenVersion)
-  )
-    ? Number(tokenVersion)
-    : 0;
+  const normalizedTokenVersion =
+    Number.isInteger(
+      numericVersion
+    ) &&
+    numericVersion >= 0
+      ? numericVersion
+      : 0;
 
   return jwt.sign(
     {
       userId: userId.toString(),
-      tokenVersion: normalizedTokenVersion,
+      tokenVersion:
+        normalizedTokenVersion,
     },
     getJwtSecret(),
     {
-      expiresIn: getJwtExpiration(),
+      expiresIn:
+        getJwtExpiration(),
+
       algorithm: "HS256",
     }
   );
@@ -128,16 +141,19 @@ const generateToken = (userId, tokenVersion = 0) => {
    LOGIN
 ===================================================== */
 
-export const login = async (req, res) => {
+export const login = async (
+  req,
+  res
+) => {
   try {
     const {
       email,
       password,
     } = req.body || {};
 
-    /* -----------------------------------------------
-       VALIDATION
-    ------------------------------------------------ */
+    /* =====================================
+       BASIC VALIDATION
+    ===================================== */
 
     if (
       typeof email !== "string" ||
@@ -147,180 +163,208 @@ export const login = async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message: "Email and password are required.",
+        message:
+          "Email and password are required.",
       });
     }
 
     const normalizedEmail =
       email.trim().toLowerCase();
 
-    /* -----------------------------------------------
+    /* =====================================
        EMAIL VALIDATION
-    ------------------------------------------------ */
+    ===================================== */
 
-    if (!isValidEmail(normalizedEmail)) {
+    if (
+      !isValidEmail(
+        normalizedEmail
+      )
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Please enter a valid email address.",
+        message:
+          "Please enter a valid email address.",
       });
     }
 
-    /* -----------------------------------------------
+    /* =====================================
        PASSWORD LENGTH PROTECTION
+    ===================================== */
 
-       Prevents unnecessarily expensive bcrypt
-       operations on extremely large input.
-    ------------------------------------------------ */
-
-    if (password.length > MAX_PASSWORD_LENGTH) {
+    if (
+      password.length >
+      MAX_PASSWORD_LENGTH
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Invalid email or password.",
+        message:
+          "Invalid email or password.",
       });
     }
 
-    /* -----------------------------------------------
-       FIND USER
+    /* =====================================
+       LOAD USER
+    ===================================== */
 
-       Password has select:false in User.js.
-       Therefore +password is mandatory.
-
-       Pump status is loaded for validation.
-    ------------------------------------------------ */
-
+    /*
+     * User.password has select:false.
+     * Therefore +password is required.
+     *
+     * Only the pump fields needed by login
+     * are populated.
+     */
     const user =
       await User.findOne({
         email: normalizedEmail,
       })
-        .select("+password")
+        .select(
+          "+password name email role employeeId pumpId active tokenVersion"
+        )
         .populate(
           "pumpId",
           "pumpName ownerName phone email active"
-        );
+        )
+        .lean();
 
-    /* -----------------------------------------------
+    /* =====================================
        USER NOT FOUND
-    ------------------------------------------------ */
+    ===================================== */
 
     if (!user) {
       /*
-       * Perform a dummy bcrypt comparison for normal
-       * nonexistent accounts.
-       *
-       * This makes the common "unknown email" path
-       * computationally closer to the real password
-       * verification path.
+       * Dummy bcrypt comparison for timing
+       * resistance.
        */
       await bcrypt.compare(
         password,
         DUMMY_PASSWORD_HASH
       );
 
-      /* ---------------------------------------------
-         CHECK PENDING REGISTRATION
-      --------------------------------------------- */
+      /*
+       * Check pending/rejected registration
+       * requests in parallel.
+       */
+      const [
+        pendingRequest,
+        rejectedRequest,
+      ] = await Promise.all([
+        RegistrationRequest.findOne({
+          email:
+            normalizedEmail,
 
-      const pendingRequest =
-        await RegistrationRequest.findOne({
-          email: normalizedEmail,
           status: "pending",
-        });
+        })
+          .select("_id")
+          .lean(),
+
+        RegistrationRequest.findOne({
+          email:
+            normalizedEmail,
+
+          status: "rejected",
+        })
+          .select(
+            "rejectionReason updatedAt"
+          )
+          .sort({
+            updatedAt: -1,
+          })
+          .lean(),
+      ]);
+
+      /* ===================================
+         PENDING REGISTRATION
+      =================================== */
 
       if (pendingRequest) {
         return res.status(403).json({
           success: false,
-          code: "REGISTRATION_PENDING",
+
+          code:
+            "REGISTRATION_PENDING",
+
           message:
             "Your registration request is waiting for Super Admin approval.",
         });
       }
 
-      /* ---------------------------------------------
-         CHECK REJECTED REGISTRATION
-      --------------------------------------------- */
-
-      const rejectedRequest =
-        await RegistrationRequest.findOne({
-          email: normalizedEmail,
-          status: "rejected",
-        }).sort({
-          updatedAt: -1,
-        });
+      /* ===================================
+         REJECTED REGISTRATION
+      =================================== */
 
       if (rejectedRequest) {
+        const reason =
+          rejectedRequest.rejectionReason;
+
         return res.status(403).json({
           success: false,
-          code: "REGISTRATION_REJECTED",
-          message:
-            rejectedRequest.rejectionReason
-              ? `Your registration request was rejected: ${rejectedRequest.rejectionReason}`
-              : "Your registration request was rejected by Super Admin.",
+
+          code:
+            "REGISTRATION_REJECTED",
+
+          message: reason
+            ? `Your registration request was rejected: ${reason}`
+            : "Your registration request was rejected by Super Admin.",
         });
       }
 
-      /* ---------------------------------------------
+      /* ===================================
          GENERIC LOGIN ERROR
-      --------------------------------------------- */
+      =================================== */
 
       return res.status(401).json({
         success: false,
-        message: "Invalid email or password.",
+        message:
+          "Invalid email or password.",
       });
     }
 
-    /* -----------------------------------------------
+    /* =====================================
        ACCOUNT STATUS
-    ------------------------------------------------ */
+    ===================================== */
 
     if (user.active !== true) {
       return res.status(403).json({
         success: false,
-        code: "ACCOUNT_DISABLED",
+
+        code:
+          "ACCOUNT_DISABLED",
+
         message:
           "Your account is currently disabled. Please contact Super Admin.",
       });
     }
 
-    /* -----------------------------------------------
-       NORMALIZE ROLE
-    ------------------------------------------------ */
+    /* =====================================
+       ROLE
+    ===================================== */
 
     const role =
       String(user.role || "")
         .trim()
         .toLowerCase();
 
-    /* -----------------------------------------------
-       VALIDATE ROLE
-    ------------------------------------------------ */
-
-    const allowedRoles = [
-      "superadmin",
-      "owner",
-      "manager",
-      "staff",
-      "employee",
-    ];
-
-    if (!allowedRoles.includes(role)) {
+    if (
+      !ALLOWED_ROLES.has(role)
+    ) {
       console.error(
         `AUTH SECURITY: Invalid role "${user.role}" for user ${user._id}`
       );
 
       return res.status(403).json({
         success: false,
-        code: "INVALID_ROLE",
-        message: "Invalid account role.",
+
+        code:
+          "INVALID_ROLE",
+
+        message:
+          "Invalid account role.",
       });
     }
 
-    /* -----------------------------------------------
+    /* =====================================
        PUMP VALIDATION
-
-       Superadmin does not require a pump.
-
-       All other users MUST have a pumpId.
-    ------------------------------------------------ */
+    ===================================== */
 
     if (
       role !== "superadmin" &&
@@ -332,18 +376,22 @@ export const login = async (req, res) => {
 
       return res.status(403).json({
         success: false,
-        code: "ACCOUNT_CONFIGURATION_ERROR",
+
+        code:
+          "ACCOUNT_CONFIGURATION_ERROR",
+
         message:
           "Your account is not correctly configured. Please contact Super Admin.",
       });
     }
 
-    /* -----------------------------------------------
+    /* =====================================
        PASSWORD HASH VALIDATION
-    ------------------------------------------------ */
+    ===================================== */
 
     if (
-      typeof user.password !== "string" ||
+      typeof user.password !==
+        "string" ||
       !user.password
     ) {
       console.error(
@@ -352,13 +400,14 @@ export const login = async (req, res) => {
 
       return res.status(401).json({
         success: false,
-        message: "Invalid email or password.",
+        message:
+          "Invalid email or password.",
       });
     }
 
-    /* -----------------------------------------------
-       PASSWORD VALIDATION
-    ------------------------------------------------ */
+    /* =====================================
+       PASSWORD CHECK
+    ===================================== */
 
     const passwordMatched =
       await bcrypt.compare(
@@ -369,16 +418,14 @@ export const login = async (req, res) => {
     if (!passwordMatched) {
       return res.status(401).json({
         success: false,
-        message: "Invalid email or password.",
+        message:
+          "Invalid email or password.",
       });
     }
 
-    /* -----------------------------------------------
+    /* =====================================
        PUMP STATUS
-
-       Non-superadmin users cannot log into an
-       inactive pump.
-    ------------------------------------------------ */
+    ===================================== */
 
     if (
       role !== "superadmin" &&
@@ -386,38 +433,33 @@ export const login = async (req, res) => {
     ) {
       return res.status(403).json({
         success: false,
-        code: "PUMP_DISABLED",
+
+        code:
+          "PUMP_DISABLED",
+
         message:
           "This petrol pump account is currently disabled. Please contact Super Admin.",
       });
     }
 
-    /* -----------------------------------------------
+    /* =====================================
        TOKEN VERSION
+    ===================================== */
 
-       tokenVersion was added for server-side session
-       revocation.
-
-       Older users created before this field existed
-       are safely treated as version 0.
-    ------------------------------------------------ */
+    const numericTokenVersion =
+      Number(user.tokenVersion);
 
     const tokenVersion =
-      Number.isInteger(Number(user.tokenVersion)) &&
-      Number(user.tokenVersion) >= 0
-        ? Number(user.tokenVersion)
+      Number.isInteger(
+        numericTokenVersion
+      ) &&
+      numericTokenVersion >= 0
+        ? numericTokenVersion
         : 0;
 
-    /* -----------------------------------------------
+    /* =====================================
        GENERATE TOKEN
-
-       JWT contains:
-
-       - userId
-       - tokenVersion
-
-       JWT does NOT contain role/pumpId.
-    ------------------------------------------------ */
+    ===================================== */
 
     const token =
       generateToken(
@@ -425,24 +467,37 @@ export const login = async (req, res) => {
         tokenVersion
       );
 
-    /* -----------------------------------------------
+    /* =====================================
        RESPONSE
-    ------------------------------------------------ */
+    ===================================== */
 
     return res.status(200).json({
       success: true,
-      message: "Login successful",
+
+      message:
+        "Login successful",
+
       token,
+
       user: {
         id: user._id,
+
         name: user.name,
+
         email: user.email,
+
         role,
+
         employeeId:
-          user.employeeId || null,
+          user.employeeId ||
+          null,
+
         pumpId:
-          user.pumpId || null,
-        active: user.active,
+          user.pumpId ||
+          null,
+
+        active:
+          user.active,
       },
     });
   } catch (error) {
@@ -451,9 +506,9 @@ export const login = async (req, res) => {
       error
     );
 
-    /* -----------------------------------------------
+    /* =====================================
        JWT CONFIGURATION ERROR
-    ------------------------------------------------ */
+    ===================================== */
 
     if (
       error?.message?.includes(
@@ -462,31 +517,42 @@ export const login = async (req, res) => {
     ) {
       return res.status(500).json({
         success: false,
+
         message:
           "Authentication configuration error.",
-        code: "AUTH_CONFIG_ERROR",
+
+        code:
+          "AUTH_CONFIG_ERROR",
       });
     }
 
     return res.status(500).json({
       success: false,
-      message: "Login failed.",
-      code: "LOGIN_ERROR",
+
+      message:
+        "Login failed.",
+
+      code:
+        "LOGIN_ERROR",
     });
   }
 };
 
 /* =====================================================
    REGISTER
-
-   Registration creates a pending request only.
-
-   IMPORTANT:
-   User/Pump creation should happen only after
-   Super Admin approval.
 ===================================================== */
 
-export const register = async (req, res) => {
+/*
+ * Registration only creates a pending
+ * RegistrationRequest.
+ *
+ * Pump/User creation happens after
+ * Super Admin approval.
+ */
+export const register = async (
+  req,
+  res
+) => {
   try {
     const {
       name,
@@ -504,9 +570,9 @@ export const register = async (req, res) => {
       plan,
     } = req.body || {};
 
-    /* -----------------------------------------------
-       BASIC VALIDATION
-    ------------------------------------------------ */
+    /* =====================================
+       REQUIRED FIELDS
+    ===================================== */
 
     if (
       typeof name !== "string" ||
@@ -517,6 +583,7 @@ export const register = async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
+
         message:
           "Name, email, password, phone and pump name are required.",
       });
@@ -543,131 +610,165 @@ export const register = async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
+
         message:
           "Name, email, password, phone and pump name are required.",
       });
     }
 
-    /* -----------------------------------------------
+    /* =====================================
        FIELD LENGTH PROTECTION
-    ------------------------------------------------ */
-
-    if (cleanName.length > 100) {
-      return res.status(400).json({
-        success: false,
-        message: "Name is too long.",
-      });
-    }
-
-    if (cleanPumpName.length > 200) {
-      return res.status(400).json({
-        success: false,
-        message: "Pump name is too long.",
-      });
-    }
-
-    if (cleanPhone.length > 30) {
-      return res.status(400).json({
-        success: false,
-        message: "Phone number is too long.",
-      });
-    }
-
-    /* -----------------------------------------------
-       PASSWORD VALIDATION
-
-       Production baseline:
-       minimum 12 characters.
-    ------------------------------------------------ */
+    ===================================== */
 
     if (
-      password.length < MIN_PASSWORD_LENGTH
+      cleanName.length > 100
     ) {
       return res.status(400).json({
         success: false,
+        message:
+          "Name is too long.",
+      });
+    }
+
+    if (
+      cleanPumpName.length > 200
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Pump name is too long.",
+      });
+    }
+
+    if (
+      cleanPhone.length > 30
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Phone number is too long.",
+      });
+    }
+
+    /* =====================================
+       PASSWORD VALIDATION
+    ===================================== */
+
+    if (
+      password.length <
+      MIN_PASSWORD_LENGTH
+    ) {
+      return res.status(400).json({
+        success: false,
+
         message:
           `Password must contain at least ${MIN_PASSWORD_LENGTH} characters.`,
       });
     }
 
     if (
-      password.length > MAX_PASSWORD_LENGTH
+      password.length >
+      MAX_PASSWORD_LENGTH
     ) {
       return res.status(400).json({
         success: false,
+
         message:
           `Password cannot contain more than ${MAX_PASSWORD_LENGTH} characters.`,
       });
     }
 
-    /* -----------------------------------------------
+    /* =====================================
        EMAIL VALIDATION
-    ------------------------------------------------ */
+    ===================================== */
 
-    if (!isValidEmail(normalizedEmail)) {
+    if (
+      !isValidEmail(
+        normalizedEmail
+      )
+    ) {
       return res.status(400).json({
         success: false,
+
         message:
           "Please enter a valid email address.",
       });
     }
 
-    /* -----------------------------------------------
-       EXISTING USER
-    ------------------------------------------------ */
+    /* =====================================
+       EXISTING USER + PENDING REQUEST
+    ===================================== */
 
-    const existingUser =
-      await User.findOne({
-        email: normalizedEmail,
-      }).select("_id");
+    /*
+     * These two lookups are independent,
+     * so execute them together.
+     */
+    const [
+      existingUser,
+      existingPending,
+    ] = await Promise.all([
+      User.findOne({
+        email:
+          normalizedEmail,
+      })
+        .select("_id")
+        .lean(),
+
+      RegistrationRequest.findOne({
+        email:
+          normalizedEmail,
+
+        status: "pending",
+      })
+        .select("_id")
+        .lean(),
+    ]);
+
+    /* =====================================
+       EXISTING USER
+    ===================================== */
 
     if (existingUser) {
       return res.status(409).json({
         success: false,
-        code: "ACCOUNT_EXISTS",
+
+        code:
+          "ACCOUNT_EXISTS",
+
         message:
           "An account with this email already exists.",
       });
     }
 
-    /* -----------------------------------------------
+    /* =====================================
        EXISTING PENDING REQUEST
-    ------------------------------------------------ */
-
-    const existingPending =
-      await RegistrationRequest.findOne({
-        email: normalizedEmail,
-        status: "pending",
-      }).select("_id");
+    ===================================== */
 
     if (existingPending) {
       return res.status(409).json({
         success: false,
-        code: "REGISTRATION_PENDING",
+
+        code:
+          "REGISTRATION_PENDING",
+
         message:
           "A registration request for this email is already pending approval.",
       });
     }
 
-    /* -----------------------------------------------
-       HASH PASSWORD
-
-       RegistrationRequest stores the hash.
-
-       Super Admin approval should transfer this
-       already-hashed password to the User document
-       rather than hashing it again.
-    ------------------------------------------------ */
+    /* =====================================
+       PASSWORD HASH
+    ===================================== */
 
     const passwordHash =
       await bcrypt.hash(
         password,
-        12
+        BCRYPT_SALT_ROUNDS
       );
 
-    /* -----------------------------------------------
-       CREATE REGISTRATION REQUEST
-    ------------------------------------------------ */
+    /* =====================================
+       CREATE REQUEST
+    ===================================== */
 
     const request =
       await RegistrationRequest.create({
@@ -687,60 +788,75 @@ export const register = async (req, res) => {
           cleanPumpName,
 
         companyName:
-          typeof companyName === "string"
+          typeof companyName ===
+          "string"
             ? companyName.trim()
             : "",
 
         dealerCode:
-          typeof dealerCode === "string"
+          typeof dealerCode ===
+          "string"
             ? dealerCode.trim()
             : "",
 
         gstin:
-          typeof gstin === "string"
-            ? gstin.trim().toUpperCase()
+          typeof gstin ===
+          "string"
+            ? gstin
+                .trim()
+                .toUpperCase()
             : "",
 
         address:
-          typeof address === "string"
+          typeof address ===
+          "string"
             ? address.trim()
             : "",
 
         city:
-          typeof city === "string"
+          typeof city ===
+          "string"
             ? city.trim()
             : "",
 
         state:
-          typeof state === "string"
+          typeof state ===
+          "string"
             ? state.trim()
             : "",
 
         pincode:
-          typeof pincode === "string"
+          typeof pincode ===
+          "string"
             ? pincode.trim()
             : "",
 
         plan:
-          typeof plan === "string" &&
+          typeof plan ===
+            "string" &&
           plan.trim()
-            ? plan.trim()
+            ? plan
+                .trim()
+                .toLowerCase()
             : "standard",
 
         status:
           "pending",
       });
 
-    /* -----------------------------------------------
+    /* =====================================
        RESPONSE
-    ------------------------------------------------ */
+    ===================================== */
 
     return res.status(201).json({
       success: true,
+
       message:
         "Registration submitted successfully. Please wait for Super Admin approval.",
+
       requestId:
         request._id,
+
       status:
         request.status,
     });
@@ -750,9 +866,9 @@ export const register = async (req, res) => {
       error
     );
 
-    /* -----------------------------------------------
+    /* =====================================
        MONGOOSE VALIDATION
-    ------------------------------------------------ */
+    ===================================== */
 
     if (
       error?.name ===
@@ -760,6 +876,7 @@ export const register = async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
+
         message:
           Object.values(
             error.errors || {}
@@ -772,17 +889,19 @@ export const register = async (req, res) => {
       });
     }
 
-    /* -----------------------------------------------
+    /* =====================================
        DUPLICATE KEY
-    ------------------------------------------------ */
+    ===================================== */
 
     if (
       error?.code === 11000
     ) {
       return res.status(409).json({
         success: false,
+
         code:
           "REGISTRATION_EXISTS",
+
         message:
           "A registration request already exists for this email.",
       });
@@ -790,8 +909,10 @@ export const register = async (req, res) => {
 
     return res.status(500).json({
       success: false,
+
       message:
         "Unable to submit registration request.",
+
       code:
         "REGISTRATION_ERROR",
     });
@@ -802,7 +923,10 @@ export const register = async (req, res) => {
    GET CURRENT USER
 ===================================================== */
 
-export const getMe = async (req, res) => {
+export const getMe = async (
+  req,
+  res
+) => {
   try {
     const userId =
       req.user?._id ||
@@ -811,59 +935,68 @@ export const getMe = async (req, res) => {
     if (!userId) {
       return res.status(401).json({
         success: false,
+
         message:
           "Authentication required.",
+
         code:
           "AUTHENTICATION_REQUIRED",
       });
     }
 
-    /* -----------------------------------------------
-       LOAD CURRENT USER
+    /* =====================================
+       LOAD USER
+    ===================================== */
 
-       Password is explicitly excluded.
-    ------------------------------------------------ */
-
+    /*
+     * Explicit projection prevents password,
+     * tokenVersion and other internal fields
+     * from being returned.
+     */
     const user =
       await User.findById(userId)
-        .select("-password")
+        .select(
+          "name email role employeeId pumpId active"
+        )
         .populate(
           "pumpId",
           "pumpName ownerName phone email active"
-        );
+        )
+        .lean();
 
     if (!user) {
       return res.status(404).json({
         success: false,
+
         message:
           "User not found.",
+
         code:
           "USER_NOT_FOUND",
       });
     }
 
-    /* -----------------------------------------------
+    /* =====================================
        ACCOUNT STATUS
-    ------------------------------------------------ */
+    ===================================== */
 
-    if (user.active !== true) {
+    if (
+      user.active !== true
+    ) {
       return res.status(403).json({
         success: false,
+
         code:
           "ACCOUNT_INACTIVE",
+
         message:
           "Your account is inactive.",
       });
     }
 
-    /* -----------------------------------------------
+    /* =====================================
        PUMP STATUS
-
-       authMiddleware already checks this for normal
-       authenticated requests, but keeping this check
-       here protects the endpoint if middleware usage
-       changes later.
-    ------------------------------------------------ */
+    ===================================== */
 
     const role =
       String(user.role || "")
@@ -876,16 +1009,18 @@ export const getMe = async (req, res) => {
     ) {
       return res.status(403).json({
         success: false,
+
         code:
           "PUMP_DISABLED",
+
         message:
           "This petrol pump account is currently disabled.",
       });
     }
 
-    /* -----------------------------------------------
+    /* =====================================
        RESPONSE
-    ------------------------------------------------ */
+    ===================================== */
 
     return res.status(200).json({
       success: true,
@@ -899,8 +1034,10 @@ export const getMe = async (req, res) => {
 
     return res.status(500).json({
       success: false,
+
       message:
         "Unable to load user.",
+
       code:
         "GET_ME_ERROR",
     });

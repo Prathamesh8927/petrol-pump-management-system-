@@ -24,10 +24,10 @@ const DashboardLayout = () => {
   const [
     isMobile,
     setIsMobile,
-  ] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      window.innerWidth <= MOBILE_BREAKPOINT
+  ] = useState(() =>
+    typeof window !== "undefined"
+      ? window.innerWidth <= MOBILE_BREAKPOINT
+      : false
   );
 
   /* =========================================================
@@ -42,10 +42,6 @@ const DashboardLayout = () => {
 
       setIsMobile(mobile);
 
-      /*
-       * Automatically close the mobile
-       * sidebar when moving to desktop.
-       */
       if (!mobile) {
         setIsMobileMenuOpen(false);
       }
@@ -84,20 +80,17 @@ const DashboardLayout = () => {
   ========================================================= */
 
   useEffect(() => {
-    if (
+    const shouldLockScroll =
       isMobile &&
-      isMobileMenuOpen
-    ) {
-      document.body.style.overflow =
-        "hidden";
-    } else {
-      document.body.style.overflow =
-        "";
-    }
+      isMobileMenuOpen;
+
+    document.body.style.overflow =
+      shouldLockScroll
+        ? "hidden"
+        : "";
 
     return () => {
-      document.body.style.overflow =
-        "";
+      document.body.style.overflow = "";
     };
   }, [
     isMobile,
@@ -107,17 +100,14 @@ const DashboardLayout = () => {
   /* =========================================================
      DISABLE MOUSE-WHEEL CHANGES ON NUMBER INPUTS
 
-     Prevents accidental value changes while scrolling.
-
-     Applies to number inputs inside the dashboard application.
+     Prevents accidental number changes while scrolling.
   ========================================================= */
 
   useEffect(() => {
     const handleNumberWheel = (
       event
     ) => {
-      const target =
-        event.target;
+      const target = event.target;
 
       if (
         !(target instanceof Element)

@@ -21,41 +21,33 @@ const ALLOWED_SHIFTS = new Set([
   "night",
 ]);
 
-const ALLOWED_PAYMENT_METHODS = new Set([
-  "cash",
-  "upi",
-  "card",
-  "credit",
-]);
+const ALLOWED_PAYMENT_METHODS =
+  new Set([
+    "cash",
+    "upi",
+    "card",
+    "credit",
+  ]);
 
-const ALLOWED_STAFF_ROLES = new Set([
-  "owner",
-  "manager",
-  "staff",
-]);
+const ALLOWED_STAFF_ROLES =
+  new Set([
+    "owner",
+    "manager",
+    "staff",
+  ]);
 
-const ALLOWED_NOZZLE_STATUS = new Set([
-  "active",
-  "inactive",
-]);
+const ALLOWED_NOZZLE_STATUS =
+  new Set([
+    "active",
+    "inactive",
+  ]);
 
-const ALLOWED_FUEL_TYPES = new Set([
-  "petrol",
-  "diesel",
-]);
+const ALLOWED_FUEL_TYPES =
+  new Set([
+    "petrol",
+    "diesel",
+  ]);
 
-/*
-   Shift order is important when editing readings.
-
-   morning -> evening -> night
-
-   Example:
-   Morning 1000 -> 1200
-   Evening 1200 -> 1400
-
-   We cannot change Morning 1200 -> 1100 after
-   Evening has already been recorded.
-*/
 const SHIFT_ORDER = {
   morning: 1,
   evening: 2,
@@ -63,14 +55,18 @@ const SHIFT_ORDER = {
 };
 
 const MAX_HISTORY_LIMIT = 100;
+
 const DEFAULT_HISTORY_LIMIT = 50;
 
 const MAX_NOZZLE_NUMBER_LENGTH = 50;
+
 const MAX_NAME_LENGTH = 100;
+
 const MAX_NOTE_LENGTH = 500;
 
+
 /* =====================================================
-   AUTH / ID HELPERS
+   AUTH HELPERS
 ===================================================== */
 
 const getPumpId = (req) =>
@@ -83,15 +79,9 @@ const getUserId = (req) =>
   req.user?.userId ||
   null;
 
+
 /* =====================================================
-   DATE HELPERS
-
-   IMPORTANT:
-   Server may run in UTC on Render.
-   Business operates in India.
-
-   Therefore dates are always generated using
-   Asia/Kolkata instead of server local timezone.
+   INDIA DATE / TIME
 ===================================================== */
 
 const getIndiaDate = () => {
@@ -106,23 +96,71 @@ const getIndiaDate = () => {
   ).format(new Date());
 };
 
+
+const getIndiaTime = () => {
+  return new Intl.DateTimeFormat(
+    "en-GB",
+    {
+      timeZone: "Asia/Kolkata",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }
+  ).format(new Date());
+};
+
+
+const getIndiaTimeFromDate = (
+  value
+) => {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat(
+    "en-GB",
+    {
+      timeZone: "Asia/Kolkata",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }
+  ).format(date);
+};
+
+
 /* =====================================================
    OBJECT ID
 ===================================================== */
 
-const normalizeObjectId = (value) => {
+const normalizeObjectId = (
+  value
+) => {
   if (!value) {
     return null;
   }
 
   if (
-    value instanceof mongoose.Types.ObjectId
+    value instanceof
+    mongoose.Types.ObjectId
   ) {
     return value;
   }
 
   if (
-    mongoose.Types.ObjectId.isValid(value)
+    mongoose.Types.ObjectId.isValid(
+      value
+    )
   ) {
     return new mongoose.Types.ObjectId(
       value
@@ -132,12 +170,17 @@ const normalizeObjectId = (value) => {
   return null;
 };
 
+
 /* =====================================================
    STRING HELPERS
 ===================================================== */
 
-const normalizeFuelType = (value) => {
-  const fuel = String(value || "")
+const normalizeFuelType = (
+  value
+) => {
+  const fuel = String(
+    value || ""
+  )
     .trim()
     .toLowerCase();
 
@@ -155,28 +198,40 @@ const normalizeFuelType = (value) => {
   return fuel;
 };
 
-const normalizeShiftName = (value) =>
+
+const normalizeShiftName = (
+  value
+) =>
   String(value || "")
     .trim()
     .replace(/\s+/g, " ")
     .toLowerCase()
     .slice(0, 50);
 
-const normalizePaymentMethod = (value) =>
+
+const normalizePaymentMethod = (
+  value
+) =>
   String(value || "cash")
     .trim()
     .toLowerCase();
 
-const normalizeStatus = (value) =>
+
+const normalizeStatus = (
+  value
+) =>
   String(value || "")
     .trim()
     .toLowerCase();
+
 
 /* =====================================================
    NUMBER HELPERS
 ===================================================== */
 
-const toNonNegativeNumber = (value) => {
+const toNonNegativeNumber = (
+  value
+) => {
   const number = Number(value);
 
   if (
@@ -189,14 +244,22 @@ const toNonNegativeNumber = (value) => {
   return number;
 };
 
-const roundToTwo = (value) =>
-  Number(Number(value).toFixed(2));
+
+const roundToTwo = (
+  value
+) =>
+  Number(
+    Number(value).toFixed(2)
+  );
+
 
 /* =====================================================
    DATE VALIDATION
 ===================================================== */
 
-const isValidDateString = (value) => {
+const isValidDateString = (
+  value
+) => {
   if (
     typeof value !== "string" ||
     !/^\d{4}-\d{2}-\d{2}$/.test(
@@ -222,13 +285,31 @@ const isValidDateString = (value) => {
 
   return (
     date.getFullYear() === year &&
-    date.getMonth() === month - 1 &&
+    date.getMonth() ===
+      month - 1 &&
     date.getDate() === day
   );
 };
 
+
 /* =====================================================
-   VALIDATION HELPERS
+   TIME VALIDATION
+===================================================== */
+
+const isValidTimeString = (
+  value
+) => {
+  return (
+    typeof value === "string" &&
+    /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(
+      value
+    )
+  );
+};
+
+
+/* =====================================================
+   PAYMENT VALIDATION
 ===================================================== */
 
 const isValidPaymentMethod = (
@@ -238,23 +319,306 @@ const isValidPaymentMethod = (
     value
   );
 
+
+const normalizePayments = (
+  payments
+) => {
+  if (!Array.isArray(payments)) {
+    return [];
+  }
+
+  return payments
+    .map((item) => {
+      const method =
+        normalizePaymentMethod(
+          item?.method
+        );
+
+      const amount =
+        Number(item?.amount);
+
+      return {
+        method,
+        amount:
+          Number.isFinite(amount)
+            ? roundToTwo(amount)
+            : NaN,
+      };
+    })
+    .filter(
+      (item) =>
+        item.method ||
+        Number.isFinite(
+          item.amount
+        )
+    );
+};
+
+
+/* =====================================================
+   PAYMENT BREAKDOWN VALIDATION
+
+   Example:
+
+   Total = 50000
+
+   UPI    = 20000
+   CARD   = 15000
+   CASH   = 10000
+   CREDIT = 5000
+
+   Total = 50000
+===================================================== */
+
+const validatePaymentBreakdown = ({
+  payments,
+  totalAmount,
+}) => {
+  if (
+    !Array.isArray(payments)
+  ) {
+    return {
+      valid: false,
+      code:
+        "INVALID_PAYMENT_BREAKDOWN",
+      message:
+        "Payment breakdown must be an array.",
+    };
+  }
+
+  if (
+    payments.length === 0
+  ) {
+    return {
+      valid: false,
+      code:
+        "INVALID_PAYMENT_BREAKDOWN",
+      message:
+        "At least one payment method is required.",
+    };
+  }
+
+  if (
+    payments.length > 4
+  ) {
+    return {
+      valid: false,
+      code:
+        "INVALID_PAYMENT_BREAKDOWN",
+      message:
+        "Maximum 4 payment methods are allowed.",
+    };
+  }
+
+  const normalized =
+    normalizePayments(
+      payments
+    );
+
+  if (
+    normalized.length !==
+    payments.length
+  ) {
+    return {
+      valid: false,
+      code:
+        "INVALID_PAYMENT_BREAKDOWN",
+      message:
+        "Invalid payment breakdown.",
+    };
+  }
+
+  const methods = new Set();
+
+  for (
+    const payment of normalized
+  ) {
+    if (
+      !isValidPaymentMethod(
+        payment.method
+      )
+    ) {
+      return {
+        valid: false,
+        code:
+          "INVALID_PAYMENT_METHOD",
+        message:
+          `Invalid payment method: ${payment.method}`,
+      };
+    }
+
+    if (
+      methods.has(
+        payment.method
+      )
+    ) {
+      return {
+        valid: false,
+        code:
+          "DUPLICATE_PAYMENT_METHOD",
+        message:
+          `Payment method "${payment.method}" cannot be added more than once.`,
+      };
+    }
+
+    methods.add(
+      payment.method
+    );
+
+    if (
+      !Number.isFinite(
+        payment.amount
+      ) ||
+      payment.amount <= 0
+    ) {
+      return {
+        valid: false,
+        code:
+          "INVALID_PAYMENT_AMOUNT",
+        message:
+          "Each payment amount must be greater than zero.",
+      };
+    }
+  }
+
+  const paymentTotal =
+    roundToTwo(
+      normalized.reduce(
+        (
+          sum,
+          payment
+        ) =>
+          sum +
+          payment.amount,
+        0
+      )
+    );
+
+  const expectedTotal =
+    roundToTwo(
+      Number(totalAmount)
+    );
+
+  const paymentTotalPaise =
+    Math.round(
+      paymentTotal * 100
+    );
+
+  const expectedTotalPaise =
+    Math.round(
+      expectedTotal * 100
+    );
+
+  if (
+    paymentTotalPaise !==
+    expectedTotalPaise
+  ) {
+    return {
+      valid: false,
+      code:
+        "PAYMENT_TOTAL_MISMATCH",
+      message:
+        `Payment total ₹${paymentTotal.toFixed(
+          2
+        )} does not match sale total ₹${expectedTotal.toFixed(
+          2
+        )}.`,
+      paymentTotal,
+      expectedTotal,
+    };
+  }
+
+  return {
+    valid: true,
+
+    payments:
+      normalized.map(
+        (payment) => ({
+          method:
+            payment.method,
+
+          amount:
+            payment.amount,
+        })
+      ),
+
+    paymentTotal,
+  };
+};
+
+
+/* =====================================================
+   OLD RECORD PAYMENT FALLBACK
+
+   Old records may only have:
+
+   paymentMethod: "cash"
+
+   New records have:
+
+   payments: [
+     {
+       method: "cash",
+       amount: 1000
+     }
+   ]
+===================================================== */
+
+const getExistingPaymentBreakdown = (
+  document
+) => {
+  if (
+    Array.isArray(
+      document?.payments
+    ) &&
+    document.payments.length > 0
+  ) {
+    return normalizePayments(
+      document.payments
+    );
+  }
+
+  const method =
+    normalizePaymentMethod(
+      document?.paymentMethod
+    );
+
+  const amount =
+    roundToTwo(
+      Number(
+        document?.totalAmount || 0
+      )
+    );
+
+  if (
+    isValidPaymentMethod(
+      method
+    ) &&
+    amount > 0
+  ) {
+    return [
+      {
+        method,
+        amount,
+      },
+    ];
+  }
+
+  return [];
+};
+
+
 /* =====================================================
    SHIFT HELPERS
 ===================================================== */
 
-/*
-   Returns shifts which logically occur AFTER
-   the supplied shift on the same date.
-
-   morning -> ["evening", "night"]
-   evening -> ["night"]
-   night -> []
-*/
 const getLaterShifts = (
   shiftName
 ) => {
   const currentOrder =
-    SHIFT_ORDER[shiftName] || 0;
+    SHIFT_ORDER[
+      shiftName
+    ] || 0;
 
   return Object.entries(
     SHIFT_ORDER
@@ -268,382 +632,118 @@ const getLaterShifts = (
     );
 };
 
-/*
-   Determines whether a reading is later than
-   another reading in business order.
-
-   Date first, then shift order.
-*/
-const isReadingLater = (
-  candidate,
-  base
-) => {
-  if (
-    String(
-      candidate.readingDate
-    ) >
-    String(
-      base.readingDate
-    )
-  ) {
-    return true;
-  }
-
-  if (
-    String(
-      candidate.readingDate
-    ) <
-    String(
-      base.readingDate
-    )
-  ) {
-    return false;
-  }
-
-  const candidateOrder =
-    SHIFT_ORDER[
-      normalizeShiftName(
-        candidate.shiftName
-      )
-    ] || 0;
-
-  const baseOrder =
-    SHIFT_ORDER[
-      normalizeShiftName(
-        base.shiftName
-      )
-    ] || 0;
-
-  return (
-    candidateOrder >
-    baseOrder
-  );
-};
 
 /* =====================================================
    GET NOZZLES
 ===================================================== */
 
-export const getNozzles = async (
-  req,
-  res
-) => {
-  try {
-    const pumpId = getPumpId(req);
+export const getNozzles =
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const pumpId =
+        getPumpId(req);
 
-    if (!pumpId) {
-      return res.status(403).json({
+      if (!pumpId) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Pump information not found",
+        });
+      }
+
+      const nozzles =
+        await Nozzle.find({
+          pumpId,
+        })
+          .sort({
+            createdAt: 1,
+          })
+          .lean();
+
+      const normalizedNozzles =
+        nozzles.map(
+          (nozzle) => ({
+            ...nozzle,
+
+            fuelType:
+              normalizeFuelType(
+                nozzle.fuelType
+              ),
+
+            currentReading:
+              Number(
+                nozzle.currentReading ??
+                  0
+              ),
+
+            status:
+              normalizeStatus(
+                nozzle.status
+              ),
+          })
+        );
+
+      return res.status(200).json({
+        success: true,
+
+        count:
+          normalizedNozzles.length,
+
+        nozzles:
+          normalizedNozzles,
+      });
+    } catch (error) {
+      console.error(
+        "GET NOZZLES ERROR:",
+        error
+      );
+
+      return res.status(500).json({
         success: false,
         message:
-          "Pump information not found",
-        nozzles: [],
+          "Unable to load nozzles",
       });
     }
+  };
 
-    const nozzles =
-      await Nozzle.find({
-        pumpId,
-      })
-        .sort({
-          createdAt: 1,
-          _id: 1,
-        })
-        .lean();
-
-    const normalizedNozzles =
-      nozzles.map((nozzle) => ({
-        ...nozzle,
-
-        fuelType:
-          normalizeFuelType(
-            nozzle.fuelType
-          ),
-
-        currentReading:
-          Number(
-            nozzle.currentReading ?? 0
-          ),
-
-        status:
-          normalizeStatus(
-            nozzle.status ||
-              "active"
-          ),
-      }));
-
-    return res.status(200).json({
-      success: true,
-
-      count:
-        normalizedNozzles.length,
-
-      nozzles:
-        normalizedNozzles,
-    });
-  } catch (error) {
-    console.error(
-      "GET NOZZLES ERROR:",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-      message:
-        "Unable to load nozzles",
-      nozzles: [],
-    });
-  }
-};
 
 /* =====================================================
    ADD NOZZLE
 ===================================================== */
 
-export const addNozzle = async (
-  req,
-  res
-) => {
-  try {
-    const pumpId = getPumpId(req);
+export const addNozzle =
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const pumpId =
+        getPumpId(req);
 
-    if (!pumpId) {
-      return res.status(403).json({
-        success: false,
-        message:
-          "Pump information not found",
-      });
-    }
+      if (!pumpId) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Pump information not found",
+        });
+      }
 
-    const {
-      nozzleNumber,
-      name = "",
-      machineName = "",
-      fuelType,
-      currentReading,
-      openingReading,
-      status,
-    } = req.body || {};
+      const {
+        nozzleNumber,
+        name = "",
+        machineName = "",
+        fuelType,
+        currentReading,
+        openingReading,
+        status,
+      } = req.body || {};
 
-    const cleanNumber = String(
-      nozzleNumber || ""
-    ).trim();
-
-    if (!cleanNumber) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Nozzle number is required",
-      });
-    }
-
-    if (
-      cleanNumber.length >
-      MAX_NOZZLE_NUMBER_LENGTH
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Nozzle number is too long",
-      });
-    }
-
-    const fuel =
-      normalizeFuelType(fuelType);
-
-    if (
-      !ALLOWED_FUEL_TYPES.has(
-        fuel
-      )
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Fuel type must be Petrol or Diesel",
-      });
-    }
-
-    const initialReading =
-      toNonNegativeNumber(
-        currentReading ??
-          openingReading ??
-          0
-      );
-
-    if (
-      initialReading === null
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Opening reading is invalid",
-      });
-    }
-
-    const cleanName = String(
-      name ||
-        machineName ||
-        ""
-    ).trim();
-
-    if (
-      cleanName.length >
-      MAX_NAME_LENGTH
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Nozzle name is too long",
-      });
-    }
-
-    const normalizedStatus =
-      status === undefined
-        ? "active"
-        : normalizeStatus(status);
-
-    if (
-      !ALLOWED_NOZZLE_STATUS.has(
-        normalizedStatus
-      )
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Invalid nozzle status",
-      });
-    }
-
-    const nozzle =
-      await Nozzle.create({
-        pumpId,
-
-        nozzleNumber:
-          cleanNumber,
-
-        name:
-          cleanName,
-
-        fuelType:
-          fuel,
-
-        currentReading:
-          initialReading,
-
-        status:
-          normalizedStatus,
-      });
-
-    return res.status(201).json({
-      success: true,
-
-      message:
-        "Nozzle added successfully",
-
-      nozzle,
-    });
-  } catch (error) {
-    console.error(
-      "ADD NOZZLE ERROR:",
-      error
-    );
-
-    if (
-      error?.code === 11000
-    ) {
-      return res.status(409).json({
-        success: false,
-        message:
-          "Nozzle number already exists for this pump",
-      });
-    }
-
-    if (
-      error?.name ===
-      "ValidationError"
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Invalid nozzle data",
-      });
-    }
-
-    return res.status(500).json({
-      success: false,
-      message:
-        "Unable to add nozzle",
-    });
-  }
-};
-
-/* =====================================================
-   UPDATE NOZZLE
-===================================================== */
-
-export const updateNozzle = async (
-  req,
-  res
-) => {
-  try {
-    const pumpId =
-      getPumpId(req);
-
-    const { id } =
-      req.params;
-
-    if (!pumpId) {
-      return res.status(403).json({
-        success: false,
-        message:
-          "Pump information not found",
-      });
-    }
-
-    if (
-      !mongoose.Types.ObjectId.isValid(
-        id
-      )
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Invalid nozzle ID",
-      });
-    }
-
-    const nozzle =
-      await Nozzle.findOne({
-        _id: id,
-        pumpId,
-      });
-
-    if (!nozzle) {
-      return res.status(404).json({
-        success: false,
-        message:
-          "Nozzle not found",
-      });
-    }
-
-    const {
-      nozzleNumber,
-      name,
-      machineName,
-      fuelType,
-      active,
-      status,
-    } = req.body || {};
-
-    /* =================================================
-       NOZZLE NUMBER
-    ================================================= */
-
-    if (
-      nozzleNumber !== undefined
-    ) {
       const cleanNumber =
         String(
-          nozzleNumber
+          nozzleNumber || ""
         ).trim();
 
       if (!cleanNumber) {
@@ -665,146 +765,62 @@ export const updateNozzle = async (
         });
       }
 
-      if (
-        cleanNumber !==
-        nozzle.nozzleNumber
-      ) {
-        const duplicate =
-          await Nozzle.findOne({
-            pumpId,
-
-            nozzleNumber:
-              cleanNumber,
-
-            _id: {
-              $ne:
-                nozzle._id,
-            },
-          }).lean();
-
-        if (duplicate) {
-          return res.status(409).json({
-            success: false,
-            message:
-              "Nozzle number already exists for this pump",
-          });
-        }
-      }
-
-      nozzle.nozzleNumber =
-        cleanNumber;
-    }
-
-    /* =================================================
-       NAME
-    ================================================= */
-
-    if (
-      name !== undefined ||
-      machineName !== undefined
-    ) {
-      const value =
-        name !== undefined
-          ? name
-          : machineName;
-
-      const cleanName =
-        String(
-          value || ""
-        ).trim();
-
-      if (
-        cleanName.length >
-        MAX_NAME_LENGTH
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Nozzle name is too long",
-        });
-      }
-
-      nozzle.name =
-        cleanName;
-    }
-
-    /* =================================================
-       FUEL TYPE
-
-       Fuel type cannot be changed after
-       historical readings exist.
-    ================================================= */
-
-    if (
-      fuelType !== undefined
-    ) {
-      const normalizedFuel =
+      const fuel =
         normalizeFuelType(
           fuelType
         );
 
       if (
         !ALLOWED_FUEL_TYPES.has(
-          normalizedFuel
+          fuel
         )
       ) {
         return res.status(400).json({
           success: false,
           message:
-            "Invalid fuel type",
+            "Fuel type must be Petrol or Diesel",
         });
       }
 
+      const initialReading =
+        Number(
+          currentReading ??
+            openingReading ??
+            0
+        );
+
       if (
-        normalizedFuel !==
-        normalizeFuelType(
-          nozzle.fuelType
-        )
+        !Number.isFinite(
+          initialReading
+        ) ||
+        initialReading < 0
       ) {
-        const historicalReading =
-          await NozzleReading.exists({
-            pumpId,
-
-            nozzleId:
-              nozzle._id,
-          });
-
-        if (historicalReading) {
-          return res.status(409).json({
-            success: false,
-            message:
-              "Fuel type cannot be changed because this nozzle has historical readings.",
-          });
-        }
-
-        nozzle.fuelType =
-          normalizedFuel;
+        return res.status(400).json({
+          success: false,
+          message:
+            "Opening reading is invalid",
+        });
       }
-    }
 
-    /* =================================================
-       STATUS
-    ================================================= */
+      const cleanName =
+        String(
+          name ||
+            machineName ||
+            ""
+        )
+          .trim()
+          .slice(
+            0,
+            MAX_NAME_LENGTH
+          );
 
-    let normalizedStatus =
-      status !== undefined
-        ? normalizeStatus(status)
-        : null;
-
-    if (
-      normalizedStatus === null &&
-      active !== undefined
-    ) {
-      normalizedStatus =
-        active === true ||
-        active === "true"
+      const normalizedStatus =
+        status === undefined
           ? "active"
-          : "inactive";
-    }
+          : normalizeStatus(
+              status
+            );
 
-    if (
-      normalizedStatus !== null
-    ) {
       if (
         !ALLOWED_NOZZLE_STATUS.has(
           normalizedStatus
@@ -817,59 +833,334 @@ export const updateNozzle = async (
         });
       }
 
-      nozzle.status =
-        normalizedStatus;
-    }
+      const duplicate =
+        await Nozzle.findOne({
+          pumpId,
+          nozzleNumber:
+            cleanNumber,
+        });
 
-    await nozzle.save();
+      if (duplicate) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "Nozzle number already exists",
+        });
+      }
 
-    return res.status(200).json({
-      success: true,
+      const nozzle =
+        await Nozzle.create({
+          pumpId,
 
-      message:
-        "Nozzle updated successfully",
+          nozzleNumber:
+            cleanNumber,
 
-      nozzle,
-    });
-  } catch (error) {
-    console.error(
-      "UPDATE NOZZLE ERROR:",
-      error
-    );
+          name:
+            cleanName,
 
-    if (
-      error?.code === 11000
-    ) {
-      return res.status(409).json({
+          fuelType:
+            fuel,
+
+          currentReading:
+            initialReading,
+
+          status:
+            normalizedStatus,
+        });
+
+      return res.status(201).json({
+        success: true,
+
+        message:
+          "Nozzle added successfully",
+
+        nozzle,
+      });
+    } catch (error) {
+      console.error(
+        "ADD NOZZLE ERROR:",
+        error
+      );
+
+      if (
+        error?.code === 11000
+      ) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "Nozzle number already exists",
+        });
+      }
+
+      return res.status(500).json({
         success: false,
         message:
-          "Nozzle number already exists for this pump",
+          "Unable to add nozzle",
       });
     }
+  };
 
-    return res.status(500).json({
-      success: false,
-      message:
-        "Unable to update nozzle",
-    });
-  }
-};
+
+/* =====================================================
+   UPDATE NOZZLE
+===================================================== */
+
+export const updateNozzle =
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const pumpId =
+        getPumpId(req);
+
+      const { id } =
+        req.params;
+
+      if (!pumpId) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Pump information not found",
+        });
+      }
+
+      if (
+        !mongoose.Types.ObjectId.isValid(
+          id
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid nozzle ID",
+        });
+      }
+
+      const nozzle =
+        await Nozzle.findOne({
+          _id: id,
+          pumpId,
+        });
+
+      if (!nozzle) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Nozzle not found",
+        });
+      }
+
+      const {
+        nozzleNumber,
+        name,
+        machineName,
+        fuelType,
+        active,
+        status,
+      } = req.body || {};
+
+      if (
+        nozzleNumber !== undefined
+      ) {
+        const cleanNumber =
+          String(
+            nozzleNumber
+          ).trim();
+
+        if (!cleanNumber) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Nozzle number is required",
+          });
+        }
+
+        if (
+          cleanNumber.length >
+          MAX_NOZZLE_NUMBER_LENGTH
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Nozzle number is too long",
+          });
+        }
+
+        const duplicate =
+          await Nozzle.findOne({
+            pumpId,
+            nozzleNumber:
+              cleanNumber,
+
+            _id: {
+              $ne:
+                nozzle._id,
+            },
+          });
+
+        if (duplicate) {
+          return res.status(409).json({
+            success: false,
+            message:
+              "Nozzle number already exists",
+          });
+        }
+
+        nozzle.nozzleNumber =
+          cleanNumber;
+      }
+
+      if (
+        name !== undefined ||
+        machineName !== undefined
+      ) {
+        const value =
+          name !== undefined
+            ? name
+            : machineName;
+
+        nozzle.name =
+          String(
+            value || ""
+          )
+            .trim()
+            .slice(
+              0,
+              MAX_NAME_LENGTH
+            );
+      }
+
+      if (
+        fuelType !== undefined
+      ) {
+        const normalizedFuel =
+          normalizeFuelType(
+            fuelType
+          );
+
+        if (
+          !ALLOWED_FUEL_TYPES.has(
+            normalizedFuel
+          )
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Invalid fuel type",
+          });
+        }
+
+        if (
+          normalizedFuel !==
+          normalizeFuelType(
+            nozzle.fuelType
+          )
+        ) {
+          const historicalReading =
+            await NozzleReading.exists({
+              pumpId,
+
+              nozzleId:
+                nozzle._id,
+            });
+
+          if (historicalReading) {
+            return res.status(409).json({
+              success: false,
+              message:
+                "Fuel type cannot be changed because this nozzle has historical readings.",
+            });
+          }
+
+          nozzle.fuelType =
+            normalizedFuel;
+        }
+      }
+
+      let normalizedStatus =
+        null;
+
+      if (
+        status !== undefined
+      ) {
+        normalizedStatus =
+          normalizeStatus(
+            status
+          );
+      } else if (
+        active !== undefined
+      ) {
+        normalizedStatus =
+          active === true ||
+          active === "true"
+            ? "active"
+            : "inactive";
+      }
+
+      if (
+        normalizedStatus !== null
+      ) {
+        if (
+          !ALLOWED_NOZZLE_STATUS.has(
+            normalizedStatus
+          )
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Invalid nozzle status",
+          });
+        }
+
+        nozzle.status =
+          normalizedStatus;
+      }
+
+      await nozzle.save();
+
+      return res.status(200).json({
+        success: true,
+
+        message:
+          "Nozzle updated successfully",
+
+        nozzle,
+      });
+    } catch (error) {
+      console.error(
+        "UPDATE NOZZLE ERROR:",
+        error
+      );
+
+      if (
+        error?.code === 11000
+      ) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "Nozzle number already exists",
+        });
+      }
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Unable to update nozzle",
+      });
+    }
+  };
+
 
 /* =====================================================
    DELETE NOZZLE
-
-   IMPORTANT:
-   Nozzle with historical readings/sales is not
-   physically deleted.
-
-   This preserves historical accounting data.
-
-   Nozzle without history is moved to recovery
-   before permanent removal.
 ===================================================== */
 
 export const deleteNozzle =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     let session = null;
 
     try {
@@ -913,7 +1204,8 @@ export const deleteNozzle =
       session =
         await mongoose.startSession();
 
-      let deletedNozzle = null;
+      let deletedNozzle =
+        null;
 
       await session.withTransaction(
         async () => {
@@ -950,7 +1242,7 @@ export const deleteNozzle =
           if (hasReadings) {
             const error =
               new Error(
-                "NOZZLE_HAS_READINGS"
+                "Nozzle has readings"
               );
 
             error.code =
@@ -972,7 +1264,7 @@ export const deleteNozzle =
           if (hasSales) {
             const error =
               new Error(
-                "NOZZLE_HAS_SALES"
+                "Nozzle has sales"
               );
 
             error.code =
@@ -1033,7 +1325,7 @@ export const deleteNozzle =
         success: true,
 
         message:
-          "Nozzle deleted successfully and moved to Deleted Data for recovery.",
+          "Nozzle deleted successfully and can be recovered from Deleted Data.",
 
         nozzle:
           deletedNozzle,
@@ -1062,7 +1354,7 @@ export const deleteNozzle =
         return res.status(409).json({
           success: false,
           message:
-            "This nozzle has historical readings and cannot be deleted. Set it to inactive instead so historical records remain safe.",
+            "This nozzle has historical readings and cannot be deleted. Set it to inactive instead.",
         });
       }
 
@@ -1073,7 +1365,7 @@ export const deleteNozzle =
         return res.status(409).json({
           success: false,
           message:
-            "This nozzle has historical sales and cannot be deleted. Set it to inactive instead so historical records remain safe.",
+            "This nozzle has historical sales and cannot be deleted. Set it to inactive instead.",
         });
       }
 
@@ -1089,36 +1381,32 @@ export const deleteNozzle =
     }
   };
 
+
 /* =====================================================
-   ADD FINAL SHIFT NOZZLE READING
+   ADD NOZZLE READING
 
-   BUSINESS FLOW:
+   ONE READING
+   ONE SALE
+   MULTIPLE PAYMENT METHODS
 
-   Staff selects:
-   - Nozzle
-   - Shift
-   - Staff
-   - Final reading
-   - Payment method
-   - Date
+   Example:
 
-   Backend calculates:
-   openingReading
-   litresSold
-   fuel price
-   total amount
+   ₹50,000
 
-   Then atomically:
-   1. Creates nozzle reading
-   2. Creates sale
-   3. Deducts fuel stock
-   4. Updates nozzle current reading
+   UPI     ₹20,000
+   Card    ₹15,000
+   Cash    ₹10,000
+   Credit   ₹5,000
 
-   All operations are inside one MongoDB transaction.
+   One NozzleReading document
+   One Sale document
 ===================================================== */
 
 export const addNozzleReading =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     let session = null;
 
     try {
@@ -1154,14 +1442,16 @@ export const addNozzleReading =
         reading,
         readingDate,
         date,
+        readingTime,
         paymentMethod =
           "cash",
+        payments,
         note = "",
       } = req.body || {};
 
-      /* =================================================
+      /* =====================================
          NOZZLE
-      ================================================= */
+      ===================================== */
 
       const finalNozzleId =
         normalizeObjectId(
@@ -1176,9 +1466,9 @@ export const addNozzleReading =
         });
       }
 
-      /* =================================================
+      /* =====================================
          SHIFT
-      ================================================= */
+      ===================================== */
 
       const finalShift =
         normalizeShiftName(
@@ -1186,6 +1476,7 @@ export const addNozzleReading =
         );
 
       if (
+        !finalShift ||
         !ALLOWED_SHIFTS.has(
           finalShift
         )
@@ -1197,13 +1488,14 @@ export const addNozzleReading =
         });
       }
 
-      /* =================================================
+      /* =====================================
          STAFF
-      ================================================= */
+      ===================================== */
 
       const finalStaffId =
         normalizeObjectId(
-          staffId || employeeId
+          staffId ||
+            employeeId
         );
 
       if (!finalStaffId) {
@@ -1214,30 +1506,9 @@ export const addNozzleReading =
         });
       }
 
-      /* =================================================
-         PAYMENT METHOD
-      ================================================= */
-
-      const payment =
-        normalizePaymentMethod(
-          paymentMethod
-        );
-
-      if (
-        !isValidPaymentMethod(
-          payment
-        )
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Invalid payment method",
-        });
-      }
-
-      /* =================================================
+      /* =====================================
          DATE
-      ================================================= */
+      ===================================== */
 
       const finalDate =
         String(
@@ -1258,9 +1529,66 @@ export const addNozzleReading =
         });
       }
 
-      /* =================================================
+      /* =====================================
+         TIME
+      ===================================== */
+
+      const finalTime =
+        String(
+          readingTime ||
+            getIndiaTime()
+        ).trim();
+
+      if (
+        !isValidTimeString(
+          finalTime
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid reading time. Use HH:mm format.",
+        });
+      }
+
+      /* =====================================
+         PAYMENT METHOD
+      ===================================== */
+
+      const payment =
+        normalizePaymentMethod(
+          paymentMethod
+        );
+
+      if (
+        !isValidPaymentMethod(
+          payment
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid payment method",
+        });
+      }
+
+      /* =====================================
+         NOTE
+      ===================================== */
+
+      const cleanNote =
+        String(
+          note || ""
+        )
+          .trim()
+          .slice(
+            0,
+            MAX_NOTE_LENGTH
+          );
+
+      /* =====================================
          CLOSING READING
-      ================================================= */
+      ===================================== */
 
       const finalReading =
         toNonNegativeNumber(
@@ -1278,29 +1606,9 @@ export const addNozzleReading =
         });
       }
 
-      /* =================================================
-         NOTE
-      ================================================= */
-
-      const cleanNote =
-        String(
-          note || ""
-        ).trim();
-
-      if (
-        cleanNote.length >
-        MAX_NOTE_LENGTH
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Note cannot exceed 500 characters",
-        });
-      }
-
-      /* =================================================
-         START TRANSACTION
-      ================================================= */
+      /* =====================================
+         TRANSACTION
+      ===================================== */
 
       session =
         await mongoose.startSession();
@@ -1310,9 +1618,38 @@ export const addNozzleReading =
 
       await session.withTransaction(
         async () => {
-          /* =================================================
-             VERIFY STAFF
-          ================================================= */
+          /* =================================
+             NOZZLE
+          ================================= */
+
+          const nozzle =
+            await Nozzle.findOne({
+              _id:
+                finalNozzleId,
+
+              pumpId,
+
+              status:
+                "active",
+            }).session(
+              session
+            );
+
+          if (!nozzle) {
+            const error =
+              new Error(
+                "Nozzle not found or inactive"
+              );
+
+            error.code =
+              "NOZZLE_NOT_FOUND_OR_INACTIVE";
+
+            throw error;
+          }
+
+          /* =================================
+             STAFF
+          ================================= */
 
           const staff =
             await User.findOne({
@@ -1321,7 +1658,8 @@ export const addNozzleReading =
 
               pumpId,
 
-              active: true,
+              active:
+                true,
 
               role: {
                 $in:
@@ -1349,6 +1687,10 @@ export const addNozzleReading =
             throw error;
           }
 
+          /* =================================
+             STAFF NAME
+          ================================= */
+
           const staffName =
             String(
               staff.name ||
@@ -1361,34 +1703,9 @@ export const addNozzleReading =
                 MAX_NAME_LENGTH
               );
 
-          /* =================================================
-             VERIFY NOZZLE
-          ================================================= */
-
-          const nozzle =
-            await Nozzle.findOne({
-              _id:
-                finalNozzleId,
-
-              pumpId,
-
-              status:
-                "active",
-            }).session(
-              session
-            );
-
-          if (!nozzle) {
-            const error =
-              new Error(
-                "Nozzle not found or inactive"
-              );
-
-            error.code =
-              "NOZZLE_NOT_FOUND_OR_INACTIVE";
-
-            throw error;
-          }
+          /* =================================
+             FUEL TYPE
+          ================================= */
 
           const fuelType =
             normalizeFuelType(
@@ -1411,9 +1728,9 @@ export const addNozzleReading =
             throw error;
           }
 
-          /* =================================================
+          /* =================================
              OPENING READING
-          ================================================= */
+          ================================= */
 
           const opening =
             toNonNegativeNumber(
@@ -1434,13 +1751,17 @@ export const addNozzleReading =
             throw error;
           }
 
+          /* =================================
+             CLOSING > OPENING
+          ================================= */
+
           if (
             finalReading <=
             opening
           ) {
             const error =
               new Error(
-                "Closing reading must be greater than opening reading"
+                "Closing reading must be greater than opening"
               );
 
             error.code =
@@ -1451,6 +1772,10 @@ export const addNozzleReading =
 
             throw error;
           }
+
+          /* =================================
+             LITRES
+          ================================= */
 
           const litresSold =
             roundToTwo(
@@ -1472,25 +1797,23 @@ export const addNozzleReading =
             throw error;
           }
 
-          /* =================================================
-             DUPLICATE SHIFT PROTECTION
-          ================================================= */
+          /* =================================
+             DUPLICATE SHIFT
+          ================================= */
 
           const existingReading =
-            await NozzleReading.findOne(
-              {
-                pumpId,
+            await NozzleReading.findOne({
+              pumpId,
 
-                nozzleId:
-                  nozzle._id,
+              nozzleId:
+                nozzle._id,
 
-                readingDate:
-                  finalDate,
+              readingDate:
+                finalDate,
 
-                shiftName:
-                  finalShift,
-              }
-            ).session(
+              shiftName:
+                finalShift,
+            }).session(
               session
             );
 
@@ -1506,9 +1829,9 @@ export const addNozzleReading =
             throw error;
           }
 
-          /* =================================================
+          /* =================================
              FUEL PRICE
-          ================================================= */
+          ================================= */
 
           const priceRecord =
             await FuelPrice.findOne({
@@ -1537,7 +1860,8 @@ export const addNozzleReading =
             );
 
           if (
-            pricePerLitre === null ||
+            pricePerLitre ===
+              null ||
             pricePerLitre <= 0
           ) {
             const error =
@@ -1551,9 +1875,9 @@ export const addNozzleReading =
             throw error;
           }
 
-          /* =================================================
-             TOTAL AMOUNT
-          ================================================= */
+          /* =================================
+             TOTAL
+          ================================= */
 
           const totalAmount =
             roundToTwo(
@@ -1561,9 +1885,62 @@ export const addNozzleReading =
                 pricePerLitre
             );
 
-          /* =================================================
+          /* =================================
+             PAYMENT BREAKDOWN
+          ================================= */
+
+          let finalPayments =
+            [];
+
+          if (
+            Array.isArray(
+              payments
+            ) &&
+            payments.length > 0
+          ) {
+            const validation =
+              validatePaymentBreakdown({
+                payments,
+                totalAmount,
+              });
+
+            if (
+              !validation.valid
+            ) {
+              const error =
+                new Error(
+                  validation.message
+                );
+
+              error.code =
+                validation.code;
+
+              error.paymentTotal =
+                validation.paymentTotal;
+
+              error.expectedTotal =
+                validation.expectedTotal;
+
+              throw error;
+            }
+
+            finalPayments =
+              validation.payments;
+          } else {
+            finalPayments = [
+              {
+                method:
+                  payment,
+
+                amount:
+                  totalAmount,
+              },
+            ];
+          }
+
+          /* =================================
              FUEL STOCK
-          ================================================= */
+          ================================= */
 
           const stock =
             await FuelStock.findOne({
@@ -1592,7 +1969,8 @@ export const addNozzleReading =
             );
 
           if (
-            stockBefore === null
+            stockBefore ===
+            null
           ) {
             const error =
               new Error(
@@ -1626,9 +2004,9 @@ export const addNozzleReading =
             throw error;
           }
 
-          /* =================================================
-             CREATE NOZZLE READING
-          ================================================= */
+          /* =================================
+             CREATE READING
+          ================================= */
 
           const createdReadings =
             await NozzleReading.create(
@@ -1664,8 +2042,15 @@ export const addNozzleReading =
                   readingDate:
                     finalDate,
 
+                  readingTime:
+                    finalTime,
+
                   paymentMethod:
-                    payment,
+                    finalPayments[0]
+                      .method,
+
+                  payments:
+                    finalPayments,
 
                   note:
                     cleanNote,
@@ -1682,9 +2067,9 @@ export const addNozzleReading =
           const newReading =
             createdReadings[0];
 
-          /* =================================================
-             CREATE SALE
-          ================================================= */
+          /* =================================
+             CREATE ONE SALE
+          ================================= */
 
           const createdSales =
             await Sale.create(
@@ -1708,7 +2093,11 @@ export const addNozzleReading =
                   totalAmount,
 
                   paymentMethod:
-                    payment,
+                    finalPayments[0]
+                      .method,
+
+                  payments:
+                    finalPayments,
 
                   saleDate:
                     finalDate,
@@ -1731,9 +2120,9 @@ export const addNozzleReading =
           const newSale =
             createdSales[0];
 
-          /* =================================================
-             UPDATE FUEL STOCK
-          ================================================= */
+          /* =================================
+             UPDATE STOCK
+          ================================= */
 
           const updatedStock =
             await FuelStock.findOneAndUpdate(
@@ -1782,9 +2171,9 @@ export const addNozzleReading =
             throw error;
           }
 
-          /* =================================================
+          /* =================================
              UPDATE NOZZLE
-          ================================================= */
+          ================================= */
 
           const updatedNozzle =
             await Nozzle.findOneAndUpdate(
@@ -1847,6 +2236,12 @@ export const addNozzleReading =
             pricePerLitre,
 
             totalAmount,
+
+            finalPayments,
+
+            finalDate,
+
+            finalTime,
           };
         }
       );
@@ -1895,6 +2290,11 @@ export const addNozzleReading =
             transactionResult
               .newReading
               .readingDate,
+
+          time:
+            transactionResult
+              .newReading
+              .readingTime,
         },
 
         openingReading:
@@ -1922,6 +2322,26 @@ export const addNozzleReading =
         totalAmount:
           transactionResult
             .totalAmount,
+
+        paymentMethod:
+          transactionResult
+            .newReading
+            .paymentMethod,
+
+        payments:
+          transactionResult
+            .newReading
+            .payments,
+
+        readingDate:
+          transactionResult
+            .newReading
+            .readingDate,
+
+        readingTime:
+          transactionResult
+            .newReading
+            .readingTime,
 
         nozzle: {
           currentReading:
@@ -2004,8 +2424,6 @@ export const addNozzleReading =
           success: false,
           message:
             `Closing reading must be greater than ${error.opening}`,
-          openingReading:
-            error.opening,
         });
       }
 
@@ -2109,6 +2527,72 @@ export const addNozzleReading =
       }
 
       if (
+        error?.code ===
+        "INVALID_PAYMENT_METHOD"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            error.message ||
+            "Invalid payment method",
+        });
+      }
+
+      if (
+        error?.code ===
+        "INVALID_PAYMENT_BREAKDOWN"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            error.message ||
+            "Invalid payment breakdown",
+        });
+      }
+
+      if (
+        error?.code ===
+        "DUPLICATE_PAYMENT_METHOD"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            error.message ||
+            "A payment method cannot be used more than once.",
+        });
+      }
+
+      if (
+        error?.code ===
+        "INVALID_PAYMENT_AMOUNT"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            error.message ||
+            "Invalid payment amount",
+        });
+      }
+
+      if (
+        error?.code ===
+        "PAYMENT_TOTAL_MISMATCH"
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            error.message,
+
+          paymentTotal:
+            error.paymentTotal,
+
+          expectedTotal:
+            error.expectedTotal,
+        });
+      }
+
+      if (
         error?.code === 11000
       ) {
         return res.status(409).json({
@@ -2187,42 +2671,25 @@ export const addNozzleReading =
     }
   };
 
+
 /* =====================================================
    UPDATE EXISTING NOZZLE SHIFT READING
 
-   PUT /api/nozzles/readings/:id
-   PATCH /api/nozzles/readings/:id
+   Supports:
 
-   IMPORTANT ACCOUNTING RULES:
+   - Closing reading change
+   - Staff change
+   - Payment method change
+   - Split payment change
+   - Reading time change
+   - Note change
 
-   Existing reading:
+   Accounting:
 
-   Opening = 1000
-   Old closing = 1200
-   Old litres = 200
+   Old litres -> New litres
+   Difference is adjusted in stock.
 
-   If changed to:
-
-   New closing = 1250
-   New litres = 250
-
-   Delta = +50
-
-   Therefore:
-   FuelStock.currentStock -> -50
-   FuelStock.totalSold    -> +50
-
-   If changed from 1200 -> 1150:
-
-   Delta = -50
-
-   Therefore:
-   FuelStock.currentStock -> +50
-   FuelStock.totalSold    -> -50
-
-   The linked Sale is also updated.
-
-   IMPORTANT:
+   Important:
 
    nozzleId
    readingDate
@@ -2231,17 +2698,14 @@ export const addNozzleReading =
    fuelType
    pricePerLitre
 
-   are intentionally immutable.
-
-   A closing reading can only be changed when this
-   is the latest reading for the nozzle.
-
-   Staff/payment/note can still be edited even if
-   a later reading exists.
+   remain immutable.
 ===================================================== */
 
 export const updateNozzleReading =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     let session = null;
 
     try {
@@ -2253,10 +2717,6 @@ export const updateNozzleReading =
 
       const { id } =
         req.params;
-
-      /* =================================================
-         BASIC AUTH VALIDATION
-      ================================================= */
 
       if (!pumpId) {
         return res.status(403).json({
@@ -2286,27 +2746,16 @@ export const updateNozzleReading =
         });
       }
 
-      /* =================================================
-         REQUEST DATA
-      ================================================= */
-
       const {
         closingReading,
         reading,
         staffId,
         employeeId,
         paymentMethod,
+        payments,
+        readingTime,
         note,
       } = req.body || {};
-
-      /*
-         Closing reading is optional.
-
-         If not supplied, existing closing reading
-         remains unchanged.
-
-         This allows metadata-only editing.
-      */
 
       const hasClosingReading =
         closingReading !==
@@ -2317,7 +2766,9 @@ export const updateNozzleReading =
       let finalReading =
         null;
 
-      if (hasClosingReading) {
+      if (
+        hasClosingReading
+      ) {
         finalReading =
           toNonNegativeNumber(
             closingReading ??
@@ -2335,11 +2786,8 @@ export const updateNozzleReading =
         }
       }
 
-      /* =================================================
-         PAYMENT METHOD
-      ================================================= */
-
-      let finalPayment = null;
+      let finalPayment =
+        null;
 
       if (
         paymentMethod !==
@@ -2363,11 +2811,33 @@ export const updateNozzleReading =
         }
       }
 
-      /* =================================================
-         NOTE
-      ================================================= */
+      let finalTime =
+        null;
 
-      let finalNote = null;
+      if (
+        readingTime !==
+        undefined
+      ) {
+        finalTime =
+          String(
+            readingTime
+          ).trim();
+
+        if (
+          !isValidTimeString(
+            finalTime
+          )
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Invalid reading time. Use HH:mm format.",
+          });
+        }
+      }
+
+      let finalNote =
+        null;
 
       if (
         note !== undefined
@@ -2375,25 +2845,16 @@ export const updateNozzleReading =
         finalNote =
           String(
             note || ""
-          ).trim();
-
-        if (
-          finalNote.length >
-          MAX_NOTE_LENGTH
-        ) {
-          return res.status(400).json({
-            success: false,
-            message:
-              "Note cannot exceed 500 characters",
-          });
-        }
+          )
+            .trim()
+            .slice(
+              0,
+              MAX_NOTE_LENGTH
+            );
       }
 
-      /* =================================================
-         STAFF
-      ================================================= */
-
-      let finalStaffId = null;
+      let finalStaffId =
+        null;
 
       if (
         staffId !== undefined ||
@@ -2405,7 +2866,9 @@ export const updateNozzleReading =
               employeeId
           );
 
-        if (!finalStaffId) {
+        if (
+          !finalStaffId
+        ) {
           return res.status(400).json({
             success: false,
             message:
@@ -2413,10 +2876,6 @@ export const updateNozzleReading =
           });
         }
       }
-
-      /* =================================================
-         TRANSACTION
-      ================================================= */
 
       session =
         await mongoose.startSession();
@@ -2426,11 +2885,9 @@ export const updateNozzleReading =
 
       await session.withTransaction(
         async () => {
-          /* =================================================
-             FIND EXISTING READING
-
-             Strict pump isolation.
-          ================================================= */
+          /* =================================
+             EXISTING READING
+          ================================= */
 
           const existingReading =
             await NozzleReading.findOne({
@@ -2452,9 +2909,9 @@ export const updateNozzleReading =
             throw error;
           }
 
-          /* =================================================
-             EXISTING VALUES
-          ================================================= */
+          /* =================================
+             OLD NUMBERS
+          ================================= */
 
           const oldClosing =
             toNonNegativeNumber(
@@ -2487,19 +2944,10 @@ export const updateNozzleReading =
             throw error;
           }
 
-          /*
-             If closing reading was not supplied,
-             preserve old closing.
-          */
-
           const newClosing =
             hasClosingReading
               ? finalReading
               : oldClosing;
-
-          /* =================================================
-             CLOSING MUST BE GREATER THAN OPENING
-          ================================================= */
 
           if (
             newClosing <=
@@ -2539,26 +2987,22 @@ export const updateNozzleReading =
             throw error;
           }
 
-          /* =================================================
-             CHECK FOR LATER READING
-
-             We only block changing the closing reading.
-
-             Metadata-only changes are safe.
-          ================================================= */
-
-          let laterReading =
-            null;
+          /* =================================
+             LATER READING CHECK
+          ================================= */
 
           if (
             newClosing !==
             oldClosing
           ) {
+            const currentShift =
+              normalizeShiftName(
+                existingReading.shiftName
+              );
+
             const laterShifts =
               getLaterShifts(
-                normalizeShiftName(
-                  existingReading.shiftName
-                )
+                currentShift
               );
 
             const laterConditions = [
@@ -2585,7 +3029,7 @@ export const updateNozzleReading =
               });
             }
 
-            laterReading =
+            const laterReading =
               await NozzleReading.findOne({
                 pumpId,
 
@@ -2609,7 +3053,9 @@ export const updateNozzleReading =
                   session
                 );
 
-            if (laterReading) {
+            if (
+              laterReading
+            ) {
               const error =
                 new Error(
                   "A later reading already exists for this nozzle"
@@ -2625,17 +3071,9 @@ export const updateNozzleReading =
             }
           }
 
-          /* =================================================
-             VERIFY NOZZLE
-
-             Nozzle is fetched without requiring active status.
-
-             Historical reading may belong to a nozzle that
-             has since been made inactive.
-
-             This is safe because update is only allowed when
-             there is no later reading.
-          ================================================= */
+          /* =================================
+             NOZZLE
+          ================================= */
 
           const nozzle =
             await Nozzle.findOne({
@@ -2681,15 +3119,9 @@ export const updateNozzleReading =
             throw error;
           }
 
-          /* =================================================
-             CONCURRENCY CHECK
-
-             If closing is being changed, this reading must
-             still represent the nozzle's current reading.
-
-             If only metadata is changing, this check is not
-             necessary.
-          ================================================= */
+          /* =================================
+             NOZZLE CONCURRENCY
+          ================================= */
 
           if (
             newClosing !==
@@ -2718,13 +3150,12 @@ export const updateNozzleReading =
             }
           }
 
-          /* =================================================
-             VERIFY STAFF
+          /* =================================
+             STAFF
+          ================================= */
 
-             If staff is not supplied, retain existing staff.
-          ================================================= */
-
-          let staff = null;
+          let staff =
+            null;
 
           if (
             finalStaffId
@@ -2736,7 +3167,8 @@ export const updateNozzleReading =
 
                 pumpId,
 
-                active: true,
+                active:
+                  true,
 
                 role: {
                   $in:
@@ -2765,10 +3197,6 @@ export const updateNozzleReading =
             }
           }
 
-          /* =================================================
-             STAFF DISPLAY NAME
-          ================================================= */
-
           const updatedStaffId =
             staff?._id ||
             existingReading.staffId;
@@ -2795,38 +3223,9 @@ export const updateNozzleReading =
                     MAX_NAME_LENGTH
                   );
 
-          /* =================================================
-             PAYMENT / NOTE
-          ================================================= */
-
-          const updatedPayment =
-            finalPayment !==
-            null
-              ? finalPayment
-              : normalizePaymentMethod(
-                  existingReading.paymentMethod
-                );
-
-          const updatedNote =
-            finalNote !==
-            null
-              ? finalNote
-              : String(
-                  existingReading.note ||
-                    ""
-                ).trim();
-
-          /* =================================================
+          /* =================================
              PRICE
-
-             IMPORTANT:
-
-             We keep the ORIGINAL historical price.
-
-             We do NOT use the current FuelPrice because
-             editing an old sale must not change its historical
-             selling price.
-          ================================================= */
+          ================================= */
 
           const pricePerLitre =
             toNonNegativeNumber(
@@ -2848,9 +3247,9 @@ export const updateNozzleReading =
             throw error;
           }
 
-          /* =================================================
+          /* =================================
              NEW TOTAL
-          ================================================= */
+          ================================= */
 
           const newTotalAmount =
             roundToTwo(
@@ -2858,31 +3257,158 @@ export const updateNozzleReading =
                 pricePerLitre
             );
 
-          /* =================================================
-             ACCOUNTING DELTA
+          /* =================================
+             PAYMENT BREAKDOWN
+          ================================= */
 
-             Example:
+          const oldPayments =
+            getExistingPaymentBreakdown(
+              existingReading
+            );
 
-             old = 200L
-             new = 250L
+          let updatedPayments =
+            [];
 
-             delta = +50L
+          if (
+            Array.isArray(
+              payments
+            )
+          ) {
+            const validation =
+              validatePaymentBreakdown({
+                payments,
+                totalAmount:
+                  newTotalAmount,
+              });
 
-             Stock:
-             currentStock -50
-             totalSold +50
+            if (
+              !validation.valid
+            ) {
+              const error =
+                new Error(
+                  validation.message
+                );
 
-             If:
+              error.code =
+                validation.code;
 
-             old = 250L
-             new = 200L
+              error.paymentTotal =
+                validation.paymentTotal;
 
-             delta = -50L
+              error.expectedTotal =
+                validation.expectedTotal;
 
-             Stock:
-             currentStock +50
-             totalSold -50
-          ================================================= */
+              throw error;
+            }
+
+            updatedPayments =
+              validation.payments;
+          } else if (
+            finalPayment !==
+            null
+          ) {
+            updatedPayments = [
+              {
+                method:
+                  finalPayment,
+
+                amount:
+                  newTotalAmount,
+              },
+            ];
+          } else if (
+            oldPayments.length >
+            1
+          ) {
+            /*
+             * Existing split payment.
+             *
+             * If amount changes, old
+             * payment values are no
+             * longer valid.
+             *
+             * Require frontend to send
+             * the updated breakdown.
+             */
+
+            if (
+              newTotalAmount !==
+              Number(
+                existingReading.totalAmount ||
+                  0
+              )
+            ) {
+              const error =
+                new Error(
+                  "Payment breakdown is required when changing the sale total of a split-payment reading."
+                );
+
+              error.code =
+                "PAYMENT_BREAKDOWN_REQUIRED";
+
+              throw error;
+            }
+
+            updatedPayments =
+              oldPayments;
+          } else {
+            const oldMethod =
+              normalizePaymentMethod(
+                existingReading.paymentMethod
+              );
+
+            updatedPayments = [
+              {
+                method:
+                  isValidPaymentMethod(
+                    oldMethod
+                  )
+                    ? oldMethod
+                    : "cash",
+
+                amount:
+                  newTotalAmount,
+              },
+            ];
+          }
+
+          const updatedPayment =
+            updatedPayments[0]
+              ?.method ||
+            "cash";
+
+          /* =================================
+             NOTE
+          ================================= */
+
+          const updatedNote =
+            finalNote !==
+            null
+              ? finalNote
+              : String(
+                  existingReading.note ||
+                    ""
+                ).trim();
+
+          /* =================================
+             READING TIME
+          ================================= */
+
+          const updatedReadingTime =
+            finalTime !==
+            null
+              ? finalTime
+              : isValidTimeString(
+                  existingReading.readingTime
+                )
+                ? existingReading.readingTime
+                : getIndiaTimeFromDate(
+                    existingReading.createdAt
+                  );
+
+          /* =================================
+             STOCK
+          ================================= */
 
           const delta =
             roundToTwo(
@@ -2911,27 +3437,13 @@ export const updateNozzleReading =
             throw error;
           }
 
-          /* =================================================
-             UPDATE FUEL STOCK
-
-             Only required if litres changed.
-          ================================================= */
+          /* =================================
+             MORE LITRES
+          ================================= */
 
           if (
             delta > 0
           ) {
-            /*
-               More litres were sold.
-
-               Example:
-               200 -> 250
-
-               Need 50 extra litres from stock.
-            */
-
-            const increaseSold =
-              delta;
-
             const stockBefore =
               toNonNegativeNumber(
                 updatedStock.currentStock
@@ -2953,7 +3465,7 @@ export const updateNozzleReading =
 
             if (
               stockBefore <
-              increaseSold
+              delta
             ) {
               const error =
                 new Error(
@@ -2967,7 +3479,7 @@ export const updateNozzleReading =
                 stockBefore;
 
               error.required =
-                increaseSold;
+                delta;
 
               throw error;
             }
@@ -2984,16 +3496,16 @@ export const updateNozzleReading =
 
                   currentStock: {
                     $gte:
-                      increaseSold,
+                      delta,
                   },
                 },
                 {
                   $inc: {
                     currentStock:
-                      -increaseSold,
+                      -delta,
 
                     totalSold:
-                      increaseSold,
+                      delta,
                   },
                 },
                 {
@@ -3020,20 +3532,15 @@ export const updateNozzleReading =
 
               throw error;
             }
-          } else if (
+          }
+
+          /* =================================
+             FEWER LITRES
+          ================================= */
+
+          else if (
             delta < 0
           ) {
-            /*
-               Fewer litres were sold.
-
-               Example:
-               250 -> 200
-
-               Return 50 litres back to stock.
-
-               totalSold must decrease by 50.
-            */
-
             const returnedLitres =
               Math.abs(delta);
 
@@ -3043,7 +3550,8 @@ export const updateNozzleReading =
               );
 
             if (
-              totalSoldBefore === null
+              totalSoldBefore ===
+              null
             ) {
               const error =
                 new Error(
@@ -3127,13 +3635,9 @@ export const updateNozzleReading =
             }
           }
 
-          /* =================================================
-             UPDATE NOZZLE READING
-
-             Only closing reading changes.
-
-             Opening reading remains immutable.
-          ================================================= */
+          /* =================================
+             UPDATE NOZZLE
+          ================================= */
 
           let updatedNozzle =
             nozzle;
@@ -3185,9 +3689,9 @@ export const updateNozzleReading =
             }
           }
 
-          /* =================================================
-             UPDATE NOZZLE READING DOCUMENT
-          ================================================= */
+          /* =================================
+             UPDATE READING
+          ================================= */
 
           const updatedReading =
             await NozzleReading.findOneAndUpdate(
@@ -3197,11 +3701,6 @@ export const updateNozzleReading =
 
                 pumpId,
 
-                /*
-                   Optimistic concurrency check.
-                   This ensures another update did not
-                   change the old closing value.
-                */
                 closingReading:
                   oldClosing,
               },
@@ -3224,6 +3723,12 @@ export const updateNozzleReading =
 
                   paymentMethod:
                     updatedPayment,
+
+                  payments:
+                    updatedPayments,
+
+                  readingTime:
+                    updatedReadingTime,
 
                   note:
                     updatedNote,
@@ -3254,12 +3759,9 @@ export const updateNozzleReading =
             throw error;
           }
 
-          /* =================================================
-             UPDATE LINKED SALE
-
-             Every nozzle reading created by addNozzleReading
-             has a corresponding Sale.
-          ================================================= */
+          /* =================================
+             LINKED SALE
+          ================================= */
 
           const sale =
             await Sale.findOne({
@@ -3308,14 +3810,11 @@ export const updateNozzleReading =
                   paymentMethod:
                     updatedPayment,
 
+                  payments:
+                    updatedPayments,
+
                   note:
                     updatedNote,
-
-                  /*
-                     Keep original saleDate.
-
-                     Reading date is immutable.
-                  */
 
                   fuelType:
                     fuelType,
@@ -3349,10 +3848,6 @@ export const updateNozzleReading =
             throw error;
           }
 
-          /* =================================================
-             TRANSACTION RESULT
-          ================================================= */
-
           transactionResult = {
             updatedReading,
 
@@ -3376,14 +3871,12 @@ export const updateNozzleReading =
 
             newTotalAmount,
 
+            updatedPayments,
+
             staff,
           };
         }
       );
-
-      /* =================================================
-         VERIFY TRANSACTION
-      ================================================= */
 
       if (
         !transactionResult?.updatedReading
@@ -3394,10 +3887,6 @@ export const updateNozzleReading =
             "Reading update completed without a saved reading. Please refresh and try again.",
         });
       }
-
-      /* =================================================
-         SUCCESS RESPONSE
-      ================================================= */
 
       return res.status(200).json({
         success: true,
@@ -3442,6 +3931,21 @@ export const updateNozzleReading =
           transactionResult
             .updatedReading
             .paymentMethod,
+
+        payments:
+          transactionResult
+            .updatedReading
+            .payments,
+
+        readingDate:
+          transactionResult
+            .updatedReading
+            .readingDate,
+
+        readingTime:
+          transactionResult
+            .updatedReading
+            .readingTime,
 
         staffId:
           transactionResult
@@ -3510,10 +4014,6 @@ export const updateNozzleReading =
         }
       );
 
-      /* =================================================
-         READING NOT FOUND
-      ================================================= */
-
       if (
         error?.code ===
         "READING_NOT_FOUND"
@@ -3524,10 +4024,6 @@ export const updateNozzleReading =
             "Nozzle reading not found",
         });
       }
-
-      /* =================================================
-         LATER READING EXISTS
-      ================================================= */
 
       if (
         error?.code ===
@@ -3559,10 +4055,6 @@ export const updateNozzleReading =
         });
       }
 
-      /* =================================================
-         INVALID EXISTING READING
-      ================================================= */
-
       if (
         error?.code ===
         "INVALID_EXISTING_READING"
@@ -3573,10 +4065,6 @@ export const updateNozzleReading =
             "This saved reading contains invalid accounting data and cannot be safely edited.",
         });
       }
-
-      /* =================================================
-         INVALID UPDATED CLOSING
-      ================================================= */
 
       if (
         error?.code ===
@@ -3593,10 +4081,6 @@ export const updateNozzleReading =
         });
       }
 
-      /* =================================================
-         INVALID LITRES
-      ================================================= */
-
       if (
         error?.code ===
         "INVALID_UPDATED_LITRES"
@@ -3607,10 +4091,6 @@ export const updateNozzleReading =
             "Invalid litres sold",
         });
       }
-
-      /* =================================================
-         NOZZLE
-      ================================================= */
 
       if (
         error?.code ===
@@ -3623,10 +4103,6 @@ export const updateNozzleReading =
         });
       }
 
-      /* =================================================
-         FUEL TYPE
-      ================================================= */
-
       if (
         error?.code ===
         "INVALID_FUEL_TYPE"
@@ -3637,10 +4113,6 @@ export const updateNozzleReading =
             "Invalid fuel type",
         });
       }
-
-      /* =================================================
-         STAFF
-      ================================================= */
 
       if (
         error?.code ===
@@ -3653,10 +4125,6 @@ export const updateNozzleReading =
         });
       }
 
-      /* =================================================
-         NOZZLE CONCURRENCY
-      ================================================= */
-
       if (
         error?.code ===
         "NOZZLE_READING_UPDATE_CONFLICT"
@@ -3668,10 +4136,6 @@ export const updateNozzleReading =
         });
       }
 
-      /* =================================================
-         FUEL PRICE
-      ================================================= */
-
       if (
         error?.code ===
         "INVALID_HISTORICAL_PRICE"
@@ -3682,10 +4146,6 @@ export const updateNozzleReading =
             "The historical fuel price for this reading is invalid. The reading cannot be safely recalculated.",
         });
       }
-
-      /* =================================================
-         FUEL STOCK
-      ================================================= */
 
       if (
         error?.code ===
@@ -3756,10 +4216,6 @@ export const updateNozzleReading =
         });
       }
 
-      /* =================================================
-         SALE
-      ================================================= */
-
       if (
         error?.code ===
         "SALE_NOT_FOUND"
@@ -3784,10 +4240,6 @@ export const updateNozzleReading =
         });
       }
 
-      /* =================================================
-         READING UPDATE CONFLICT
-      ================================================= */
-
       if (
         error?.code ===
         "READING_UPDATE_CONFLICT"
@@ -3800,9 +4252,54 @@ export const updateNozzleReading =
         });
       }
 
-      /* =================================================
-         MONGOOSE VALIDATION
-      ================================================= */
+      if (
+        error?.code ===
+        "PAYMENT_TOTAL_MISMATCH"
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            error.message,
+
+          paymentTotal:
+            error.paymentTotal,
+
+          expectedTotal:
+            error.expectedTotal,
+        });
+      }
+
+      if (
+        error?.code ===
+        "PAYMENT_BREAKDOWN_REQUIRED"
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            "Because this is a split-payment sale and the total changed, the updated payment breakdown is required.",
+        });
+      }
+
+      if (
+        error?.code ===
+        "INVALID_PAYMENT_BREAKDOWN" ||
+        error?.code ===
+        "INVALID_PAYMENT_METHOD" ||
+        error?.code ===
+        "DUPLICATE_PAYMENT_METHOD" ||
+        error?.code ===
+        "INVALID_PAYMENT_AMOUNT"
+      ) {
+        return res.status(400).json({
+          success: false,
+
+          message:
+            error.message ||
+            "Invalid payment breakdown",
+        });
+      }
 
       if (
         error?.name ===
@@ -3830,10 +4327,6 @@ export const updateNozzleReading =
         });
       }
 
-      /* =================================================
-         MONGOOSE CAST ERROR
-      ================================================= */
-
       if (
         error?.name ===
         "CastError"
@@ -3846,10 +4339,6 @@ export const updateNozzleReading =
         });
       }
 
-      /* =================================================
-         DUPLICATE KEY
-      ================================================= */
-
       if (
         error?.code === 11000
       ) {
@@ -3860,10 +4349,6 @@ export const updateNozzleReading =
             "A conflicting nozzle reading already exists.",
         });
       }
-
-      /* =================================================
-         TRANSACTION ERROR
-      ================================================= */
 
       if (
         error?.errorLabels?.includes(
@@ -3880,10 +4365,6 @@ export const updateNozzleReading =
             "The transaction could not be safely completed. Please refresh and try again.",
         });
       }
-
-      /* =================================================
-         GENERIC ERROR
-      ================================================= */
 
       return res.status(500).json({
         success: false,
@@ -3902,30 +4383,34 @@ export const updateNozzleReading =
     }
   };
 
+
 /* =====================================================
    GET NOZZLE READING HISTORY
-
-   GET /api/nozzles/readings
 
    Supports:
 
    ?page=1
-   &limit=50
-   &date=2026-09-25
-   &readingDate=2026-09-25
-   &shift=morning
-   &shiftName=morning
-   &staffId=...
-   &employeeId=...
-   &nozzleId=...
-   &paymentMethod=cash
+   ?limit=50
+   ?date=2026-10-08
+   ?readingDate=2026-10-08
+   ?shift=morning
+   ?shiftName=morning
+   ?staffId=...
+   ?employeeId=...
+   ?nozzleId=...
+   ?paymentMethod=cash
 
-   Strict pump isolation.
-   Server-side pagination.
+   Split-payment filtering checks:
+
+   paymentMethod
+   payments.method
 ===================================================== */
 
 export const getNozzleReadings =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const pumpId =
         getPumpId(req);
@@ -3933,6 +4418,7 @@ export const getNozzleReadings =
       if (!pumpId) {
         return res.status(403).json({
           success: false,
+
           message:
             "Pump information not found",
 
@@ -3942,9 +4428,9 @@ export const getNozzleReadings =
         });
       }
 
-      /* =================================================
+      /* =====================================
          PAGINATION
-      ================================================= */
+      ===================================== */
 
       const parsedPage =
         Number.parseInt(
@@ -3981,9 +4467,9 @@ export const getNozzleReadings =
         (page - 1) *
         limit;
 
-      /* =================================================
-         QUERY
-      ================================================= */
+      /* =====================================
+         FILTERS
+      ===================================== */
 
       const {
         date,
@@ -4000,9 +4486,9 @@ export const getNozzleReadings =
         pumpId,
       };
 
-      /* =================================================
-         DATE FILTER
-      ================================================= */
+      /* =====================================
+         DATE
+      ===================================== */
 
       const requestedDate =
         date !== undefined
@@ -4037,9 +4523,9 @@ export const getNozzleReadings =
           cleanDate;
       }
 
-      /* =================================================
-         SHIFT FILTER
-      ================================================= */
+      /* =====================================
+         SHIFT
+      ===================================== */
 
       const requestedShift =
         shift !== undefined
@@ -4074,9 +4560,9 @@ export const getNozzleReadings =
           cleanShift;
       }
 
-      /* =================================================
-         STAFF FILTER
-      ================================================= */
+      /* =====================================
+         STAFF
+      ===================================== */
 
       const requestedStaff =
         staffId !== undefined
@@ -4095,7 +4581,9 @@ export const getNozzleReadings =
             requestedStaff
           );
 
-        if (!normalizedStaffId) {
+        if (
+          !normalizedStaffId
+        ) {
           return res.status(400).json({
             success: false,
             message:
@@ -4107,9 +4595,9 @@ export const getNozzleReadings =
           normalizedStaffId;
       }
 
-      /* =================================================
-         NOZZLE FILTER
-      ================================================= */
+      /* =====================================
+         NOZZLE
+      ===================================== */
 
       if (
         nozzleId !== undefined &&
@@ -4122,7 +4610,9 @@ export const getNozzleReadings =
             nozzleId
           );
 
-        if (!normalizedNozzleId) {
+        if (
+          !normalizedNozzleId
+        ) {
           return res.status(400).json({
             success: false,
             message:
@@ -4134,9 +4624,26 @@ export const getNozzleReadings =
           normalizedNozzleId;
       }
 
-      /* =================================================
+      /* =====================================
          PAYMENT FILTER
-      ================================================= */
+
+         OLD:
+
+         {
+           paymentMethod: "cash"
+         }
+
+         NEW:
+
+         {
+           payments: [
+             {
+               method: "cash",
+               amount: 1000
+             }
+           ]
+         }
+      ===================================== */
 
       if (
         paymentMethod !==
@@ -4162,13 +4669,22 @@ export const getNozzleReadings =
           });
         }
 
-        query.paymentMethod =
-          cleanPayment;
+        query.$or = [
+          {
+            paymentMethod:
+              cleanPayment,
+          },
+
+          {
+            "payments.method":
+              cleanPayment,
+          },
+        ];
       }
 
-      /* =================================================
+      /* =====================================
          DATABASE
-      ================================================= */
+      ===================================== */
 
       const [
         totalRecords,
@@ -4178,7 +4694,9 @@ export const getNozzleReadings =
           query
         ),
 
-        NozzleReading.find(query)
+        NozzleReading.find(
+          query
+        )
           .populate(
             "nozzleId",
             "nozzleNumber name fuelType status"
@@ -4193,7 +4711,9 @@ export const getNozzleReadings =
           )
           .sort({
             readingDate: -1,
+
             createdAt: -1,
+
             _id: -1,
           })
           .skip(skip)
@@ -4201,9 +4721,9 @@ export const getNozzleReadings =
           .lean(),
       ]);
 
-      /* =================================================
-         NORMALIZE RESPONSE
-      ================================================= */
+      /* =====================================
+         NORMALIZE
+      ===================================== */
 
       const normalizedReadings =
         readings.map(
@@ -4222,12 +4742,26 @@ export const getNozzleReadings =
                 ? reading.staffId
                 : null;
 
+            const existingPayments =
+              getExistingPaymentBreakdown(
+                reading
+              );
+
+            const normalizedTime =
+              isValidTimeString(
+                reading.readingTime
+              )
+                ? reading.readingTime
+                : getIndiaTimeFromDate(
+                    reading.createdAt
+                  );
+
             return {
               ...reading,
 
-              /* =========================================
+              /* =============================
                  IDS
-              ========================================= */
+              ============================= */
 
               nozzleId:
                 nozzle?._id ||
@@ -4239,9 +4773,9 @@ export const getNozzleReadings =
                 reading.staffId ||
                 null,
 
-              /* =========================================
-                 NOZZLE DISPLAY
-              ========================================= */
+              /* =============================
+                 NOZZLE
+              ============================= */
 
               nozzleNumber:
                 nozzle?.nozzleNumber ||
@@ -4257,9 +4791,9 @@ export const getNozzleReadings =
                     reading.fuelType
                 ),
 
-              /* =========================================
-                 STAFF DISPLAY
-              ========================================= */
+              /* =============================
+                 STAFF
+              ============================= */
 
               staffName:
                 reading.staffName ||
@@ -4267,18 +4801,18 @@ export const getNozzleReadings =
                 staff?.email ||
                 "Staff",
 
-              /* =========================================
+              /* =============================
                  FUEL
-              ========================================= */
+              ============================= */
 
               fuelType:
                 normalizeFuelType(
                   reading.fuelType
                 ),
 
-              /* =========================================
+              /* =============================
                  NUMBERS
-              ========================================= */
+              ============================= */
 
               litresSold:
                 Number(
@@ -4310,18 +4844,18 @@ export const getNozzleReadings =
                     0
                 ),
 
-              /* =========================================
+              /* =============================
                  SHIFT
-              ========================================= */
+              ============================= */
 
               shiftName:
                 normalizeShiftName(
                   reading.shiftName
                 ),
 
-              /* =========================================
+              /* =============================
                  DATE
-              ========================================= */
+              ============================= */
 
               readingDate:
                 reading.readingDate
@@ -4330,30 +4864,41 @@ export const getNozzleReadings =
                     )
                   : "",
 
-              /* =========================================
+              /* =============================
+                 TIME
+              ============================= */
+
+              readingTime:
+                normalizedTime,
+
+              /* =============================
                  PAYMENT
-              ========================================= */
+              ============================= */
 
               paymentMethod:
                 normalizePaymentMethod(
                   reading.paymentMethod
                 ),
 
-              /* =========================================
+              payments:
+                existingPayments,
+
+              /* =============================
                  NOTE
-              ========================================= */
+              ============================= */
 
               note:
                 String(
-                  reading.note || ""
+                  reading.note ||
+                    ""
                 ),
             };
           }
         );
 
-      /* =================================================
+      /* =====================================
          PAGINATION
-      ================================================= */
+      ===================================== */
 
       const totalPages =
         totalRecords === 0
@@ -4364,17 +4909,15 @@ export const getNozzleReadings =
             );
 
       const hasNextPage =
-        page < totalPages;
+        page <
+        totalPages;
 
       const hasPreviousPage =
         page > 1;
 
-      /* =================================================
-         FINAL RESPONSE
-
-         Keep all three aliases so existing frontend
-         implementations continue working.
-      ================================================= */
+      /* =====================================
+         RESPONSE
+      ===================================== */
 
       return res.status(200).json({
         success: true,
@@ -4393,37 +4936,50 @@ export const getNozzleReadings =
 
         pagination: {
           page,
+
           limit,
+
           totalRecords,
+
           totalPages,
+
           hasNextPage,
+
           hasPreviousPage,
         },
 
         filters: {
           date:
-            requestedDate || "",
+            requestedDate ||
+            "",
 
           readingDate:
-            requestedDate || "",
+            requestedDate ||
+            "",
 
           shift:
-            requestedShift || "",
+            requestedShift ||
+            "",
 
           shiftName:
-            requestedShift || "",
+            requestedShift ||
+            "",
 
           staffId:
-            requestedStaff || "",
+            requestedStaff ||
+            "",
 
           employeeId:
-            requestedStaff || "",
+            requestedStaff ||
+            "",
 
           nozzleId:
-            nozzleId || "",
+            nozzleId ||
+            "",
 
           paymentMethod:
-            paymentMethod || "",
+            paymentMethod ||
+            "",
         },
       });
     } catch (error) {
@@ -4439,7 +4995,9 @@ export const getNozzleReadings =
           "Unable to load reading history",
 
         readings: [],
+
         data: [],
+
         history: [],
       });
     }

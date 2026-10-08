@@ -9,16 +9,9 @@ import {
   Routes,
 } from "react-router-dom";
 
-import { Toaster } from "react-hot-toast";
-
-/* =====================================================
-   LAZY LOADING
-   ===================================================== */
-
-/*
- * Layouts and route components are loaded only when
- * they are actually required.
- */
+import {
+  Toaster,
+} from "react-hot-toast";
 
 /* =====================================================
    SUPER ADMIN
@@ -73,7 +66,7 @@ const ResetPassword = lazy(() =>
 );
 
 /* =====================================================
-   NORMAL APPLICATION LAYOUT
+   NORMAL APPLICATION
 ===================================================== */
 
 const DashboardLayout = lazy(() =>
@@ -239,85 +232,55 @@ const DeletedItems = lazy(() =>
 function PageLoader() {
   return (
     <div
-      style={{
-        minHeight: "100vh",
-        width: "100%",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "#f8fafc",
-      }}
+      className="min-h-screen w-full flex items-center justify-center bg-slate-50"
+      role="status"
+      aria-live="polite"
+      aria-label="Loading page"
     >
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: "12px",
-        }}
-      >
+      <div className="flex flex-col items-center gap-3">
         <div
-          style={{
-            width: "38px",
-            height: "38px",
-            border: "4px solid #e2e8f0",
-            borderTop: "4px solid #2563eb",
-            borderRadius: "50%",
-            animation: "shivshambho-spin 0.8s linear infinite",
-          }}
+          className="h-10 w-10 rounded-full border-4 border-slate-200 border-t-blue-600 animate-spin"
+          aria-hidden="true"
         />
 
-        <span
-          style={{
-            fontSize: "14px",
-            color: "#64748b",
-            fontWeight: 500,
-          }}
-        >
+        <span className="text-sm font-medium text-slate-500">
           Loading...
         </span>
       </div>
-
-      <style>
-        {`
-          @keyframes shivshambho-spin {
-            from {
-              transform: rotate(0deg);
-            }
-
-            to {
-              transform: rotate(360deg);
-            }
-          }
-        `}
-      </style>
     </div>
   );
 }
 
 /* =====================================================
-   APP
+   APPLICATION
 ===================================================== */
 
 function App() {
   return (
     <>
       {/* =================================================
-          GLOBAL TOAST
+          GLOBAL TOASTER
       ================================================= */}
 
       <Toaster
         position="top-right"
         toastOptions={{
           duration: 3000,
+          style: {
+            fontSize: "14px",
+          },
         }}
       />
 
       {/* =================================================
-          LAZY LOADED ROUTES
+          ROUTES
       ================================================= */}
 
-      <Suspense fallback={<PageLoader />}>
+      <Suspense
+        fallback={
+          <PageLoader />
+        }
+      >
         <Routes>
 
           {/* =================================================
@@ -326,22 +289,30 @@ function App() {
 
           <Route
             path="/login"
-            element={<Login />}
+            element={
+              <Login />
+            }
           />
 
           <Route
             path="/register"
-            element={<Register />}
+            element={
+              <Register />
+            }
           />
 
           <Route
             path="/forgot-password"
-            element={<ForgotPassword />}
+            element={
+              <ForgotPassword />
+            }
           />
 
           <Route
             path="/reset-password/:requestId"
-            element={<ResetPassword />}
+            element={
+              <ResetPassword />
+            }
           />
 
           {/* =================================================
@@ -380,7 +351,9 @@ function App() {
 
             <Route
               path="/dashboard"
-              element={<Dashboard />}
+              element={
+                <Dashboard />
+              }
             />
 
             {/* =================================================
@@ -389,7 +362,9 @@ function App() {
 
             <Route
               path="/fuel"
-              element={<FuelStock />}
+              element={
+                <FuelStock />
+              }
             />
 
             <Route
@@ -404,12 +379,16 @@ function App() {
 
             <Route
               path="/fuel/purchase"
-              element={<AddFuelPurchase />}
+              element={
+                <AddFuelPurchase />
+              }
             />
 
             <Route
               path="/fuel/purchases"
-              element={<FuelPurchaseHistory />}
+              element={
+                <FuelPurchaseHistory />
+              }
             />
 
             <Route
@@ -424,7 +403,9 @@ function App() {
 
             <Route
               path="/fuel/price"
-              element={<FuelPrice />}
+              element={
+                <FuelPrice />
+              }
             />
 
             {/* =================================================
@@ -433,7 +414,9 @@ function App() {
 
             <Route
               path="/nozzle"
-              element={<NozzleList />}
+              element={
+                <NozzleList />
+              }
             />
 
             <Route
@@ -448,12 +431,16 @@ function App() {
 
             <Route
               path="/nozzle/readings/add"
-              element={<AddReading />}
+              element={
+                <AddReading />
+              }
             />
 
             <Route
               path="/nozzle/readings"
-              element={<ReadingHistory />}
+              element={
+                <ReadingHistory />
+              }
             />
 
             <Route
@@ -502,7 +489,9 @@ function App() {
 
             <Route
               path="/sales"
-              element={<DailySales />}
+              element={
+                <DailySales />
+              }
             />
 
             <Route
@@ -517,12 +506,16 @@ function App() {
 
             <Route
               path="/sales/history"
-              element={<SalesHistory />}
+              element={
+                <SalesHistory />
+              }
             />
 
             <Route
               path="/sales/payments"
-              element={<PaymentSummary />}
+              element={
+                <PaymentSummary />
+              }
             />
 
             <Route
@@ -541,7 +534,9 @@ function App() {
 
             <Route
               path="/expenses"
-              element={<AddExpense />}
+              element={
+                <AddExpense />
+              }
             />
 
             <Route
@@ -556,7 +551,9 @@ function App() {
 
             <Route
               path="/expenses/history"
-              element={<ExpenseHistory />}
+              element={
+                <ExpenseHistory />
+              }
             />
 
             {/* =================================================
@@ -565,29 +562,37 @@ function App() {
 
             <Route
               path="/ledger"
-              element={<Customers />}
+              element={
+                <Customers />
+              }
             />
 
             <Route
               path="/ledger/customers"
-              element={<Customers />}
+              element={
+                <Customers />
+              }
             />
 
             <Route
               path="/ledger/customer/:customerId"
-              element={<CustomerLedger />}
+              element={
+                <CustomerLedger />
+              }
             />
-
-            {/* Backward-compatible route */}
 
             <Route
               path="/ledger/customer"
-              element={<CustomerLedger />}
+              element={
+                <CustomerLedger />
+              }
             />
 
             <Route
               path="/ledger/payment"
-              element={<Payments />}
+              element={
+                <Payments />
+              }
             />
 
             <Route
@@ -602,7 +607,9 @@ function App() {
 
             <Route
               path="/ledger/pending"
-              element={<PendingCredit />}
+              element={
+                <PendingCredit />
+              }
             />
 
             <Route
@@ -621,7 +628,9 @@ function App() {
 
             <Route
               path="/reports"
-              element={<DailyReport />}
+              element={
+                <DailyReport />
+              }
             />
 
             <Route
@@ -636,17 +645,23 @@ function App() {
 
             <Route
               path="/reports/weekly"
-              element={<WeeklyReport />}
+              element={
+                <WeeklyReport />
+              }
             />
 
             <Route
               path="/reports/monthly"
-              element={<MonthlyReport />}
+              element={
+                <MonthlyReport />
+              }
             />
 
             <Route
               path="/reports/custom"
-              element={<CustomReport />}
+              element={
+                <CustomReport />
+              }
             />
 
             {/* =================================================
@@ -655,7 +670,9 @@ function App() {
 
             <Route
               path="/settings"
-              element={<PumpSettings />}
+              element={
+                <PumpSettings />
+              }
             />
 
             <Route
@@ -670,17 +687,23 @@ function App() {
 
             <Route
               path="/settings/fuel"
-              element={<FuelSettings />}
+              element={
+                <FuelSettings />
+              }
             />
 
             <Route
               path="/settings/payment"
-              element={<PaymentSettings />}
+              element={
+                <PaymentSettings />
+              }
             />
 
             <Route
               path="/settings/users"
-              element={<UserManagement />}
+              element={
+                <UserManagement />
+              }
             />
 
             {/* =================================================
@@ -689,13 +712,15 @@ function App() {
 
             <Route
               path="/settings/recovery"
-              element={<DeletedItems />}
+              element={
+                <DeletedItems />
+              }
             />
 
           </Route>
 
           {/* =================================================
-              SUPER ADMIN APPLICATION
+              SUPER ADMIN
           ================================================= */}
 
           <Route
@@ -706,21 +731,19 @@ function App() {
             }
           >
 
-            {/* Super Admin Dashboard */}
-
             <Route
               path="/superadmin"
-              element={<SuperAdminDashboard />}
+              element={
+                <SuperAdminDashboard />
+              }
             />
-
-            {/* Registration Requests */}
 
             <Route
               path="/superadmin/requests"
-              element={<SuperAdminRequests />}
+              element={
+                <SuperAdminRequests />
+              }
             />
-
-            {/* Password Reset Requests */}
 
             <Route
               path="/superadmin/password-requests"
@@ -729,18 +752,18 @@ function App() {
               }
             />
 
-            {/* Clients */}
-
             <Route
               path="/superadmin/clients"
-              element={<Clients />}
+              element={
+                <Clients />
+              }
             />
-
-            {/* Users */}
 
             <Route
               path="/superadmin/users"
-              element={<SuperAdminUsers />}
+              element={
+                <SuperAdminUsers />
+              }
             />
 
           </Route>

@@ -4,13 +4,10 @@ import {
   getHealth,
 } from "../controllers/healthController.js";
 
-const router =
-  express.Router();
+const router = express.Router();
 
-/* =====================================================
-   HEALTH CHECK
-===================================================== */
-
+// Public health check.
+// Used by Render/deployment monitoring and uptime checks.
 router.get(
   "/",
   getHealth

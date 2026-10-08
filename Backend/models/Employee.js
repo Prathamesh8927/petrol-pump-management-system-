@@ -2,29 +2,44 @@ import mongoose from "mongoose";
 
 const employeeSchema = new mongoose.Schema(
   {
+    // ==================================================
+    // PUMP
+    // ==================================================
     pumpId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Pump",
       required: true,
-      index: true,
       immutable: true,
     },
 
+    // ==================================================
+    // USER ACCOUNT LINK
+    // ==================================================
+    /*
+     * Links an employee to their login account.
+     *
+     * One User can belong to only one Employee.
+     *
+     * sparse:true allows multiple employees to have
+     * userId = null when login is not enabled.
+     */
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,
-      index: true,
-      unique: true,
-      sparse: true,
     },
 
+    // ==================================================
+    // LOGIN
+    // ==================================================
     loginEnabled: {
       type: Boolean,
       default: false,
-      index: true,
     },
 
+    // ==================================================
+    // BASIC EMPLOYEE INFORMATION
+    // ==================================================
     name: {
       type: String,
       required: true,
@@ -46,14 +61,22 @@ const employeeSchema = new mongoose.Schema(
       maxlength: 100,
     },
 
+    // ==================================================
+    // SALARY
+    // ==================================================
     salary: {
       type: Number,
       required: true,
       min: 0,
     },
 
+    // ==================================================
+    // JOINING DATE
+    // ==================================================
     /*
-     * Stored as YYYY-MM-DD.
+     * Stored as:
+     *
+     * YYYY-MM-DD
      */
     joiningDate: {
       type: String,
@@ -61,15 +84,20 @@ const employeeSchema = new mongoose.Schema(
       match: /^\d{4}-\d{2}-\d{2}$/,
     },
 
+    // ==================================================
+    // STATUS
+    // ==================================================
     status: {
       type: String,
       enum: ["active", "inactive"],
       default: "active",
       lowercase: true,
       trim: true,
-      index: true,
     },
 
+    // ==================================================
+    // NOTE
+    // ==================================================
     note: {
       type: String,
       trim: true,
@@ -77,10 +105,9 @@ const employeeSchema = new mongoose.Schema(
       maxlength: 1000,
     },
 
-    /* =================================================
-       SHIFT DETAILS
-    ================================================= */
-
+    // ==================================================
+    // SHIFT DETAILS
+    // ==================================================
     shiftName: {
       type: String,
       trim: true,
@@ -89,8 +116,10 @@ const employeeSchema = new mongoose.Schema(
     },
 
     /*
-     * Stored as HH:mm.
-     * Example: 06:00
+     * Stored as HH:mm
+     *
+     * Example:
+     * 06:00
      */
     shiftStartTime: {
       type: String,
@@ -100,8 +129,10 @@ const employeeSchema = new mongoose.Schema(
     },
 
     /*
-     * Stored as HH:mm.
-     * Example: 14:00
+     * Stored as HH:mm
+     *
+     * Example:
+     * 14:00
      */
     shiftEndTime: {
       type: String,
@@ -120,29 +151,102 @@ const employeeSchema = new mongoose.Schema(
    INDEXES
 ===================================================== */
 
-employeeSchema.index({
-  pumpId: 1,
-  name: 1,
-});
-
-employeeSchema.index({
-  pumpId: 1,
-  status: 1,
-});
-
-employeeSchema.index({
-  pumpId: 1,
-  createdAt: -1,
-});
+/*
+ * 1. EMPLOYEE → USER RELATIONSHIP
+ *
+ * One User can be linked to only one Employee.
+ *
+ * sparse:true allows multiple employees without
+ * login accounts.
+ */
+employeeSchema.index(
+  {
+    userId: 1,
+  },
+  {
+    unique: true,
+    sparse: true,
+    name: "uniq_employee_user",
+  }
+);
 
 /*
- * Useful for employee + shift filtering.
+ * 2. EMPLOYEE LIST / SEARCH
+ *
+ * Supports:
+ *
+ * Employee.find({
+ *   pumpId
+ * }).sort({
+ *   name: 1
+ * })
  */
-employeeSchema.index({
-  pumpId: 1,
-  shiftName: 1,
-  status: 1,
-});
+employeeSchema.index(
+  {
+    pumpId: 1,
+    name: 1,
+  },
+  {
+    name: "idx_employee_pump_name",
+  }
+);
+
+/*
+ * 3. ACTIVE / INACTIVE EMPLOYEES
+ *
+ * Supports:
+ *
+ * Employee.find({
+ *   pumpId,
+ *   status: "active"
+ * })
+ */
+employeeSchema.index(
+  {
+    pumpId: 1,
+    status: 1,
+  },
+  {
+    name: "idx_employee_pump_status",
+  }
+);
+
+/*
+ * 4. NEWEST EMPLOYEES
+ *
+ * Useful for employee management screens
+ * and recently-created employee queries.
+ */
+employeeSchema.index(
+  {
+    pumpId: 1,
+    createdAt: -1,
+  },
+  {
+    name: "idx_employee_pump_created",
+  }
+);
+
+/*
+ * 5. SHIFT FILTERING
+ *
+ * Useful for:
+ *
+ * - Morning shift
+ * - Evening shift
+ * - Night shift
+ * - Active employees in a shift
+ */
+employeeSchema.index(
+  {
+    pumpId: 1,
+    shiftName: 1,
+    status: 1,
+  },
+  {
+    name: "idx_employee_pump_shift_status",
+  }
+);
 
 /* =====================================================
    MODEL

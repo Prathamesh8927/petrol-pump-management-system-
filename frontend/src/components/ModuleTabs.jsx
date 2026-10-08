@@ -1,8 +1,11 @@
 import { NavLink } from "react-router-dom";
 
-const ModuleTabs = ({ tabs }) => {
+const ModuleTabs = ({ tabs = [] }) => {
   return (
-    <div className="module-tabs">
+    <nav
+      className="module-tabs"
+      aria-label="Module navigation"
+    >
       {tabs.map((tab) => (
         <NavLink
           key={tab.path}
@@ -17,7 +20,7 @@ const ModuleTabs = ({ tabs }) => {
           {tab.name}
         </NavLink>
       ))}
-    </div>
+    </nav>
   );
 };
 

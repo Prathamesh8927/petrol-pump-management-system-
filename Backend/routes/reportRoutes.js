@@ -9,28 +9,41 @@ import {
   getCustomReport,
 } from "../controllers/reportController.js";
 
-const router =
-  express.Router();
+const router = express.Router();
 
-router.use(
-  authMiddleware
-);
+/*
+|--------------------------------------------------------------------------
+| AUTHENTICATION
+|--------------------------------------------------------------------------
+*/
 
+router.use(authMiddleware);
+
+/*
+|--------------------------------------------------------------------------
+| REPORTS
+|--------------------------------------------------------------------------
+*/
+
+// GET /api/reports/daily
 router.get(
   "/daily",
   getDailyReport
 );
 
+// GET /api/reports/weekly
 router.get(
   "/weekly",
   getWeeklyReport
 );
 
+// GET /api/reports/monthly
 router.get(
   "/monthly",
   getMonthlyReport
 );
 
+// GET /api/reports/custom
 router.get(
   "/custom",
   getCustomReport

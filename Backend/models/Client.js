@@ -8,47 +8,23 @@ const clientSchema = new mongoose.Schema(
   {
     /* =================================================
        LINKED PUMP
-
-       One Client record represents one Pump.
-
-       immutable prevents accidental reassignment of an
-       existing client to another pump.
     ================================================= */
 
     pumpId: {
       type: mongoose.Schema.Types.ObjectId,
-
       ref: "Pump",
-
       required: true,
-
-      unique: true,
-
-      index: true,
-
       immutable: true,
     },
 
     /* =================================================
        OWNER USER
-
-       One Client has exactly one owner account.
-
-       immutable prevents accidental ownership transfer
-       through a normal Client update.
     ================================================= */
 
     ownerUserId: {
       type: mongoose.Schema.Types.ObjectId,
-
       ref: "User",
-
       required: true,
-
-      unique: true,
-
-      index: true,
-
       immutable: true,
     },
 
@@ -58,83 +34,52 @@ const clientSchema = new mongoose.Schema(
 
     pumpName: {
       type: String,
-
       required: true,
-
       trim: true,
-
       minlength: 1,
-
       maxlength: 200,
     },
 
     ownerName: {
       type: String,
-
       required: true,
-
       trim: true,
-
       minlength: 1,
-
       maxlength: 100,
     },
 
     email: {
       type: String,
-
       required: true,
-
       lowercase: true,
-
       trim: true,
-
       maxlength: 254,
-
-      unique: true,
     },
 
     phone: {
       type: String,
-
       default: "",
-
       trim: true,
-
       maxlength: 30,
     },
 
     address: {
       type: String,
-
       default: "",
-
       trim: true,
-
       maxlength: 500,
     },
 
     /* =================================================
        CLIENT CODE
-
-       Unique business-facing identifier.
     ================================================= */
 
     pumpCode: {
       type: String,
-
       required: true,
-
-      unique: true,
-
-      index: true,
-
       trim: true,
-
       uppercase: true,
-
       minlength: 1,
-
       maxlength: 50,
     },
 
@@ -144,20 +89,10 @@ const clientSchema = new mongoose.Schema(
 
     plan: {
       type: String,
-
-      enum: [
-        "basic",
-        "standard",
-        "premium",
-      ],
-
+      enum: ["basic", "standard", "premium"],
       default: "standard",
-
       lowercase: true,
-
       trim: true,
-
-      index: true,
     },
 
     /* =================================================
@@ -166,20 +101,10 @@ const clientSchema = new mongoose.Schema(
 
     status: {
       type: String,
-
-      enum: [
-        "active",
-        "inactive",
-        "expired",
-      ],
-
+      enum: ["active", "inactive", "expired"],
       default: "active",
-
       lowercase: true,
-
       trim: true,
-
-      index: true,
     },
 
     /* =================================================
@@ -188,29 +113,20 @@ const clientSchema = new mongoose.Schema(
 
     subscriptionStart: {
       type: Date,
-
       default: null,
     },
 
     subscriptionEnd: {
       type: Date,
-
       default: null,
 
       validate: {
         validator: function (value) {
-          if (!value) {
+          if (!value || !this.subscriptionStart) {
             return true;
           }
 
-          if (!this.subscriptionStart) {
-            return true;
-          }
-
-          return (
-            value >=
-            this.subscriptionStart
-          );
+          return value >= this.subscriptionStart;
         },
 
         message:
@@ -220,63 +136,114 @@ const clientSchema = new mongoose.Schema(
 
     notes: {
       type: String,
-
       default: "",
-
       trim: true,
-
       maxlength: 2000,
     },
 
     /* =================================================
        CREATED BY
-
-       Usually the Super Admin who created/approved the
-       client. Indexed for audit/admin queries.
     ================================================= */
 
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
-
       ref: "User",
-
       default: null,
-
-      index: true,
     },
   },
-
   {
     timestamps: true,
-
-    /*
-     * Prevent accidental storage of fields that are not
-     * defined in the schema.
-     */
     strict: true,
   }
 );
 
 /* =====================================================
-   ADDITIONAL INDEXES
+   INDEXES
 ===================================================== */
 
 /*
- * Useful for Super Admin client listings and
- * subscription/status-related queries.
- *
- * pumpId, ownerUserId, email and pumpCode already have
- * unique indexes created from their schema options.
+ * One client per pump.
  */
-clientSchema.index({
-  status: 1,
-  createdAt: -1,
-});
+clientSchema.index(
+  { pumpId: 1 },
+  {
+    unique: true,
+    name: "uniq_client_pump",
+  }
+);
 
-clientSchema.index({
-  subscriptionEnd: 1,
-  status: 1,
-});
+/*
+ * One owner account per client.
+ */
+clientSchema.index(
+  { ownerUserId: 1 },
+  {
+    unique: true,
+    name: "uniq_client_owner_user",
+  }
+);
+
+/*
+ * Email is unique for client accounts.
+ */
+clientSchema.index(
+  { email: 1 },
+  {
+    unique: true,
+    name: "uniq_client_email",
+  }
+);
+
+/*
+ * Business-facing pump code.
+ */
+clientSchema.index(
+  { pumpCode: 1 },
+  {
+    unique: true,
+    name: "uniq_client_pump_code",
+  }
+);
+
+/*
+ * Useful for Super Admin client listings.
+ */
+clientSchema.index(
+  { status: 1, createdAt: -1 },
+  {
+    name: "idx_client_status_created",
+  }
+);
+
+/*
+ * Useful for subscription expiry checks.
+ */
+clientSchema.index(
+  { subscriptionEnd: 1, status: 1 },
+  {
+    name: "idx_client_subscription_status",
+  }
+);
+
+/*
+ * Useful when filtering clients by plan.
+ */
+clientSchema.index(
+  { plan: 1, status: 1, createdAt: -1 },
+  {
+    name: "idx_client_plan_status_created",
+  }
+);
+
+/*
+ * Useful for Super Admin queries by creator.
+ */
+clientSchema.index(
+  { createdBy: 1, createdAt: -1 },
+  {
+    name: "idx_client_creator_created",
+  }
+);
 
 /* =====================================================
    MODEL
@@ -284,9 +251,6 @@ clientSchema.index({
 
 const Client =
   mongoose.models.Client ||
-  mongoose.model(
-    "Client",
-    clientSchema
-  );
+  mongoose.model("Client", clientSchema);
 
 export default Client;

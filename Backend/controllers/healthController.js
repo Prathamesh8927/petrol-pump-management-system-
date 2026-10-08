@@ -11,6 +11,11 @@ export const getHealth =
         mongoose.connection.readyState ===
         1;
 
+      const status =
+        databaseConnected
+          ? "healthy"
+          : "unhealthy";
+
       return res
         .status(
           databaseConnected
@@ -24,10 +29,7 @@ export const getHealth =
           application:
             "MyPump",
 
-          status:
-            databaseConnected
-              ? "healthy"
-              : "unhealthy",
+          status,
 
           database:
             databaseConnected

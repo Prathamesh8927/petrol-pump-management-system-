@@ -10,18 +10,62 @@ import Sale from "../models/Sale.js";
 import User from "../models/User.js";
 import AuditLog from "../models/AuditLog.js";
 import Pump from "../models/Pump.js";
-import { getPaymentProvider } from "../services/paymentProviders/providerRegistry.js";
 
-const ALLOWED_STAFF_ROLES = ["owner", "manager", "staff"];
-const ALLOWED_SHIFTS = new Set(["morning", "evening", "night"]);
+import {
+  getPaymentProvider,
+} from "../services/paymentProviders/providerRegistry.js";
+
+/* =========================================================
+   CONSTANTS
+========================================================= */
+
+const ALLOWED_STAFF_ROLES = new Set([
+  "owner",
+  "manager",
+  "staff",
+]);
+
+const STAFF_PAYMENT_ROLES = new Set([
+  "staff",
+  "employee",
+]);
+
+const ALLOWED_SHIFTS = new Set([
+  "morning",
+  "evening",
+  "night",
+]);
+
+const PAYMENT_METHODS = new Set([
+  "upi",
+  "card",
+]);
+
 const PAYMENT_TTL_MINUTES = 20;
-const MAX_STANDALONE_AMOUNT = 1000000;
+
+const MAX_STANDALONE_AMOUNT = 1_000_000;
+
+const MAX_NOTE_LENGTH = 500;
+
+const DATE_REGEX =
+  /^\d{4}-\d{2}-\d{2}$/;
+
+const INDIA_TIMEZONE =
+  "Asia/Kolkata";
+
+/* =========================================================
+   BASIC HELPERS
+========================================================= */
 
 const getPumpId = (req) =>
-  req.user?.pumpId?._id || req.user?.pumpId || null;
+  req.user?.pumpId?._id ||
+  req.user?.pumpId ||
+  null;
 
 const getUserId = (req) =>
-  req.user?._id || req.user?.userId || null;
+  req.user?._id ||
+  req.user?.userId ||
+  null;
 
 const asObjectId = (value) =>
   mongoose.Types.ObjectId.isValid(value)
@@ -29,129 +73,235 @@ const asObjectId = (value) =>
     : null;
 
 const round = (value) =>
-  Number(Number(value).toFixed(2));
+  Number(
+    Number(value).toFixed(2)
+  );
 
 const normalize = (value) =>
-  String(value || "").trim().toLowerCase();
+  String(value || "")
+    .trim()
+    .toLowerCase();
+
+const normalizePaymentMethod = (
+  value
+) => {
+  const method =
+    normalize(value);
+
+  return PAYMENT_METHODS.has(method)
+    ? method
+    : "upi";
+};
 
 const getIndiaDate = () =>
-  new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Kolkata",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+  new Intl.DateTimeFormat(
+    "en-CA",
+    {
+      timeZone:
+        INDIA_TIMEZONE,
 
-const safePayment = (payment) => ({
-  id: payment._id,
-  amount: payment.amount,
-  amountPaise: payment.amountPaise,
-  provider: payment.paymentProvider,
-  fuelType: payment.fuelType,
-  quantity: payment.quantity,
-  nozzleId: payment.nozzleId,
-  shiftName: payment.shiftName,
-  readingDate: payment.readingDate,
-  status: payment.status,
-  method: payment.method,
-  providerPaymentId: payment.providerPaymentId || null,
-  providerOrderId: payment.providerOrderId || null,
-  qrCodeId: payment.providerQrCodeId || null,
-  qrImageUrl: payment.qrImageUrl || null,
-  expiresAt: payment.expiresAt,
-  paidAt: payment.paidAt,
-  failureReason: payment.failureReason || null,
-  saleId: payment.saleId || null,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }
+  ).format(new Date());
+
+const isValidDate = (value) =>
+  DATE_REGEX.test(
+    String(value || "")
+  );
+
+/* =========================================================
+   PAYMENT RESPONSE SANITIZER
+========================================================= */
+
+const safePayment = (
+  payment
+) => ({
+  id:
+    payment._id,
+
+  amount:
+    payment.amount,
+
+  amountPaise:
+    payment.amountPaise,
+
+  provider:
+    payment.paymentProvider,
+
+  fuelType:
+    payment.fuelType,
+
+  quantity:
+    payment.quantity,
+
+  nozzleId:
+    payment.nozzleId,
+
+  shiftName:
+    payment.shiftName,
+
+  readingDate:
+    payment.readingDate,
+
+  status:
+    payment.status,
+
+  method:
+    payment.method,
+
+  providerPaymentId:
+    payment.providerPaymentId ||
+    null,
+
+  providerOrderId:
+    payment.providerOrderId ||
+    null,
+
+  qrCodeId:
+    payment.providerQrCodeId ||
+    null,
+
+  qrImageUrl:
+    payment.qrImageUrl ||
+    null,
+
+  expiresAt:
+    payment.expiresAt,
+
+  paidAt:
+    payment.paidAt,
+
+  failureReason:
+    payment.failureReason ||
+    null,
+
+  saleId:
+    payment.saleId ||
+    null,
 });
 
-const findPaymentForPump = async (id, pumpId) => {
-  if (!asObjectId(id)) return null;
+/* =========================================================
+   PAYMENT LOOKUP
+========================================================= */
+
+const findPaymentForPump = async (
+  id,
+  pumpId
+) => {
+  const paymentId =
+    asObjectId(id);
+
+  if (!paymentId || !pumpId) {
+    return null;
+  }
 
   return Payment.findOne({
-    _id: id,
+    _id: paymentId,
     pumpId,
   });
 };
 
-/*
- * Prevent browser/CDN/proxy caching for payment status.
- *
- * Payment status is dynamic and must never be served from an old
- * browser cache while a Razorpay transaction is changing state.
- */
-const disablePaymentStatusCache = (res) => {
+/* =========================================================
+   PAYMENT STATUS CACHE CONTROL
+========================================================= */
+
+const disablePaymentStatusCache = (
+  res
+) => {
   res.set(
     "Cache-Control",
     "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0"
   );
-  res.set("Pragma", "no-cache");
-  res.set("Expires", "0");
-  res.set("Surrogate-Control", "no-store");
+
+  res.set(
+    "Pragma",
+    "no-cache"
+  );
+
+  res.set(
+    "Expires",
+    "0"
+  );
+
+  res.set(
+    "Surrogate-Control",
+    "no-store"
+  );
 };
 
-/*
- * --------------------------------------------------------------------------
- * CREATE ADMIN/NOZZLE PAYMENT
- * --------------------------------------------------------------------------
- */
+/* =========================================================
+   CREATE ADMIN / NOZZLE PAYMENT
+========================================================= */
 
-export const createPayment = async (req, res) => {
+export const createPayment = async (
+  req,
+  res
+) => {
   let payment = null;
 
   try {
-    const pumpId = getPumpId(req);
-    const userId = getUserId(req);
+    const pumpId =
+      getPumpId(req);
+
+    const userId =
+      getUserId(req);
 
     if (!pumpId || !userId) {
       return res.status(403).json({
         success: false,
-        message: "Pump or user information not found.",
+        message:
+          "Pump or user information not found.",
       });
     }
 
-    const pump = await Pump.findById(pumpId).select("paymentConfig");
+    const body =
+      req.body || {};
 
-    if (!pump) {
-      return res.status(404).json({
-        success: false,
-        message: "Pump not found.",
-      });
-    }
+    const nozzleId =
+      asObjectId(
+        body.nozzleId
+      );
+
+    const staffId =
+      asObjectId(
+        body.staffId ||
+          body.employeeId
+      );
+
+    const shiftName =
+      normalize(
+        body.shiftName ||
+          body.shift
+      );
+
+    const readingDate =
+      String(
+        body.readingDate ||
+          body.date ||
+          getIndiaDate()
+      ).trim();
+
+    const closingReading =
+      Number(
+        body.closingReading ??
+          body.reading
+      );
+
+    const note =
+      String(
+        body.note || ""
+      ).trim();
+
+    /* -----------------------------------------------
+       VALIDATION
+    ------------------------------------------------ */
 
     if (
-      pump.paymentConfig?.enabled === false ||
-      pump.paymentConfig?.dynamicQrEnabled === false
+      !nozzleId ||
+      !staffId
     ) {
-      return res.status(503).json({
-        success: false,
-        message: "Digital payments are disabled for this pump.",
-      });
-    }
-
-    const body = req.body || {};
-
-    const nozzleId = asObjectId(body.nozzleId);
-    const staffId = asObjectId(
-      body.staffId || body.employeeId
-    );
-
-    const shiftName = normalize(
-      body.shiftName || body.shift
-    );
-
-    const readingDate = String(
-      body.readingDate ||
-        body.date ||
-        getIndiaDate()
-    ).trim();
-
-    const closingReading = Number(
-      body.closingReading ?? body.reading
-    );
-
-    const note = String(body.note || "").trim();
-
-    if (!nozzleId || !staffId) {
       return res.status(400).json({
         success: false,
         message:
@@ -159,51 +309,117 @@ export const createPayment = async (req, res) => {
       });
     }
 
-    if (!ALLOWED_SHIFTS.has(shiftName)) {
+    if (
+      !ALLOWED_SHIFTS.has(
+        shiftName
+      )
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Invalid shift.",
-      });
-    }
-
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(readingDate)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid reading date.",
+        message:
+          "Invalid shift.",
       });
     }
 
     if (
-      !Number.isFinite(closingReading) ||
+      !isValidDate(
+        readingDate
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid reading date.",
+      });
+    }
+
+    if (
+      !Number.isFinite(
+        closingReading
+      ) ||
       closingReading < 0
     ) {
       return res.status(400).json({
         success: false,
-        message: "Enter a valid closing reading.",
+        message:
+          "Enter a valid closing reading.",
       });
     }
 
-    if (note.length > 500) {
+    if (
+      note.length >
+      MAX_NOTE_LENGTH
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Note cannot exceed 500 characters.",
+        message:
+          "Note cannot exceed 500 characters.",
       });
     }
 
-    const [staff, nozzle] = await Promise.all([
+    /* -----------------------------------------------
+       LOAD PUMP + STAFF + NOZZLE
+    ------------------------------------------------ */
+
+    const [
+      pump,
+      staff,
+      nozzle,
+    ] = await Promise.all([
+      Pump.findById(
+        pumpId
+      )
+        .select(
+          "paymentConfig"
+        )
+        .lean(),
+
       User.findOne({
         _id: staffId,
         pumpId,
         active: true,
-        role: { $in: ALLOWED_STAFF_ROLES },
-      }).select("_id name email"),
+        role: {
+          $in: [
+            ...ALLOWED_STAFF_ROLES,
+          ],
+        },
+      })
+        .select(
+          "_id name email"
+        )
+        .lean(),
 
       Nozzle.findOne({
         _id: nozzleId,
         pumpId,
         status: "active",
-      }),
+      })
+        .select(
+          "_id pumpId fuelType currentReading status"
+        )
+        .lean(),
     ]);
+
+    if (!pump) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Pump not found.",
+      });
+    }
+
+    if (
+      pump.paymentConfig
+        ?.enabled === false ||
+      pump.paymentConfig
+        ?.dynamicQrEnabled === false
+    ) {
+      return res.status(503).json({
+        success: false,
+        message:
+          "Digital payments are disabled for this pump.",
+      });
+    }
 
     if (!staff) {
       return res.status(404).json({
@@ -216,58 +432,91 @@ export const createPayment = async (req, res) => {
     if (!nozzle) {
       return res.status(404).json({
         success: false,
-        message: "Nozzle not found or inactive.",
+        message:
+          "Nozzle not found or inactive.",
       });
     }
 
-    const openingReading = Number(
-      nozzle.currentReading
-    );
+    /* -----------------------------------------------
+       READING CALCULATION
+    ------------------------------------------------ */
 
-    const fuelType = normalize(nozzle.fuelType);
+    const openingReading =
+      Number(
+        nozzle.currentReading
+      );
+
+    const fuelType =
+      normalize(
+        nozzle.fuelType
+      );
 
     if (
-      !Number.isFinite(openingReading) ||
-      closingReading <= openingReading
+      !Number.isFinite(
+        openingReading
+      ) ||
+      closingReading <=
+        openingReading
     ) {
       return res.status(400).json({
         success: false,
-        message: `Closing reading must be greater than ${openingReading}.`,
+        message:
+          `Closing reading must be greater than ${openingReading}.`,
       });
     }
 
-    const litresSold = round(
-      closingReading - openingReading
-    );
+    const litresSold =
+      round(
+        closingReading -
+          openingReading
+      );
 
-    const priceRecord = await FuelPrice.findOne({
-      pumpId,
-      fuelType,
-    }).lean();
+    /* -----------------------------------------------
+       FUEL PRICE
+    ------------------------------------------------ */
 
-    const pricePerLitre = Number(
-      priceRecord?.price
-    );
+    const priceRecord =
+      await FuelPrice.findOne({
+        pumpId,
+        fuelType,
+      })
+        .select(
+          "price"
+        )
+        .lean();
+
+    const pricePerLitre =
+      Number(
+        priceRecord?.price
+      );
 
     if (
-      !Number.isFinite(pricePerLitre) ||
+      !Number.isFinite(
+        pricePerLitre
+      ) ||
       pricePerLitre <= 0
     ) {
       return res.status(400).json({
         success: false,
-        message: "Fuel price is not configured.",
+        message:
+          "Fuel price is not configured.",
       });
     }
 
-    const amount = round(
-      litresSold * pricePerLitre
-    );
+    const amount =
+      round(
+        litresSold *
+          pricePerLitre
+      );
 
-    const amountPaise = Math.round(
-      amount * 100
-    );
+    const amountPaise =
+      Math.round(
+        amount * 100
+      );
 
-    if (amountPaise <= 0) {
+    if (
+      amountPaise <= 0
+    ) {
       return res.status(400).json({
         success: false,
         message:
@@ -275,22 +524,36 @@ export const createPayment = async (req, res) => {
       });
     }
 
+    /* -----------------------------------------------
+       PAYMENT RESERVATION
+    ------------------------------------------------ */
+
     const reservationKey =
       `${pumpId}:${nozzleId}:${readingDate}:${shiftName}`;
 
-    const existing = await Payment.findOne({
-      reservationKey,
-      status: "pending",
-    });
+    const existing =
+      await Payment.findOne({
+        reservationKey,
+        status: "pending",
+      })
+        .select(
+          "_id amount amountPaise paymentProvider fuelType quantity nozzleId shiftName readingDate status method providerPaymentId providerOrderId providerQrCodeId qrImageUrl expiresAt paidAt failureReason saleId"
+        )
+        .lean();
 
     if (existing) {
       return res.status(200).json({
         success: true,
         message:
           "An active payment already exists for this reading.",
-        payment: safePayment(existing),
+        payment:
+          safePayment(existing),
       });
     }
+
+    /* -----------------------------------------------
+       CHECK FINAL READING
+    ------------------------------------------------ */
 
     const existingReading =
       await NozzleReading.exists({
@@ -308,275 +571,81 @@ export const createPayment = async (req, res) => {
       });
     }
 
-    payment = await Payment.create({
-      pumpId,
-      employeeId: staff._id,
-      userId,
-      employeeName: String(
-        staff.name ||
-          staff.email ||
-          "Staff"
-      )
-        .trim()
-        .slice(0, 150),
+    /* -----------------------------------------------
+       CREATE LOCAL PAYMENT
+    ------------------------------------------------ */
 
-      paymentProvider:
-        pump.paymentConfig?.provider ||
-        "razorpay",
+    payment =
+      await Payment.create({
+        pumpId,
 
-      nozzleId,
-      shiftName,
-      readingDate,
+        employeeId:
+          staff._id,
 
-      openingReading,
-      closingReading,
-      fuelType,
-      quantity: litresSold,
-      pricePerLitre,
+        userId,
 
-      amount,
-      amountPaise,
+        employeeName:
+          String(
+            staff.name ||
+              staff.email ||
+              "Staff"
+          )
+            .trim()
+            .slice(0, 150),
 
-      method: "upi",
-      status: "pending",
+        paymentProvider:
+          pump.paymentConfig
+            ?.provider ||
+          "razorpay",
 
-      expiresAt: new Date(
-        Date.now() +
-          PAYMENT_TTL_MINUTES *
-            60 *
-            1000
-      ),
+        nozzleId,
 
-      reservationKey,
-      note,
-    });
+        shiftName,
+
+        readingDate,
+
+        openingReading,
+
+        closingReading,
+
+        fuelType,
+
+        quantity:
+          litresSold,
+
+        pricePerLitre,
+
+        amount,
+
+        amountPaise,
+
+        method:
+          "upi",
+
+        status:
+          "pending",
+
+        expiresAt:
+          new Date(
+            Date.now() +
+              PAYMENT_TTL_MINUTES *
+                60 *
+                1000
+          ),
+
+        reservationKey,
+
+        note,
+      });
+
+    /* -----------------------------------------------
+       PROVIDER QR
+    ------------------------------------------------ */
 
     const provider =
-      getPaymentProvider(pump);
-
-    const providerPayment =
-      await provider.createDynamicQr(payment);
-
-    payment.paymentProvider =
-      providerPayment.provider;
-
-    payment.providerQrCodeId =
-      providerPayment.providerQrCodeId ||
-      undefined;
-
-    payment.providerOrderId =
-      providerPayment.providerOrderId ||
-      undefined;
-
-    payment.qrImageUrl =
-      providerPayment.qrImageUrl ||
-      "";
-
-    await payment.save();
-
-    await AuditLog.create({
-      pumpId,
-      userId,
-      userName: String(
-        req.user?.name ||
-          req.user?.email ||
-          ""
-      ).slice(0, 100),
-
-      action: "payment_created",
-      module: "payments",
-      recordId: payment._id,
-
-      description:
-        "Razorpay payment QR created.",
-
-      newData: {
-        amount: payment.amount,
-        status: payment.status,
-      },
-
-      ipAddress: req.ip || "",
-    }).catch((auditError) =>
-      console.error(
-        "PAYMENT AUDIT ERROR:",
-        auditError.message
-      )
-    );
-
-    return res.status(201).json({
-      success: true,
-      message: "Payment QR generated.",
-      payment: safePayment(payment),
-    });
-  } catch (error) {
-    console.error(
-      "CREATE PAYMENT ERROR:",
-      {
-        code: error?.code,
-        message: error?.message,
-      }
-    );
-
-    if (payment?._id) {
-      await Payment.findByIdAndUpdate(
-        payment._id,
-        {
-          status: "failed",
-          failureReason:
-            "Unable to create provider payment.",
-        }
-      ).catch(() => {});
-    }
-
-    if (error?.code === 11000) {
-      return res.status(409).json({
-        success: false,
-        message:
-          "An active payment already exists for this reading.",
-      });
-    }
-
-    if (
-      error?.code ===
-        "RAZORPAY_NOT_CONFIGURED" ||
-      error?.code ===
-        "BANK_PROVIDER_NOT_CONFIGURED"
-    ) {
-      return res.status(503).json({
-        success: false,
-        message: error.message,
-      });
-    }
-
-    return res.status(500).json({
-      success: false,
-      message:
-        "Unable to generate payment QR.",
-    });
-  }
-};
-
-/*
- * --------------------------------------------------------------------------
- * CREATE EMPLOYEE STANDALONE PAYMENT
- * --------------------------------------------------------------------------
- */
-
-export const createEmployeePayment = async (
-  req,
-  res
-) => {
-  let payment = null;
-
-  try {
-    const pumpId = getPumpId(req);
-    const employeeId = getUserId(req);
-
-    const amount = Number(
-      req.body?.amount
-    );
-
-    if (!pumpId || !employeeId) {
-      return res.status(403).json({
-        success: false,
-        message:
-          "Pump or employee information not found.",
-      });
-    }
-
-    if (
-      !Number.isFinite(amount) ||
-      amount <= 0 ||
-      amount > MAX_STANDALONE_AMOUNT
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Please enter a valid payment amount.",
-      });
-    }
-
-    const amountPaise =
-      Math.round(amount * 100);
-
-    if (
-      amountPaise <= 0 ||
-      amountPaise >
-        MAX_STANDALONE_AMOUNT * 100
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Please enter a valid payment amount.",
-      });
-    }
-
-    const employeeName = String(
-      req.user?.name ||
-        req.user?.email ||
-        "Employee"
-    )
-      .trim()
-      .slice(0, 150);
-
-    const pump =
-      await Pump.findById(pumpId)
-        .select("paymentConfig");
-
-    if (!pump) {
-      return res.status(404).json({
-        success: false,
-        message: "Pump not found.",
-      });
-    }
-
-    if (
-      pump.paymentConfig?.enabled === false ||
-      pump.paymentConfig?.dynamicQrEnabled === false
-    ) {
-      return res.status(503).json({
-        success: false,
-        message:
-          "Digital payments are disabled for this pump.",
-      });
-    }
-
-    payment = await Payment.create({
-      pumpId,
-
-      employeeId,
-      userId: employeeId,
-
-      employeeName,
-
-      transactionType:
-        "standalone",
-
-      paymentProvider:
-        pump.paymentConfig?.provider ||
-        "razorpay",
-
-      amount:
-        round(amountPaise / 100),
-
-      amountPaise,
-
-      method: "upi",
-      status: "pending",
-
-      expiresAt: new Date(
-        Date.now() +
-          PAYMENT_TTL_MINUTES *
-            60 *
-            1000
-      ),
-
-      reservationKey:
-        `standalone:${pumpId}:${employeeId}:${crypto.randomUUID()}`,
-    });
-
-    const provider =
-      getPaymentProvider(pump);
+      getPaymentProvider(
+        pump
+      );
 
     const providerPayment =
       await provider.createDynamicQr(
@@ -600,66 +669,117 @@ export const createEmployeePayment = async (
 
     await payment.save();
 
-    console.log(
-      "========== EMPLOYEE PAYMENT CREATED =========="
-    );
+    /* -----------------------------------------------
+       AUDIT
+    ------------------------------------------------ */
 
-    console.log({
-      paymentId: String(payment._id),
-      provider: payment.paymentProvider,
-      providerOrderId:
-        payment.providerOrderId,
-      qrCodeId:
-        payment.providerQrCodeId,
-      amountPaise:
-        payment.amountPaise,
-    });
+    await AuditLog.create({
+      pumpId,
 
-    console.log(
-      "==============================================="
+      userId,
+
+      userName:
+        String(
+          req.user?.name ||
+            req.user?.email ||
+            ""
+        )
+          .trim()
+          .slice(0, 100),
+
+      action:
+        "payment_created",
+
+      module:
+        "payments",
+
+      recordId:
+        payment._id,
+
+      description:
+        "Payment QR created.",
+
+      newData: {
+        amount:
+          payment.amount,
+
+        status:
+          payment.status,
+      },
+
+      ipAddress:
+        req.ip || "",
+    }).catch(
+      (auditError) => {
+        console.error(
+          "PAYMENT AUDIT ERROR:",
+          auditError.message
+        );
+      }
     );
 
     return res.status(201).json({
       success: true,
-      payment: safePayment(payment),
+
+      message:
+        "Payment QR generated.",
+
+      payment:
+        safePayment(
+          payment
+        ),
     });
   } catch (error) {
     console.error(
-      "========== RAZORPAY FULL ERROR =========="
+      "CREATE PAYMENT ERROR:",
+      {
+        code:
+          error?.code,
+
+        message:
+          error?.message,
+      }
     );
 
-    console.error("code:", error?.code);
-    console.error(
-      "status code:",
-      error?.statusCode
-    );
-    console.error(
-      "message:",
-      error?.message
-    );
-    console.error(
-      "description:",
-      error?.description
-    );
+    /*
+     * If the provider failed after local payment creation,
+     * keep the payment record but mark it failed.
+     */
 
-    console.error(
-      "error.response?.data:",
-      error?.response?.data
-    );
-
-    console.error(
-      "=========================================="
-    );
-
-    if (payment?._id) {
-      await Payment.findByIdAndUpdate(
-        payment._id,
+    if (
+      payment?._id
+    ) {
+      await Payment.findOneAndUpdate(
         {
-          status: "failed",
-          failureReason:
-            "Unable to create provider payment.",
+          _id:
+            payment._id,
+
+          status:
+            "pending",
+        },
+        {
+          $set: {
+            status:
+              "failed",
+
+            failureReason:
+              "Unable to create provider payment.",
+          },
         }
-      ).catch(() => {});
+      ).catch(
+        () => {}
+      );
+    }
+
+    if (
+      error?.code ===
+      11000
+    ) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "An active payment already exists for this reading.",
+      });
     }
 
     if (
@@ -670,73 +790,349 @@ export const createEmployeePayment = async (
     ) {
       return res.status(503).json({
         success: false,
-        message: error.message,
-      });
-    }
-
-    const razorpayMessage =
-      error?.error?.description ||
-      error?.response?.data?.error?.description ||
-      error?.description ||
-      error?.message;
-
-    if (
-      razorpayMessage ===
-      "The requested URL was not found on the server."
-    ) {
-      return res.status(503).json({
-        success: false,
         message:
-          "Razorpay QR Codes are not enabled for this account. The system will use the Razorpay Payment Link fallback when available.",
-      });
-    }
-
-    if (
-      error?.statusCode === 400 ||
-      error?.statusCode === 401 ||
-      error?.statusCode === 403
-    ) {
-      return res.status(502).json({
-        success: false,
-        message:
-          razorpayMessage ||
-          "Razorpay rejected the payment request.",
+          error.message,
       });
     }
 
     return res.status(500).json({
       success: false,
       message:
-        razorpayMessage ||
-        "Unable to create payment. Please try again.",
+        "Unable to generate payment QR.",
     });
   }
 };
 
-/*
- * --------------------------------------------------------------------------
- * RAZORPAY PAYMENT LINK RECONCILIATION
- * --------------------------------------------------------------------------
- *
- * This is the major reliability improvement.
- *
- * If the DB says pending and this payment has a Razorpay Payment Link,
- * we ask Razorpay directly whether that Payment Link is actually paid.
- *
- * We do NOT trust:
- * - frontend status
- * - browser callbacks
- * - QR scanning
- * - client-side JavaScript
- *
- * Only the authenticated Razorpay API response can trigger finalization.
- */
+/* =========================================================
+   CREATE EMPLOYEE STANDALONE PAYMENT
+========================================================= */
+
+export const createEmployeePayment =
+  async (
+    req,
+    res
+  ) => {
+    let payment = null;
+
+    try {
+      const pumpId =
+        getPumpId(req);
+
+      const employeeId =
+        getUserId(req);
+
+      const amount =
+        Number(
+          req.body?.amount
+        );
+
+      if (
+        !pumpId ||
+        !employeeId
+      ) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Pump or employee information not found.",
+        });
+      }
+
+      if (
+        !Number.isFinite(
+          amount
+        ) ||
+        amount <= 0 ||
+        amount >
+          MAX_STANDALONE_AMOUNT
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Please enter a valid payment amount.",
+        });
+      }
+
+      const amountPaise =
+        Math.round(
+          amount * 100
+        );
+
+      if (
+        amountPaise <= 0 ||
+        amountPaise >
+          MAX_STANDALONE_AMOUNT *
+            100
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Please enter a valid payment amount.",
+        });
+      }
+
+      const employeeName =
+        String(
+          req.user?.name ||
+            req.user?.email ||
+            "Employee"
+        )
+          .trim()
+          .slice(0, 150);
+
+      const pump =
+        await Pump.findById(
+          pumpId
+        )
+          .select(
+            "paymentConfig"
+          )
+          .lean();
+
+      if (!pump) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Pump not found.",
+        });
+      }
+
+      if (
+        pump.paymentConfig
+          ?.enabled === false ||
+        pump.paymentConfig
+          ?.dynamicQrEnabled === false
+      ) {
+        return res.status(503).json({
+          success: false,
+          message:
+            "Digital payments are disabled for this pump.",
+        });
+      }
+
+      /* -----------------------------------------------
+         CREATE LOCAL PAYMENT
+      ------------------------------------------------ */
+
+      payment =
+        await Payment.create({
+          pumpId,
+
+          employeeId,
+
+          userId:
+            employeeId,
+
+          employeeName,
+
+          transactionType:
+            "standalone",
+
+          paymentProvider:
+            pump.paymentConfig
+              ?.provider ||
+            "razorpay",
+
+          amount:
+            round(
+              amountPaise /
+                100
+            ),
+
+          amountPaise,
+
+          method:
+            "upi",
+
+          status:
+            "pending",
+
+          expiresAt:
+            new Date(
+              Date.now() +
+                PAYMENT_TTL_MINUTES *
+                  60 *
+                  1000
+            ),
+
+          reservationKey:
+            `standalone:${pumpId}:${employeeId}:${crypto.randomUUID()}`,
+        });
+
+      /* -----------------------------------------------
+         CREATE PROVIDER QR
+      ------------------------------------------------ */
+
+      const provider =
+        getPaymentProvider(
+          pump
+        );
+
+      const providerPayment =
+        await provider.createDynamicQr(
+          payment
+        );
+
+      payment.paymentProvider =
+        providerPayment.provider;
+
+      payment.providerQrCodeId =
+        providerPayment.providerQrCodeId ||
+        undefined;
+
+      payment.providerOrderId =
+        providerPayment.providerOrderId ||
+        undefined;
+
+      payment.qrImageUrl =
+        providerPayment.qrImageUrl ||
+        "";
+
+      await payment.save();
+
+      console.log(
+        "EMPLOYEE PAYMENT CREATED:",
+        {
+          paymentId:
+            String(
+              payment._id
+            ),
+
+          provider:
+            payment.paymentProvider,
+
+          providerOrderId:
+            payment.providerOrderId,
+
+          qrCodeId:
+            payment.providerQrCodeId,
+
+          amountPaise:
+            payment.amountPaise,
+        }
+      );
+
+      return res.status(201).json({
+        success: true,
+
+        payment:
+          safePayment(
+            payment
+          ),
+      });
+    } catch (error) {
+      console.error(
+        "CREATE EMPLOYEE PAYMENT ERROR:",
+        {
+          code:
+            error?.code,
+
+          statusCode:
+            error?.statusCode,
+
+          message:
+            error?.message,
+
+          description:
+            error?.description,
+        }
+      );
+
+      if (
+        payment?._id
+      ) {
+        await Payment.findOneAndUpdate(
+          {
+            _id:
+              payment._id,
+
+            status:
+              "pending",
+          },
+          {
+            $set: {
+              status:
+                "failed",
+
+              failureReason:
+                "Unable to create provider payment.",
+            },
+          }
+        ).catch(
+          () => {}
+        );
+      }
+
+      if (
+        error?.code ===
+          "RAZORPAY_NOT_CONFIGURED" ||
+        error?.code ===
+          "BANK_PROVIDER_NOT_CONFIGURED"
+      ) {
+        return res.status(503).json({
+          success: false,
+          message:
+            error.message,
+        });
+      }
+
+      const razorpayMessage =
+        error?.error
+          ?.description ||
+        error?.response
+          ?.data
+          ?.error
+          ?.description ||
+        error?.description ||
+        error?.message;
+
+      if (
+        razorpayMessage ===
+        "The requested URL was not found on the server."
+      ) {
+        return res.status(503).json({
+          success: false,
+          message:
+            "Razorpay QR Codes are not enabled for this account. The system will use the Razorpay Payment Link fallback when available.",
+        });
+      }
+
+      if (
+        error?.statusCode ===
+          400 ||
+        error?.statusCode ===
+          401 ||
+        error?.statusCode ===
+          403
+      ) {
+        return res.status(502).json({
+          success: false,
+          message:
+            razorpayMessage ||
+            "Razorpay rejected the payment request.",
+        });
+      }
+
+      return res.status(500).json({
+        success: false,
+        message:
+          razorpayMessage ||
+          "Unable to create payment. Please try again.",
+      });
+    }
+  };
+
+/* =========================================================
+   RAZORPAY PAYMENT LINK RECONCILIATION
+========================================================= */
 
 const reconcilePendingRazorpayPayment =
-  async (payment) => {
+  async (
+    payment
+  ) => {
     if (
       !payment ||
-      payment.status !== "pending"
+      payment.status !==
+        "pending"
     ) {
       return payment;
     }
@@ -754,14 +1150,14 @@ const reconcilePendingRazorpayPayment =
       return payment;
     }
 
-    /*
-     * The QR Codes API uses providerQrCodeId.
-     * The Payment Link fallback uses a plink_ ID.
-     *
-     * Reconciliation is intended for Payment Links.
-     */
     const providerOrderId =
-      String(payment.providerOrderId);
+      String(
+        payment.providerOrderId
+      );
+
+    /*
+     * Payment Link fallback IDs start with plink_.
+     */
 
     if (
       !providerOrderId.startsWith(
@@ -771,9 +1167,15 @@ const reconcilePendingRazorpayPayment =
       return payment;
     }
 
+    /*
+     * Do not call Razorpay after our local payment
+     * has already expired.
+     */
+
     if (
       payment.expiresAt &&
-      payment.expiresAt <= new Date()
+      payment.expiresAt <=
+        new Date()
     ) {
       return payment;
     }
@@ -782,23 +1184,25 @@ const reconcilePendingRazorpayPayment =
       const pump =
         await Pump.findById(
           payment.pumpId
-        ).select("paymentConfig");
+        )
+          .select(
+            "paymentConfig"
+          )
+          .lean();
 
       if (!pump) {
         return payment;
       }
 
       const provider =
-        getPaymentProvider(pump);
+        getPaymentProvider(
+          pump
+        );
 
       if (
         typeof provider.reconcilePaymentLink !==
         "function"
       ) {
-        console.warn(
-          "RAZORPAY RECONCILIATION: provider does not support Payment Link reconciliation."
-        );
-
         return payment;
       }
 
@@ -807,43 +1211,45 @@ const reconcilePendingRazorpayPayment =
           providerOrderId
         );
 
-      console.log(
-        "RAZORPAY PAYMENT LINK RECONCILIATION:",
-        {
-          paymentId: String(
-            payment._id
-          ),
-          providerOrderId,
-          razorpayStatus:
-            reconciliation.status,
-          expectedAmountPaise:
-            payment.amountPaise,
-          razorpayAmountPaise:
-            reconciliation.amountPaise,
-          razorpayAmountPaidPaise:
-            reconciliation.amountPaidPaise,
-          providerPaymentId:
-            reconciliation.providerPaymentId ||
-            null,
-        }
-      );
-
       const razorpayStatus =
         String(
-          reconciliation.status || ""
+          reconciliation.status ||
+            ""
         ).toLowerCase();
 
-      /*
-       * Payment Link must be fully paid.
-       */
       const paid =
-        razorpayStatus === "paid" &&
+        razorpayStatus ===
+          "paid" &&
         Number(
           reconciliation.amountPaidPaise
         ) ===
           Number(
             payment.amountPaise
           );
+
+      console.log(
+        "RAZORPAY PAYMENT LINK RECONCILIATION:",
+        {
+          paymentId:
+            String(
+              payment._id
+            ),
+
+          providerOrderId,
+
+          razorpayStatus,
+
+          expectedAmountPaise:
+            payment.amountPaise,
+
+          razorpayAmountPaidPaise:
+            reconciliation.amountPaidPaise,
+
+          providerPaymentId:
+            reconciliation.providerPaymentId ||
+            null,
+        }
+      );
 
       if (paid) {
         await finalizePaidPayment({
@@ -859,7 +1265,8 @@ const reconcilePendingRazorpayPayment =
               ? "card"
               : "upi",
 
-          eventId: null,
+          eventId:
+            null,
 
           payload: {
             amount:
@@ -884,49 +1291,60 @@ const reconcilePendingRazorpayPayment =
         );
       }
 
-      /*
-       * If Razorpay says the link is expired/cancelled,
-       * synchronize our local state.
-       */
       if (
-        razorpayStatus === "expired" ||
-        razorpayStatus === "cancelled"
+        razorpayStatus ===
+          "expired" ||
+        razorpayStatus ===
+          "cancelled"
       ) {
-        if (
-          payment.status ===
-          "pending"
-        ) {
-          payment.status =
-            razorpayStatus ===
-            "expired"
-              ? "expired"
-              : "cancelled";
+        await Payment.findOneAndUpdate(
+          {
+            _id:
+              payment._id,
 
-          payment.failureReason =
-            `Razorpay Payment Link ${razorpayStatus}.`;
+            status:
+              "pending",
+          },
+          {
+            $set: {
+              status:
+                razorpayStatus ===
+                "expired"
+                  ? "expired"
+                  : "cancelled",
 
-          await payment.save();
-        }
+              failureReason:
+                `Razorpay Payment Link ${razorpayStatus}.`,
+            },
+          }
+        );
 
-        return payment;
+        return Payment.findById(
+          payment._id
+        );
       }
 
       return payment;
     } catch (error) {
       /*
-       * Reconciliation must NEVER make a legitimate pending
-       * payment fail merely because Razorpay's API temporarily
-       * failed.
+       * Razorpay API failure must never turn a legitimate
+       * pending payment into failed locally.
        */
+
       console.error(
         "RAZORPAY PAYMENT LINK RECONCILIATION ERROR:",
         {
-          paymentId: String(
-            payment._id
-          ),
+          paymentId:
+            String(
+              payment._id
+            ),
+
           providerOrderId:
             payment.providerOrderId,
-          code: error?.code,
+
+          code:
+            error?.code,
+
           message:
             error?.message,
         }
@@ -936,40 +1354,75 @@ const reconcilePendingRazorpayPayment =
     }
   };
 
-/*
- * --------------------------------------------------------------------------
- * PAYMENT STATUS
- * --------------------------------------------------------------------------
- */
+/* =========================================================
+   PAYMENT STATUS
+========================================================= */
 
 export const getPaymentStatus =
-  async (req, res) => {
-    disablePaymentStatusCache(res);
+  async (
+    req,
+    res
+  ) => {
+    disablePaymentStatusCache(
+      res
+    );
 
     try {
-      const query = {
-        _id: asObjectId(
+      const pumpId =
+        getPumpId(req);
+
+      const paymentId =
+        asObjectId(
           req.params.id
-        ),
-        pumpId: getPumpId(req),
-      };
+        );
 
       if (
-        ["staff", "employee"].includes(
-          String(
-            req.user?.role || ""
-          ).toLowerCase()
-        )
+        !pumpId ||
+        !paymentId
       ) {
-        query.employeeId =
-          getUserId(req);
+        return res.status(404).json({
+          success: false,
+          message:
+            "Payment not found.",
+        });
       }
 
-      let payment = query._id
-        ? await Payment.findOne(
-            query
-          )
-        : null;
+      const query = {
+        _id:
+          paymentId,
+
+        pumpId,
+      };
+
+      const userRole =
+        String(
+          req.user?.role || ""
+        ).toLowerCase();
+
+      if (
+        STAFF_PAYMENT_ROLES.has(
+          userRole
+        )
+      ) {
+        const employeeId =
+          getUserId(req);
+
+        if (!employeeId) {
+          return res.status(403).json({
+            success: false,
+            message:
+              "Employee information not found.",
+          });
+        }
+
+        query.employeeId =
+          employeeId;
+      }
+
+      let payment =
+        await Payment.findOne(
+          query
+        );
 
       if (!payment) {
         return res.status(404).json({
@@ -980,9 +1433,9 @@ export const getPaymentStatus =
       }
 
       /*
-       * First perform server-side reconciliation
-       * for a still-pending Razorpay Payment Link.
+       * Reconcile Payment Link before local expiry.
        */
+
       if (
         payment.status ===
         "pending"
@@ -994,10 +1447,9 @@ export const getPaymentStatus =
       }
 
       /*
-       * Local expiry check happens after reconciliation.
-       * This prevents us from expiring a payment that Razorpay
-       * has already confirmed as paid.
+       * Local expiry.
        */
+
       if (
         payment.status ===
           "pending" &&
@@ -1015,14 +1467,19 @@ export const getPaymentStatus =
 
       return res.status(200).json({
         success: true,
+
         payment:
-          safePayment(payment),
+          safePayment(
+            payment
+          ),
       });
     } catch (error) {
       console.error(
         "GET PAYMENT STATUS ERROR:",
         {
-          code: error?.code,
+          code:
+            error?.code,
+
           message:
             error?.message,
         }
@@ -1036,38 +1493,71 @@ export const getPaymentStatus =
     }
   };
 
-/*
- * --------------------------------------------------------------------------
- * CANCEL PAYMENT
- * --------------------------------------------------------------------------
- */
+/* =========================================================
+   CANCEL PAYMENT
+========================================================= */
 
 export const cancelPayment =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
-      const query = {
-        _id: asObjectId(
+      const pumpId =
+        getPumpId(req);
+
+      const paymentId =
+        asObjectId(
           req.params.id
-        ),
-        pumpId: getPumpId(req),
-      };
+        );
 
       if (
-        ["staff", "employee"].includes(
-          String(
-            req.user?.role || ""
-          ).toLowerCase()
-        )
+        !pumpId ||
+        !paymentId
       ) {
-        query.employeeId =
-          getUserId(req);
+        return res.status(404).json({
+          success: false,
+          message:
+            "Payment not found.",
+        });
       }
 
-      const payment = query._id
-        ? await Payment.findOne(
-            query
-          )
-        : null;
+      const query = {
+        _id:
+          paymentId,
+
+        pumpId,
+      };
+
+      const userRole =
+        String(
+          req.user?.role || ""
+        ).toLowerCase();
+
+      if (
+        STAFF_PAYMENT_ROLES.has(
+          userRole
+        )
+      ) {
+        const employeeId =
+          getUserId(req);
+
+        if (!employeeId) {
+          return res.status(403).json({
+            success: false,
+            message:
+              "Employee information not found.",
+          });
+        }
+
+        query.employeeId =
+          employeeId;
+      }
+
+      const payment =
+        await Payment.findOne(
+          query
+        );
 
       if (!payment) {
         return res.status(404).json({
@@ -1092,19 +1582,49 @@ export const cancelPayment =
         payment.status ===
         "pending"
       ) {
-        payment.status =
-          "cancelled";
+        const updated =
+          await Payment.findOneAndUpdate(
+            {
+              _id:
+                payment._id,
 
-        payment.failureReason =
-          "Cancelled by employee.";
+              pumpId,
 
-        await payment.save();
+              status:
+                "pending",
+            },
+            {
+              $set: {
+                status:
+                  "cancelled",
+
+                failureReason:
+                  "Cancelled by employee.",
+              },
+            },
+            {
+              new: true,
+            }
+          );
+
+        return res.status(200).json({
+          success: true,
+
+          payment:
+            safePayment(
+              updated ||
+                payment
+            ),
+        });
       }
 
       return res.status(200).json({
         success: true,
+
         payment:
-          safePayment(payment),
+          safePayment(
+            payment
+          ),
       });
     } catch (error) {
       console.error(
@@ -1120,11 +1640,9 @@ export const cancelPayment =
     }
   };
 
-/*
- * --------------------------------------------------------------------------
- * WEBHOOK SIGNATURE
- * --------------------------------------------------------------------------
- */
+/* =========================================================
+   RAZORPAY WEBHOOK SIGNATURE
+========================================================= */
 
 const verifyWebhookSignature = (
   rawBody,
@@ -1137,7 +1655,9 @@ const verifyWebhookSignature = (
   if (
     !secret ||
     !signature ||
-    !Buffer.isBuffer(rawBody)
+    !Buffer.isBuffer(
+      rawBody
+    )
   ) {
     return false;
   }
@@ -1159,7 +1679,9 @@ const verifyWebhookSignature = (
 
   const right =
     Buffer.from(
-      String(signature),
+      String(
+        signature
+      ),
       "utf8"
     );
 
@@ -1173,11 +1695,9 @@ const verifyWebhookSignature = (
   );
 };
 
-/*
- * --------------------------------------------------------------------------
- * FINALIZE VERIFIED PAYMENT
- * --------------------------------------------------------------------------
- */
+/* =========================================================
+   FINALIZE VERIFIED PAYMENT
+========================================================= */
 
 const finalizePaidPayment =
   async ({
@@ -1197,32 +1717,54 @@ const finalizePaidPayment =
         async () => {
           const payment =
             await Payment.findOne({
-              _id: paymentId,
-              status: "pending",
-            }).session(session);
+              _id:
+                paymentId,
+
+              status:
+                "pending",
+            }).session(
+              session
+            );
 
           /*
-           * Idempotency:
-           * if webhook/reconciliation arrives twice after the first
-           * successful finalization, simply do nothing.
+           * Idempotency.
+           *
+           * If another webhook already finalized this payment,
+           * there is nothing left to do.
            */
+
           if (!payment) {
             return;
           }
 
+          const now =
+            new Date();
+
           /*
-           * We deliberately do not allow an expired payment to become
-           * paid merely because a late webhook arrived.
+           * Never allow an expired local payment to become paid.
            */
+
           if (
+            payment.expiresAt &&
             payment.expiresAt <=
-            new Date()
+              now
           ) {
             payment.status =
               "expired";
 
             payment.failureReason =
               "Payment confirmation arrived after expiry.";
+
+            if (
+              eventId &&
+              !payment.webhookEventIds.includes(
+                eventId
+              )
+            ) {
+              payment.webhookEventIds.push(
+                eventId
+              );
+            }
 
             await payment.save({
               session,
@@ -1231,19 +1773,10 @@ const finalizePaidPayment =
             return;
           }
 
-          /*
-           * Razorpay may expose different amount fields depending
-           * on event type.
-           *
-           * Payment Link:
-           *   amount_paid
-           *
-           * Payment:
-           *   amount
-           *
-           * QR:
-           *   payment_amount / amount
-           */
+          /* ---------------------------------------------
+             VERIFY AMOUNT
+          ---------------------------------------------- */
+
           const receivedAmount =
             Number(
               payload?.amount_paid ??
@@ -1257,7 +1790,9 @@ const finalizePaidPayment =
               receivedAmount
             ) ||
             receivedAmount !==
-              payment.amountPaise
+              Number(
+                payment.amountPaise
+              )
           ) {
             const error =
               new Error(
@@ -1270,24 +1805,33 @@ const finalizePaidPayment =
             throw error;
           }
 
-          /*
-           * Payment Link ID / Order ID verification.
-           */
+          /* ---------------------------------------------
+             VERIFY ORDER / PAYMENT LINK
+          ---------------------------------------------- */
+
           const receivedOrderId =
-  payload?.order_id ||
-  payload?.payment_link_id ||
-  (
-    payload?.id &&
-    String(payload.id).startsWith("plink_")
-      ? payload.id
-      : null
-  );
+            payload?.order_id ||
+            payload?.payment_link_id ||
+            (
+              payload?.id &&
+              String(
+                payload.id
+              ).startsWith(
+                "plink_"
+              )
+                ? payload.id
+                : null
+            );
 
           if (
             receivedOrderId &&
             payment.providerOrderId &&
-            receivedOrderId !==
-              payment.providerOrderId
+            String(
+              receivedOrderId
+            ) !==
+              String(
+                payment.providerOrderId
+              )
           ) {
             const error =
               new Error(
@@ -1300,27 +1844,37 @@ const finalizePaidPayment =
             throw error;
           }
 
-          /*
-           * If a Sale already exists, synchronize the Payment
-           * instead of creating a duplicate Sale.
-           */
+          /* ---------------------------------------------
+             CHECK EXISTING SALE
+          ---------------------------------------------- */
+
           const existingSale =
             await Sale.findOne({
               paymentId:
                 payment._id,
-            }).session(session);
+            })
+              .select(
+                "_id pumpId paymentId totalAmount paymentMethod"
+              )
+              .session(
+                session
+              )
+              .lean();
 
-          if (existingSale) {
+          if (
+            existingSale
+          ) {
             payment.status =
               "paid";
 
             payment.providerPaymentId =
               providerPaymentId ||
-              payment.providerPaymentId;
+              payment.providerPaymentId ||
+              null;
 
             payment.paidAt =
               payment.paidAt ||
-              new Date();
+              now;
 
             payment.saleId =
               existingSale._id;
@@ -1346,17 +1900,17 @@ const finalizePaidPayment =
             return;
           }
 
-          /*
-           * --------------------------------------------------------------
-           * STANDALONE EMPLOYEE PAYMENT
-           * --------------------------------------------------------------
-           */
+          /* =================================================
+             STANDALONE EMPLOYEE PAYMENT
+          ================================================= */
 
           if (
             payment.transactionType ===
             "standalone"
           ) {
-            const [sale] =
+            const [
+              sale,
+            ] =
               await Sale.create(
                 [
                   {
@@ -1392,7 +1946,9 @@ const finalizePaidPayment =
                       null,
                   },
                 ],
-                { session }
+                {
+                  session,
+                }
               );
 
             payment.status =
@@ -1407,7 +1963,7 @@ const finalizePaidPayment =
               "upi";
 
             payment.paidAt =
-              new Date();
+              now;
 
             payment.saleId =
               sale._id;
@@ -1492,7 +2048,11 @@ const finalizePaidPayment =
                   },
                 },
               ],
-              { session, ordered: true }
+              {
+                session,
+                ordered:
+                  true,
+              }
             );
 
             result =
@@ -1501,11 +2061,9 @@ const finalizePaidPayment =
             return;
           }
 
-          /*
-           * --------------------------------------------------------------
-           * NOZZLE PAYMENT
-           * --------------------------------------------------------------
-           */
+          /* =================================================
+             NOZZLE PAYMENT
+          ================================================= */
 
           const nozzle =
             await Nozzle.findOne({
@@ -1517,14 +2075,40 @@ const finalizePaidPayment =
 
               status:
                 "active",
-            }).session(session);
+            })
+              .select(
+                "_id pumpId fuelType currentReading status"
+              )
+              .session(
+                session
+              );
+
+          if (!nozzle) {
+            const error =
+              new Error(
+                "Nozzle not found or inactive."
+              );
+
+            error.code =
+              "NOZZLE_NOT_FOUND";
+
+            throw error;
+          }
+
+          /*
+           * Critical concurrency check:
+           *
+           * The nozzle reading used to calculate this payment
+           * must still be the current reading.
+           */
 
           if (
-            !nozzle ||
             Number(
               nozzle.currentReading
             ) !==
+            Number(
               payment.openingReading
+            )
           ) {
             const error =
               new Error(
@@ -1536,6 +2120,10 @@ const finalizePaidPayment =
 
             throw error;
           }
+
+          /* ---------------------------------------------
+             CHECK FINAL SHIFT READING
+          ---------------------------------------------- */
 
           const duplicateReading =
             await NozzleReading.findOne(
@@ -1552,9 +2140,15 @@ const finalizePaidPayment =
                 shiftName:
                   payment.shiftName,
               }
-            ).session(session);
+            )
+              .select("_id")
+              .session(
+                session
+              );
 
-          if (duplicateReading) {
+          if (
+            duplicateReading
+          ) {
             const error =
               new Error(
                 "A final reading already exists for this shift."
@@ -1566,6 +2160,10 @@ const finalizePaidPayment =
             throw error;
           }
 
+          /* ---------------------------------------------
+             CHECK STOCK
+          ---------------------------------------------- */
+
           const stock =
             await FuelStock.findOne({
               pumpId:
@@ -1573,14 +2171,22 @@ const finalizePaidPayment =
 
               fuelType:
                 payment.fuelType,
-            }).session(session);
+            })
+              .select(
+                "_id pumpId fuelType currentStock"
+              )
+              .session(
+                session
+              );
 
           if (
             !stock ||
             Number(
               stock.currentStock
             ) <
-              payment.quantity
+              Number(
+                payment.quantity
+              )
           ) {
             const error =
               new Error(
@@ -1593,7 +2199,18 @@ const finalizePaidPayment =
             throw error;
           }
 
-          const [reading] =
+          /* ---------------------------------------------
+             CREATE NOZZLE READING
+          ---------------------------------------------- */
+
+          const finalPaymentMethod =
+            normalizePaymentMethod(
+              method
+            );
+
+          const [
+            reading,
+          ] =
             await NozzleReading.create(
               [
                 {
@@ -1634,9 +2251,7 @@ const finalizePaidPayment =
                     payment.readingDate,
 
                   paymentMethod:
-                    method === "card"
-                      ? "card"
-                      : "upi",
+                    finalPaymentMethod,
 
                   note:
                     payment.note,
@@ -1645,10 +2260,18 @@ const finalizePaidPayment =
                     payment.employeeId,
                 },
               ],
-              { session }
+              {
+                session,
+              }
             );
 
-          const [sale] =
+          /* ---------------------------------------------
+             CREATE SALE
+          ---------------------------------------------- */
+
+          const [
+            sale,
+          ] =
             await Sale.create(
               [
                 {
@@ -1680,9 +2303,7 @@ const finalizePaidPayment =
                     payment.amount,
 
                   paymentMethod:
-                    method === "card"
-                      ? "card"
-                      : "upi",
+                    finalPaymentMethod,
 
                   saleDate:
                     payment.readingDate,
@@ -1701,8 +2322,14 @@ const finalizePaidPayment =
                     null,
                 },
               ],
-              { session }
+              {
+                session,
+              }
             );
+
+          /* ---------------------------------------------
+             ATOMIC STOCK UPDATE
+          ---------------------------------------------- */
 
           const updatedStock =
             await FuelStock.findOneAndUpdate(
@@ -1738,6 +2365,24 @@ const finalizePaidPayment =
               }
             );
 
+          if (
+            !updatedStock
+          ) {
+            const error =
+              new Error(
+                "Fuel stock changed before payment finalization."
+              );
+
+            error.code =
+              "STOCK_UPDATE_CONFLICT";
+
+            throw error;
+          }
+
+          /* ---------------------------------------------
+             ATOMIC NOZZLE UPDATE
+          ---------------------------------------------- */
+
           const updatedNozzle =
             await Nozzle.findOneAndUpdate(
               {
@@ -1771,19 +2416,22 @@ const finalizePaidPayment =
             );
 
           if (
-            !updatedStock ||
             !updatedNozzle
           ) {
             const error =
               new Error(
-                "The paid transaction could not update stock or nozzle safely."
+                "Nozzle reading changed before finalization."
               );
 
             error.code =
-              "FINALIZATION_CONFLICT";
+              "NOZZLE_UPDATE_CONFLICT";
 
             throw error;
           }
+
+          /* ---------------------------------------------
+             MARK PAYMENT PAID
+          ---------------------------------------------- */
 
           payment.status =
             "paid";
@@ -1794,12 +2442,10 @@ const finalizePaidPayment =
             null;
 
           payment.method =
-            method === "card"
-              ? "card"
-              : "upi";
+            finalPaymentMethod;
 
           payment.paidAt =
-            new Date();
+            now;
 
           payment.readingId =
             reading._id;
@@ -1821,6 +2467,10 @@ const finalizePaidPayment =
           await payment.save({
             session,
           });
+
+          /* ---------------------------------------------
+             AUDIT
+          ---------------------------------------------- */
 
           await AuditLog.create(
             [
@@ -1844,7 +2494,7 @@ const finalizePaidPayment =
                   payment._id,
 
                 description:
-                  "Razorpay payment verified and marked paid.",
+                  "Payment verified and marked paid.",
 
                 newData: {
                   amount:
@@ -1876,7 +2526,7 @@ const finalizePaidPayment =
                   sale._id,
 
                 description:
-                  "Sale created from verified Razorpay payment.",
+                  "Sale created from verified payment.",
 
                 newData: {
                   paymentId:
@@ -1887,7 +2537,11 @@ const finalizePaidPayment =
                 },
               },
             ],
-            { session }
+            {
+              session,
+              ordered:
+                true,
+            }
           );
 
           result =
@@ -1901,14 +2555,15 @@ const finalizePaidPayment =
     }
   };
 
-/*
- * --------------------------------------------------------------------------
- * RAZORPAY WEBHOOK
- * --------------------------------------------------------------------------
- */
+/* =========================================================
+   RAZORPAY WEBHOOK
+========================================================= */
 
 export const handleRazorpayWebhook =
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     const rawBody =
       req.body;
 
@@ -1917,39 +2572,11 @@ export const handleRazorpayWebhook =
         "x-razorpay-signature"
       ];
 
-    console.log(
-      "========== RAZORPAY WEBHOOK RECEIVED =========="
-    );
-
-    console.log({
-      hasRawBody:
-        Buffer.isBuffer(
-          rawBody
-        ),
-
-      bodyBytes:
-        Buffer.isBuffer(
-          rawBody
-        )
-          ? rawBody.length
-          : 0,
-
-      hasSignature:
-        Boolean(signature),
-
-      webhookSecretConfigured:
-        Boolean(
-          process.env
-            .RAZORPAY_WEBHOOK_SECRET
-        ),
-    });
-
     /*
-     * NEVER log:
-     * - webhook secret
-     * - Razorpay API secret
-     * - full authorization headers
-     * - raw payment payload
+     * IMPORTANT:
+     *
+     * server.js must register this route BEFORE express.json()
+     * and use express.raw({ type: "application/json" }).
      */
 
     if (
@@ -1972,11 +2599,12 @@ export const handleRazorpayWebhook =
     let event;
 
     try {
-      event = JSON.parse(
-        rawBody.toString(
-          "utf8"
-        )
-      );
+      event =
+        JSON.parse(
+          rawBody.toString(
+            "utf8"
+          )
+        );
     } catch {
       console.error(
         "RAZORPAY WEBHOOK: INVALID JSON"
@@ -1989,29 +2617,18 @@ export const handleRazorpayWebhook =
       });
     }
 
-    console.log(
-      "RAZORPAY WEBHOOK EVENT:",
-      {
-        event:
-          event?.event,
-
-        eventId:
-          event?.id,
-      }
-    );
-
     try {
       const paymentEntity =
-        event?.payload?.payment
-          ?.entity;
+        event?.payload
+          ?.payment?.entity;
 
       const qrEntity =
-        event?.payload?.qr_code
-          ?.entity;
+        event?.payload
+          ?.qr_code?.entity;
 
       const paymentLinkEntity =
-        event?.payload?.payment_link
-          ?.entity;
+        event?.payload
+          ?.payment_link?.entity;
 
       const entity =
         paymentEntity ||
@@ -2035,7 +2652,12 @@ export const handleRazorpayWebhook =
         entity?.order_id ||
         null;
 
-      const lookup = [];
+      /* ---------------------------------------------
+         BUILD LOOKUP
+      ---------------------------------------------- */
+
+      const lookup =
+        [];
 
       if (
         providerPaymentId
@@ -2062,42 +2684,22 @@ export const handleRazorpayWebhook =
         });
       }
 
-      console.log(
-        "RAZORPAY WEBHOOK LOOKUP:",
-        {
-          providerPaymentId:
-            providerPaymentId ||
-            null,
-
-          providerOrderId:
-            providerOrderId ||
-            null,
-
-          qrCodeId:
-            qrCodeId ||
-            null,
-        }
-      );
-
       const payment =
         lookup.length
-          ? await Payment.findOne(
-              {
-                $or: lookup,
-              }
-            )
+          ? await Payment.findOne({
+              $or:
+                lookup,
+            })
           : null;
 
-      if (!payment) {
-        console.warn(
-          "RAZORPAY WEBHOOK: PAYMENT NOT FOUND"
-        );
+      /*
+       * Unknown webhook.
+       *
+       * Acknowledge it so Razorpay does not continuously
+       * retry an event that does not belong to this system.
+       */
 
-        /*
-         * Acknowledge unknown webhook IDs so Razorpay does not
-         * continuously retry an event that belongs to another
-         * transaction/account/environment.
-         */
+      if (!payment) {
         return res.status(200).json({
           success: true,
           message:
@@ -2105,24 +2707,9 @@ export const handleRazorpayWebhook =
         });
       }
 
-      console.log(
-        "RAZORPAY WEBHOOK PAYMENT FOUND:",
-        {
-          paymentId:
-            String(
-              payment._id
-            ),
-
-          currentStatus:
-            payment.status,
-
-          expectedAmountPaise:
-            payment.amountPaise,
-
-          providerOrderId:
-            payment.providerOrderId,
-        }
-      );
+      /* ---------------------------------------------
+         EVENT TYPE
+      ---------------------------------------------- */
 
       const successEvent =
         event.event ===
@@ -2142,12 +2729,13 @@ export const handleRazorpayWebhook =
         event.event ===
           "payment_link.expired";
 
+      /* ---------------------------------------------
+         SUCCESS
+      ---------------------------------------------- */
+
       if (
         successEvent
       ) {
-        /*
-         * Payment Link events can use amount_paid.
-         */
         const receivedAmount =
           Number(
             entity?.amount_paid ??
@@ -2157,59 +2745,33 @@ export const handleRazorpayWebhook =
               0
           );
 
-        console.log(
-          "RAZORPAY WEBHOOK PAYMENT DATA:",
-          {
-            event:
-              event.event,
-
-            receivedAmount,
-
-            expectedAmount:
-              payment.amountPaise,
-
-            providerPaymentId:
-              providerPaymentId ||
-              null,
-
-            providerOrderId:
-              providerOrderId ||
-              null,
-          }
-        );
-
         const method =
           entity?.method ===
           "card"
             ? "card"
             : "upi";
 
-        await finalizePaidPayment(
-          {
-            paymentId:
-              payment._id,
+        await finalizePaidPayment({
+          paymentId:
+            payment._id,
 
-            providerPaymentId,
+          providerPaymentId,
 
-            method,
+          method,
 
-            eventId:
-              event.id,
+          eventId:
+            event.id,
 
-            payload: entity,
-          }
-        );
+          payload:
+            entity,
+        });
+      }
 
-        console.log(
-          "RAZORPAY WEBHOOK: PAYMENT FINALIZATION COMPLETE",
-          {
-            paymentId:
-              String(
-                payment._id
-              ),
-          }
-        );
-      } else if (
+      /* ---------------------------------------------
+         FAILED / EXPIRED / CANCELLED
+      ---------------------------------------------- */
+
+      else if (
         failedEvent &&
         payment.status ===
           "pending"
@@ -2253,6 +2815,10 @@ export const handleRazorpayWebhook =
         );
       }
 
+      /*
+       * Always acknowledge a valid webhook after processing.
+       */
+
       return res.status(200).json({
         success: true,
       });
@@ -2274,6 +2840,11 @@ export const handleRazorpayWebhook =
         }
       );
 
+      /*
+       * These are verification failures rather than
+       * temporary server errors.
+       */
+
       if (
         error?.code ===
           "PAYMENT_AMOUNT_MISMATCH" ||
@@ -2286,6 +2857,11 @@ export const handleRazorpayWebhook =
             "Payment verification failed.",
         });
       }
+
+      /*
+       * Returning 500 allows Razorpay to retry a webhook
+       * when our server/DB temporarily fails.
+       */
 
       return res.status(500).json({
         success: false,

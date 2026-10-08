@@ -13,28 +13,31 @@ import {
 
 const router = express.Router();
 
-/* =====================================================
-   AUTHENTICATION
-===================================================== */
+/*
+|--------------------------------------------------------------------------
+| AUTHENTICATION
+|--------------------------------------------------------------------------
+*/
 
 router.use(authMiddleware);
 
-/* =====================================================
-   NOZZLE READING HISTORY
-===================================================== */
+/*
+|--------------------------------------------------------------------------
+| NOZZLE READINGS
+|--------------------------------------------------------------------------
+*/
 
 /*
- * GET complete nozzle reading history.
+ * GET /api/nozzles/readings
  *
  * Supports:
- *
- * page
- * limit
- * date
- * shift
- * staffId
- * nozzleId
- * paymentMethod
+ * - page
+ * - limit
+ * - date
+ * - shift
+ * - staffId
+ * - nozzleId
+ * - paymentMethod
  */
 router.get(
   "/readings",
@@ -42,7 +45,9 @@ router.get(
 );
 
 /*
- * Backward-compatible history endpoint.
+ * Backward-compatible endpoint.
+ *
+ * GET /api/nozzles/readings/history
  */
 router.get(
   "/readings/history",
@@ -50,65 +55,47 @@ router.get(
 );
 
 /*
- * Add final shift reading.
+ * POST /api/nozzles/readings
  *
- * Transaction:
- * reading
- * + sale
- * + stock deduction
- * + nozzle reading update
+ * Adds the final shift reading and handles
+ * the related sale/stock operations.
  */
 router.post(
   "/readings",
   addNozzleReading
 );
 
-/* =====================================================
-   NOZZLES
-===================================================== */
-
 /*
- * Get all nozzles belonging to
- * authenticated user's pump.
- */
+|--------------------------------------------------------------------------
+| NOZZLES
+|--------------------------------------------------------------------------
+*/
+
+// GET /api/nozzles
 router.get(
   "/",
   getNozzles
 );
 
-/*
- * Add nozzle.
- */
+// POST /api/nozzles
 router.post(
   "/",
   addNozzle
 );
 
-/*
- * Update nozzle.
- */
+// PATCH /api/nozzles/:id
 router.patch(
   "/:id",
   updateNozzle
 );
 
-/*
- * Backward-compatible PUT update.
- */
+// Backward-compatible PUT endpoint.
 router.put(
   "/:id",
   updateNozzle
 );
 
-/*
- * Delete nozzle.
- *
- * Historical nozzles containing readings
- * or sales cannot be permanently deleted.
- *
- * If deletion is allowed, the original
- * document is moved into recovery storage.
- */
+// DELETE /api/nozzles/:id
 router.delete(
   "/:id",
   deleteNozzle

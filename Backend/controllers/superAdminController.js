@@ -35,6 +35,7 @@ const ALLOWED_CLIENT_PLANS = [
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
+const MAX_SEARCH_LENGTH = 100;
 
 /* =====================================================
    HELPERS
@@ -68,6 +69,10 @@ const isValidEmail = (email) => {
   );
 };
 
+/**
+ * Escape user input before using it in MongoDB regex.
+ * Prevents regex injection / expensive regex patterns.
+ */
 const escapeRegex = (value) =>
   String(value || "").replace(
     /[.*+?^${}()|[\]\\]/g,
@@ -94,7 +99,10 @@ const parsePagination = (query = {}) => {
   const limit =
     Number.isInteger(parsedLimit) &&
     parsedLimit > 0
-      ? Math.min(parsedLimit, MAX_LIMIT)
+      ? Math.min(
+          parsedLimit,
+          MAX_LIMIT
+        )
       : DEFAULT_LIMIT;
 
   return {
@@ -108,11 +116,11 @@ const parsePagination = (query = {}) => {
  * Client model supports:
  * basic / standard / premium
  *
- * RegistrationRequest also supports:
+ * RegistrationRequest may support:
  * enterprise
  *
- * Enterprise is mapped to premium because the
- * current Client schema does not contain enterprise.
+ * Enterprise is mapped to premium because
+ * Client schema does not contain enterprise.
  */
 const normalizeClientPlan = (value) => {
   const plan = normalizeString(value).toLowerCase();
@@ -139,7 +147,50 @@ const isValidDateValue = (value) => {
 
   const date = new Date(value);
 
-  return !Number.isNaN(date.getTime());
+  return !Number.isNaN(
+    date.getTime()
+  );
+};
+
+/**
+ * Remove sensitive fields before returning
+ * RegistrationRequest documents.
+ */
+const sanitizeRegistrationRequest = (
+  request
+) => {
+  if (!request) {
+    return request;
+  }
+
+  const safe =
+    typeof request.toObject === "function"
+      ? request.toObject()
+      : { ...request };
+
+  delete safe.password;
+  delete safe.resetToken;
+  delete safe.resetTokenHash;
+  delete safe.resetTokenExpiresAt;
+
+  return safe;
+};
+
+/**
+ * Create a controller error with a status code.
+ */
+const createControllerError = (
+  message,
+  statusCode,
+  extra = {}
+) => {
+  const error = new Error(message);
+
+  error.statusCode = statusCode;
+
+  Object.assign(error, extra);
+
+  return error;
 };
 
 /* =====================================================
@@ -149,10 +200,12 @@ const isValidDateValue = (value) => {
 /*
  * Pump codes are generated from Client records.
  *
- * Client.pumpCode has a unique database index,
- * which remains the final uniqueness protection.
+ * Client.pumpCode should have a unique database index.
+ * That index remains the final uniqueness protection.
  */
-const generatePumpCode = async (session = null) => {
+const generatePumpCode = async (
+  session = null
+) => {
   let number =
     (await Client.countDocuments(
       {},
@@ -162,7 +215,9 @@ const generatePumpCode = async (session = null) => {
     )) + 1;
 
   while (true) {
-    const code = `PUMP${String(number).padStart(4, "0")}`;
+    const code = `PUMP${String(
+      number
+    ).padStart(4, "0")}`;
 
     let query = Client.exists({
       pumpCode: code,
@@ -186,13 +241,18 @@ const generatePumpCode = async (session = null) => {
    GET ALL CLIENTS
 ===================================================== */
 
-export const getClients = async (req, res) => {
+export const getClients = async (
+  req,
+  res
+) => {
   try {
     const {
       page,
       limit,
       skip,
-    } = parsePagination(req.query);
+    } = parsePagination(
+      req.query
+    );
 
     const [
       clients,
@@ -252,7 +312,9 @@ export const getClientById = async (
 ) => {
   try {
     if (
-      !isValidObjectId(req.params.id)
+      !isValidObjectId(
+        req.params.id
+      )
     ) {
       return res.status(400).json({
         success: false,
@@ -265,10 +327,13 @@ export const getClientById = async (
       await Client.findById(
         req.params.id
       )
-        .populate("pumpId")
+        .populate(
+          "pumpId",
+          "-__v"
+        )
         .populate(
           "ownerUserId",
-          "-password"
+          "-password -__v"
         )
         .lean();
 
@@ -306,8 +371,7 @@ export const addClient = async (
   req,
   res
 ) => {
-  const session =
-    await mongoose.startSession();
+  let session = null;
 
   try {
     const {
@@ -429,13 +493,25 @@ export const addClient = async (
     }
 
     /* ===============================================
-       EXISTING USER
+       CHECK DUPLICATES IN PARALLEL
     =============================================== */
 
-    const existingUser =
-      await User.findOne({
+    const [
+      existingUser,
+      existingClient,
+    ] = await Promise.all([
+      User.findOne({
         email: normalizedEmail,
-      }).select("_id");
+      })
+        .select("_id")
+        .lean(),
+
+      Client.findOne({
+        email: normalizedEmail,
+      })
+        .select("_id")
+        .lean(),
+    ]);
 
     if (existingUser) {
       return res.status(409).json({
@@ -446,15 +522,6 @@ export const addClient = async (
       });
     }
 
-    /* ===============================================
-       EXISTING CLIENT
-    =============================================== */
-
-    const existingClient =
-      await Client.findOne({
-        email: normalizedEmail,
-      }).select("_id");
-
     if (existingClient) {
       return res.status(409).json({
         success: false,
@@ -464,159 +531,182 @@ export const addClient = async (
       });
     }
 
-    let createdClient = null;
-    let pumpCode = null;
-
     /* ===============================================
        TRANSACTION
     =============================================== */
 
+    session =
+      await mongoose.startSession();
+
+    let createdClient = null;
+    let pumpCode = null;
+
     await session.withTransaction(
       async () => {
-        const [createdPump] =
-          await Pump.create(
-            [
-              {
-                pumpName:
-                  cleanPumpName,
+        /* =========================================
+           CREATE PUMP
+        ========================================= */
 
-                ownerName:
-                  cleanOwnerName,
+        const [
+          createdPump,
+        ] = await Pump.create(
+          [
+            {
+              pumpName:
+                cleanPumpName,
 
-                phone:
-                  normalizeString(phone),
+              ownerName:
+                cleanOwnerName,
 
-                email:
-                  normalizedEmail,
+              phone:
+                normalizeString(phone),
 
-                companyName:
-                  normalizeString(
-                    companyName
-                  ),
+              email:
+                normalizedEmail,
 
-                dealerCode:
-                  normalizeString(
-                    dealerCode
-                  ),
+              companyName:
+                normalizeString(
+                  companyName
+                ),
 
-                gstin:
-                  normalizeString(
-                    gstin
-                  ).toUpperCase(),
+              dealerCode:
+                normalizeString(
+                  dealerCode
+                ),
 
-                address:
-                  normalizeString(
-                    address
-                  ),
+              gstin:
+                normalizeString(
+                  gstin
+                ).toUpperCase(),
 
-                city:
-                  normalizeString(city),
+              address:
+                normalizeString(
+                  address
+                ),
 
-                state:
-                  normalizeString(state),
+              city:
+                normalizeString(city),
 
-                pincode:
-                  normalizeString(
-                    pincode
-                  ),
+              state:
+                normalizeString(state),
 
-                active: true,
-              },
-            ],
-            { session }
-          );
+              pincode:
+                normalizeString(
+                  pincode
+                ),
 
-        const [createdUser] =
-          await User.create(
-            [
-              {
-                name:
-                  cleanOwnerName,
+              active: true,
+            },
+          ],
+          { session }
+        );
 
-                email:
-                  normalizedEmail,
+        /* =========================================
+           CREATE OWNER USER
+        ========================================= */
 
-                password:
-                  cleanPassword,
+        const [
+          createdUser,
+        ] = await User.create(
+          [
+            {
+              name:
+                cleanOwnerName,
 
-                role: "owner",
+              email:
+                normalizedEmail,
 
-                pumpId:
-                  createdPump._id,
+              password:
+                cleanPassword,
 
-                active: true,
-              },
-            ],
-            { session }
-          );
+              role: "owner",
+
+              pumpId:
+                createdPump._id,
+
+              active: true,
+            },
+          ],
+          { session }
+        );
+
+        /* =========================================
+           GENERATE PUMP CODE
+        ========================================= */
 
         pumpCode =
           await generatePumpCode(
             session
           );
 
-        [createdClient] =
-          await Client.create(
-            [
-              {
-                pumpId:
-                  createdPump._id,
+        /* =========================================
+           CREATE CLIENT
+        ========================================= */
 
-                ownerUserId:
-                  createdUser._id,
+        [
+          createdClient,
+        ] = await Client.create(
+          [
+            {
+              pumpId:
+                createdPump._id,
 
-                pumpName:
-                  cleanPumpName,
+              ownerUserId:
+                createdUser._id,
 
-                ownerName:
-                  cleanOwnerName,
+              pumpName:
+                cleanPumpName,
 
-                email:
-                  normalizedEmail,
+              ownerName:
+                cleanOwnerName,
 
-                phone:
-                  normalizeString(phone),
+              email:
+                normalizedEmail,
 
-                address:
-                  normalizeString(
-                    address
-                  ),
+              phone:
+                normalizeString(phone),
 
-                pumpCode,
+              address:
+                normalizeString(
+                  address
+                ),
 
-                plan:
-                  normalizedPlan,
+              pumpCode,
 
-                status: "active",
+              plan:
+                normalizedPlan,
 
-                subscriptionStart:
-                  subscriptionStart
-                    ? new Date(
-                        subscriptionStart
-                      )
-                    : new Date(),
+              status: "active",
 
-                subscriptionEnd:
-                  subscriptionEnd
-                    ? new Date(
-                        subscriptionEnd
-                      )
-                    : null,
+              subscriptionStart:
+                subscriptionStart
+                  ? new Date(
+                      subscriptionStart
+                    )
+                  : new Date(),
 
-                notes:
-                  normalizeString(notes),
+              subscriptionEnd:
+                subscriptionEnd
+                  ? new Date(
+                      subscriptionEnd
+                    )
+                  : null,
 
-                createdBy:
-                  req.user?._id || null,
-              },
-            ],
-            { session }
-          );
+              notes:
+                normalizeString(notes),
+
+              createdBy:
+                req.user?._id || null,
+            },
+          ],
+          { session }
+        );
       }
     );
 
     return res.status(201).json({
       success: true,
+
       message:
         "Client, pump and owner account created successfully",
 
@@ -650,7 +740,9 @@ export const addClient = async (
       code: "CLIENT_CREATE_ERROR",
     });
   } finally {
-    await session.endSession();
+    if (session) {
+      await session.endSession();
+    }
   }
 };
 
@@ -662,8 +754,7 @@ export const updateClient = async (
   req,
   res
 ) => {
-  const session =
-    await mongoose.startSession();
+  let session = null;
 
   try {
     if (
@@ -696,6 +787,127 @@ export const updateClient = async (
       notes,
     } = req.body || {};
 
+    /* ===============================================
+       VALIDATE EMAIL BEFORE TRANSACTION
+    =============================================== */
+
+    let normalizedEmail = null;
+
+    if (email !== undefined) {
+      normalizedEmail =
+        normalizeEmail(email);
+
+      if (
+        !isValidEmail(
+          normalizedEmail
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid client information",
+        });
+      }
+    }
+
+    /* ===============================================
+       VALIDATE BASIC VALUES
+    =============================================== */
+
+    if (
+      pumpName !== undefined &&
+      !normalizeString(pumpName)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid client information",
+      });
+    }
+
+    if (
+      ownerName !== undefined &&
+      !normalizeString(ownerName)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid client information",
+      });
+    }
+
+    if (plan !== undefined) {
+      const normalizedPlan =
+        normalizeString(plan)
+          .toLowerCase();
+
+      if (
+        !ALLOWED_CLIENT_PLANS.includes(
+          normalizedPlan
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid client information",
+        });
+      }
+    }
+
+    if (
+      subscriptionStart !==
+        undefined &&
+      !isValidDateValue(
+        subscriptionStart
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid client information",
+      });
+    }
+
+    if (
+      subscriptionEnd !==
+        undefined &&
+      !isValidDateValue(
+        subscriptionEnd
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid client information",
+      });
+    }
+
+    if (status !== undefined) {
+      const normalizedStatus =
+        normalizeClientStatus(
+          status
+        );
+
+      if (
+        !ALLOWED_CLIENT_STATUSES.includes(
+          normalizedStatus
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid client information",
+        });
+      }
+    }
+
+    /* ===============================================
+       START TRANSACTION
+    =============================================== */
+
+    session =
+      await mongoose.startSession();
+
     let updatedClient = null;
 
     await session.withTransaction(
@@ -706,73 +918,59 @@ export const updateClient = async (
           ).session(session);
 
         if (!client) {
-          const error =
-            new Error(
-              "CLIENT_NOT_FOUND"
-            );
-
-          error.statusCode = 404;
-
-          throw error;
+          throw createControllerError(
+            "CLIENT_NOT_FOUND",
+            404
+          );
         }
 
-        const pump =
-          await Pump.findById(
-            client.pumpId
-          ).session(session);
+        /* =========================================
+           LOAD PUMP + OWNER IN PARALLEL
+        ========================================= */
 
-        const owner =
-          await User.findById(
+        const [
+          pump,
+          owner,
+        ] = await Promise.all([
+          Pump.findById(
+            client.pumpId
+          ).session(session),
+
+          User.findById(
             client.ownerUserId
-          ).session(session);
+          ).session(session),
+        ]);
 
         if (!pump) {
-          const error =
-            new Error(
-              "PUMP_NOT_FOUND"
-            );
-
-          error.statusCode = 404;
-
-          throw error;
+          throw createControllerError(
+            "PUMP_NOT_FOUND",
+            404
+          );
         }
 
         if (!owner) {
-          const error =
-            new Error(
-              "OWNER_NOT_FOUND"
-            );
-
-          error.statusCode = 404;
-
-          throw error;
+          throw createControllerError(
+            "OWNER_NOT_FOUND",
+            404
+          );
         }
 
         /* =========================================
            EMAIL
         ========================================= */
 
-        if (email !== undefined) {
-          const normalizedEmail =
-            normalizeEmail(email);
-
-          if (
-            !isValidEmail(
-              normalizedEmail
+        if (
+          normalizedEmail !== null &&
+          normalizedEmail !==
+            normalizeEmail(
+              client.email
             )
-          ) {
-            const error =
-              new Error(
-                "INVALID_EMAIL"
-              );
-
-            error.statusCode = 400;
-
-            throw error;
-          }
-
-          const duplicateUser =
-            await User.findOne({
+        ) {
+          const [
+            duplicateUser,
+            duplicateClient,
+          ] = await Promise.all([
+            User.findOne({
               email:
                 normalizedEmail,
 
@@ -780,21 +978,12 @@ export const updateClient = async (
                 $ne:
                   client.ownerUserId,
               },
-            }).session(session);
+            })
+              .select("_id")
+              .session(session)
+              .lean(),
 
-          if (duplicateUser) {
-            const error =
-              new Error(
-                "DUPLICATE_EMAIL"
-              );
-
-            error.statusCode = 409;
-
-            throw error;
-          }
-
-          const duplicateClient =
-            await Client.findOne({
+            Client.findOne({
               email:
                 normalizedEmail,
 
@@ -802,17 +991,24 @@ export const updateClient = async (
                 $ne:
                   client._id,
               },
-            }).session(session);
+            })
+              .select("_id")
+              .session(session)
+              .lean(),
+          ]);
+
+          if (duplicateUser) {
+            throw createControllerError(
+              "DUPLICATE_EMAIL",
+              409
+            );
+          }
 
           if (duplicateClient) {
-            const error =
-              new Error(
-                "DUPLICATE_CLIENT_EMAIL"
-              );
-
-            error.statusCode = 409;
-
-            throw error;
+            throw createControllerError(
+              "DUPLICATE_CLIENT_EMAIL",
+              409
+            );
           }
 
           client.email =
@@ -837,17 +1033,6 @@ export const updateClient = async (
               pumpName
             );
 
-          if (!value) {
-            const error =
-              new Error(
-                "INVALID_PUMP_NAME"
-              );
-
-            error.statusCode = 400;
-
-            throw error;
-          }
-
           client.pumpName = value;
           pump.pumpName = value;
         }
@@ -859,17 +1044,6 @@ export const updateClient = async (
             normalizeString(
               ownerName
             );
-
-          if (!value) {
-            const error =
-              new Error(
-                "INVALID_OWNER_NAME"
-              );
-
-            error.statusCode = 400;
-
-            throw error;
-          }
 
           client.ownerName = value;
           pump.ownerName = value;
@@ -890,7 +1064,9 @@ export const updateClient = async (
           address !== undefined
         ) {
           const value =
-            normalizeString(address);
+            normalizeString(
+              address
+            );
 
           client.address = value;
           pump.address = value;
@@ -950,30 +1126,10 @@ export const updateClient = async (
            PLAN
         ========================================= */
 
-        if (
-          plan !== undefined
-        ) {
-          const normalizedPlan =
+        if (plan !== undefined) {
+          client.plan =
             normalizeString(plan)
               .toLowerCase();
-
-          if (
-            !ALLOWED_CLIENT_PLANS.includes(
-              normalizedPlan
-            )
-          ) {
-            const error =
-              new Error(
-                "INVALID_PLAN"
-              );
-
-            error.statusCode = 400;
-
-            throw error;
-          }
-
-          client.plan =
-            normalizedPlan;
         }
 
         /* =========================================
@@ -993,37 +1149,15 @@ export const updateClient = async (
             : client.subscriptionEnd;
 
         if (
-          !isValidDateValue(
-            nextStart
-          ) ||
-          !isValidDateValue(
-            nextEnd
-          )
-        ) {
-          const error =
-            new Error(
-              "INVALID_SUBSCRIPTION_DATE"
-            );
-
-          error.statusCode = 400;
-
-          throw error;
-        }
-
-        if (
           nextStart &&
           nextEnd &&
           new Date(nextEnd) <
             new Date(nextStart)
         ) {
-          const error =
-            new Error(
-              "INVALID_SUBSCRIPTION_RANGE"
-            );
-
-          error.statusCode = 400;
-
-          throw error;
+          throw createControllerError(
+            "INVALID_SUBSCRIPTION_RANGE",
+            400
+          );
         }
 
         if (
@@ -1050,6 +1184,10 @@ export const updateClient = async (
               : null;
         }
 
+        /* =========================================
+           NOTES
+        ========================================= */
+
         if (
           notes !== undefined
         ) {
@@ -1069,21 +1207,6 @@ export const updateClient = async (
               status
             );
 
-          if (
-            !ALLOWED_CLIENT_STATUSES.includes(
-              normalizedStatus
-            )
-          ) {
-            const error =
-              new Error(
-                "INVALID_STATUS"
-              );
-
-            error.statusCode = 400;
-
-            throw error;
-          }
-
           client.status =
             normalizedStatus;
 
@@ -1096,7 +1219,7 @@ export const updateClient = async (
         }
 
         /* =========================================
-           SAVE ALL DOCUMENTS
+           SAVE DOCUMENTS
         ========================================= */
 
         await client.save({
@@ -1165,7 +1288,9 @@ export const updateClient = async (
         "Unable to update client",
     });
   } finally {
-    await session.endSession();
+    if (session) {
+      await session.endSession();
+    }
   }
 };
 
@@ -1175,8 +1300,7 @@ export const updateClient = async (
 
 export const updateClientStatus =
   async (req, res) => {
-    const session =
-      await mongoose.startSession();
+    let session = null;
 
     try {
       const normalizedStatus =
@@ -1207,6 +1331,9 @@ export const updateClientStatus =
         });
       }
 
+      session =
+        await mongoose.startSession();
+
       let updatedClient = null;
 
       await session.withTransaction(
@@ -1217,46 +1344,37 @@ export const updateClientStatus =
             ).session(session);
 
           if (!client) {
-            const error =
-              new Error(
-                "CLIENT_NOT_FOUND"
-              );
-
-            error.statusCode = 404;
-
-            throw error;
+            throw createControllerError(
+              "CLIENT_NOT_FOUND",
+              404
+            );
           }
 
-          const pump =
-            await Pump.findById(
+          const [
+            pump,
+            owner,
+          ] = await Promise.all([
+            Pump.findById(
               client.pumpId
-            ).session(session);
+            ).session(session),
+
+            User.findById(
+              client.ownerUserId
+            ).session(session),
+          ]);
 
           if (!pump) {
-            const error =
-              new Error(
-                "PUMP_NOT_FOUND"
-              );
-
-            error.statusCode = 404;
-
-            throw error;
+            throw createControllerError(
+              "PUMP_NOT_FOUND",
+              404
+            );
           }
 
-          const owner =
-            await User.findById(
-              client.ownerUserId
-            ).session(session);
-
           if (!owner) {
-            const error =
-              new Error(
-                "OWNER_NOT_FOUND"
-              );
-
-            error.statusCode = 404;
-
-            throw error;
+            throw createControllerError(
+              "OWNER_NOT_FOUND",
+              404
+            );
           }
 
           client.status =
@@ -1287,8 +1405,10 @@ export const updateClientStatus =
 
       return res.json({
         success: true,
+
         message:
-          normalizedStatus === "active"
+          normalizedStatus ===
+          "active"
             ? "Client activated"
             : normalizedStatus ===
               "inactive"
@@ -1327,24 +1447,27 @@ export const updateClientStatus =
           "Unable to update client status",
       });
     } finally {
-      await session.endSession();
+      if (session) {
+        await session.endSession();
+      }
     }
   };
 
 /* =====================================================
    DELETE CLIENT
-
-   Client + Pump + Owner User are deleted as ONE
-   recoverable group.
-
-   Recovery snapshots are created BEFORE physical
-   deletion and inside the SAME MongoDB transaction.
 ===================================================== */
+
+/*
+ * Client + Pump + Owner User are deleted as ONE
+ * recoverable group.
+ *
+ * Recovery snapshots are created BEFORE physical
+ * deletion and inside the SAME MongoDB transaction.
+ */
 
 export const deleteClient =
   async (req, res) => {
-    const session =
-      await mongoose.startSession();
+    let session = null;
 
     try {
       if (
@@ -1359,6 +1482,20 @@ export const deleteClient =
         });
       }
 
+      const deletedBy =
+        req.user?._id;
+
+      if (!deletedBy) {
+        return res.status(401).json({
+          success: false,
+          message:
+            "Authenticated Super Admin is required",
+        });
+      }
+
+      session =
+        await mongoose.startSession();
+
       let deletionGroupId = null;
 
       await session.withTransaction(
@@ -1369,75 +1506,48 @@ export const deleteClient =
             ).session(session);
 
           if (!client) {
-            const error =
-              new Error(
-                "CLIENT_NOT_FOUND"
-              );
-
-            error.statusCode = 404;
-
-            throw error;
+            throw createControllerError(
+              "CLIENT_NOT_FOUND",
+              404
+            );
           }
 
-          const pump =
-            await Pump.findById(
+          const [
+            pump,
+            owner,
+          ] = await Promise.all([
+            Pump.findById(
               client.pumpId
-            ).session(session);
+            ).session(session),
 
-          const owner =
-            await User.findById(
+            User.findById(
               client.ownerUserId
             )
               .select("+password")
-              .session(session);
+              .session(session),
+          ]);
 
           if (!pump) {
-            const error =
-              new Error(
-                "PUMP_NOT_FOUND"
-              );
-
-            error.statusCode = 404;
-
-            throw error;
+            throw createControllerError(
+              "PUMP_NOT_FOUND",
+              404
+            );
           }
 
           if (!owner) {
-            const error =
-              new Error(
-                "OWNER_NOT_FOUND"
-              );
-
-            error.statusCode = 404;
-
-            throw error;
+            throw createControllerError(
+              "OWNER_NOT_FOUND",
+              404
+            );
           }
 
           if (
             owner.role !== "owner"
           ) {
-            const error =
-              new Error(
-                "INVALID_OWNER_ROLE"
-              );
-
-            error.statusCode = 409;
-
-            throw error;
-          }
-
-          const deletedBy =
-            req.user?._id;
-
-          if (!deletedBy) {
-            const error =
-              new Error(
-                "AUTHENTICATED_USER_REQUIRED"
-              );
-
-            error.statusCode = 401;
-
-            throw error;
+            throw createControllerError(
+              "INVALID_OWNER_ROLE",
+              409
+            );
           }
 
           deletionGroupId =
@@ -1455,7 +1565,8 @@ export const deleteClient =
 
             originalModel: "User",
 
-            pumpId: pump._id,
+            pumpId:
+              pump._id,
 
             deletedBy,
 
@@ -1481,7 +1592,8 @@ export const deleteClient =
 
             originalModel: "Pump",
 
-            pumpId: pump._id,
+            pumpId:
+              pump._id,
 
             deletedBy,
 
@@ -1507,7 +1619,8 @@ export const deleteClient =
 
             originalModel: "Client",
 
-            pumpId: pump._id,
+            pumpId:
+              pump._id,
 
             deletedBy,
 
@@ -1535,14 +1648,10 @@ export const deleteClient =
             ownerDelete.deletedCount !==
             1
           ) {
-            const error =
-              new Error(
-                "OWNER_DELETE_FAILED"
-              );
-
-            error.statusCode = 500;
-
-            throw error;
+            throw createControllerError(
+              "OWNER_DELETE_FAILED",
+              500
+            );
           }
 
           /* =========================================
@@ -1558,14 +1667,10 @@ export const deleteClient =
             pumpDelete.deletedCount !==
             1
           ) {
-            const error =
-              new Error(
-                "PUMP_DELETE_FAILED"
-              );
-
-            error.statusCode = 500;
-
-            throw error;
+            throw createControllerError(
+              "PUMP_DELETE_FAILED",
+              500
+            );
           }
 
           /* =========================================
@@ -1582,14 +1687,10 @@ export const deleteClient =
             clientDelete.deletedCount !==
             1
           ) {
-            const error =
-              new Error(
-                "CLIENT_DELETE_FAILED"
-              );
-
-            error.statusCode = 500;
-
-            throw error;
+            throw createControllerError(
+              "CLIENT_DELETE_FAILED",
+              500
+            );
           }
         }
       );
@@ -1646,7 +1747,9 @@ export const deleteClient =
           "CLIENT_DELETE_ERROR",
       });
     } finally {
-      await session.endSession();
+      if (session) {
+        await session.endSession();
+      }
     }
   };
 
@@ -1658,34 +1761,83 @@ export const getSuperAdminSummary =
   async (req, res) => {
     try {
       const [
-        totalClients,
-        activeClients,
-        inactiveClients,
-        expiredClients,
-      ] = await Promise.all([
-        Client.countDocuments(),
+        summary,
+      ] = await Client.aggregate([
+        {
+          $group: {
+            _id: null,
 
-        Client.countDocuments({
-          status: "active",
-        }),
+            totalClients: {
+              $sum: 1,
+            },
 
-        Client.countDocuments({
-          status: "inactive",
-        }),
+            activeClients: {
+              $sum: {
+                $cond: [
+                  {
+                    $eq: [
+                      "$status",
+                      "active",
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
 
-        Client.countDocuments({
-          status: "expired",
-        }),
+            inactiveClients: {
+              $sum: {
+                $cond: [
+                  {
+                    $eq: [
+                      "$status",
+                      "inactive",
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+
+            expiredClients: {
+              $sum: {
+                $cond: [
+                  {
+                    $eq: [
+                      "$status",
+                      "expired",
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+          },
+        },
       ]);
 
       return res.json({
         success: true,
 
         summary: {
-          totalClients,
-          activeClients,
-          inactiveClients,
-          expiredClients,
+          totalClients:
+            summary?.totalClients ||
+            0,
+
+          activeClients:
+            summary?.activeClients ||
+            0,
+
+          inactiveClients:
+            summary?.inactiveClients ||
+            0,
+
+          expiredClients:
+            summary?.expiredClients ||
+            0,
         },
       });
     } catch (error) {
@@ -1789,6 +1941,10 @@ export const getRegistrationRequests =
 
       const filter = {};
 
+      /* ===============================================
+         STATUS FILTER
+      =============================================== */
+
       if (status) {
         const normalizedStatus =
           normalizeRequestStatus(
@@ -1813,42 +1969,66 @@ export const getRegistrationRequests =
           normalizedStatus;
       }
 
-      if (
-        typeof search === "string" &&
-        search.trim()
-      ) {
-        const searchValue =
-          escapeRegex(
-            search.trim()
-          );
+      /* ===============================================
+         SEARCH FILTER
+      =============================================== */
 
-        filter.$or = [
-          {
-            ownerName: {
-              $regex: searchValue,
-              $options: "i",
+      if (
+        typeof search === "string"
+      ) {
+        const trimmedSearch =
+          search
+            .trim()
+            .slice(
+              0,
+              MAX_SEARCH_LENGTH
+            );
+
+        if (trimmedSearch) {
+          const searchValue =
+            escapeRegex(
+              trimmedSearch
+            );
+
+          filter.$or = [
+            {
+              ownerName: {
+                $regex:
+                  searchValue,
+                $options: "i",
+              },
             },
-          },
-          {
-            pumpName: {
-              $regex: searchValue,
-              $options: "i",
+
+            {
+              pumpName: {
+                $regex:
+                  searchValue,
+                $options: "i",
+              },
             },
-          },
-          {
-            email: {
-              $regex: searchValue,
-              $options: "i",
+
+            {
+              email: {
+                $regex:
+                  searchValue,
+                $options: "i",
+              },
             },
-          },
-          {
-            phone: {
-              $regex: searchValue,
-              $options: "i",
+
+            {
+              phone: {
+                $regex:
+                  searchValue,
+                $options: "i",
+              },
             },
-          },
-        ];
+          ];
+        }
       }
+
+      /* ===============================================
+         QUERY + COUNT IN PARALLEL
+      =============================================== */
 
       const [
         requests,
@@ -1880,15 +2060,21 @@ export const getRegistrationRequests =
 
       return res.status(200).json({
         success: true,
+
         count:
           requests.length,
+
         total,
+
         page,
+
         limit,
+
         totalPages:
           Math.ceil(
             total / limit
           ),
+
         requests,
       });
     } catch (error) {
@@ -2005,24 +2191,25 @@ export const getPendingRegistrationCount =
 
 /* =====================================================
    APPROVE REGISTRATION REQUEST
-
-   RegistrationRequest
-        ↓
-      Pump
-        ↓
-      Owner User
-        ↓
-      Client
-        ↓
-   Mark request approved
-
-   Everything is one MongoDB transaction.
 ===================================================== */
+
+/*
+ * RegistrationRequest
+ *        ↓
+ *      Pump
+ *        ↓
+ *    Owner User
+ *        ↓
+ *      Client
+ *        ↓
+ * Mark request approved
+ *
+ * Everything is one MongoDB transaction.
+ */
 
 export const approveRegistrationRequest =
   async (req, res) => {
-    const session =
-      await mongoose.startSession();
+    let session = null;
 
     try {
       if (
@@ -2040,6 +2227,9 @@ export const approveRegistrationRequest =
       const authenticatedUserId =
         req.user?._id || null;
 
+      session =
+        await mongoose.startSession();
+
       let createdClient = null;
       let createdRequest = null;
       let pumpCode = null;
@@ -2054,31 +2244,29 @@ export const approveRegistrationRequest =
               .session(session);
 
           if (!request) {
-            const error =
-              new Error(
-                "REQUEST_NOT_FOUND"
-              );
-
-            error.statusCode = 404;
-
-            throw error;
+            throw createControllerError(
+              "REQUEST_NOT_FOUND",
+              404
+            );
           }
 
           if (
             request.status !==
             "pending"
           ) {
-            const error =
-              new Error(
-                "REQUEST_NOT_PENDING"
-              );
-
-            error.statusCode = 400;
-            error.requestStatus =
-              request.status;
-
-            throw error;
+            throw createControllerError(
+              "REQUEST_NOT_PENDING",
+              400,
+              {
+                requestStatus:
+                  request.status,
+              }
+            );
           }
+
+          /* =========================================
+             NORMALIZE + VALIDATE REQUEST
+          ========================================= */
 
           const normalizedEmail =
             normalizeEmail(
@@ -2090,14 +2278,10 @@ export const approveRegistrationRequest =
               normalizedEmail
             )
           ) {
-            const error =
-              new Error(
-                "INVALID_EMAIL"
-              );
-
-            error.statusCode = 400;
-
-            throw error;
+            throw createControllerError(
+              "INVALID_EMAIL",
+              400
+            );
           }
 
           const cleanPumpName =
@@ -2111,25 +2295,17 @@ export const approveRegistrationRequest =
             );
 
           if (!cleanPumpName) {
-            const error =
-              new Error(
-                "INVALID_PUMP_NAME"
-              );
-
-            error.statusCode = 400;
-
-            throw error;
+            throw createControllerError(
+              "INVALID_PUMP_NAME",
+              400
+            );
           }
 
           if (!cleanOwnerName) {
-            const error =
-              new Error(
-                "INVALID_OWNER_NAME"
-              );
-
-            error.statusCode = 400;
-
-            throw error;
+            throw createControllerError(
+              "INVALID_OWNER_NAME",
+              400
+            );
           }
 
           if (
@@ -2137,14 +2313,10 @@ export const approveRegistrationRequest =
               "string" ||
             !request.password
           ) {
-            const error =
-              new Error(
-                "PASSWORD_HASH_MISSING"
-              );
-
-            error.statusCode = 400;
-
-            throw error;
+            throw createControllerError(
+              "PASSWORD_HASH_MISSING",
+              400
+            );
           }
 
           /*
@@ -2161,45 +2333,42 @@ export const approveRegistrationRequest =
             );
 
           /* =========================================
-             DUPLICATE USER
+             DUPLICATE CHECKS IN PARALLEL
           ========================================= */
 
-          const existingUser =
-            await User.findOne({
+          const [
+            existingUser,
+            existingClient,
+          ] = await Promise.all([
+            User.findOne({
               email:
                 normalizedEmail,
-            }).session(session);
+            })
+              .select("_id")
+              .session(session)
+              .lean(),
+
+            Client.findOne({
+              email:
+                normalizedEmail,
+            })
+              .select("_id")
+              .session(session)
+              .lean(),
+          ]);
 
           if (existingUser) {
-            const error =
-              new Error(
-                "DUPLICATE_USER"
-              );
-
-            error.statusCode = 409;
-
-            throw error;
+            throw createControllerError(
+              "DUPLICATE_USER",
+              409
+            );
           }
 
-          /* =========================================
-             DUPLICATE CLIENT
-          ========================================= */
-
-          const existingClient =
-            await Client.findOne({
-              email:
-                normalizedEmail,
-            }).session(session);
-
           if (existingClient) {
-            const error =
-              new Error(
-                "DUPLICATE_CLIENT"
-              );
-
-            error.statusCode = 409;
-
-            throw error;
+            throw createControllerError(
+              "DUPLICATE_CLIENT",
+              409
+            );
           }
 
           /* =========================================
@@ -2208,64 +2377,63 @@ export const approveRegistrationRequest =
 
           const [
             createdPump,
-          ] =
-            await Pump.create(
-              [
-                {
-                  pumpName:
-                    cleanPumpName,
+          ] = await Pump.create(
+            [
+              {
+                pumpName:
+                  cleanPumpName,
 
-                  ownerName:
-                    cleanOwnerName,
+                ownerName:
+                  cleanOwnerName,
 
-                  phone:
-                    normalizeString(
-                      request.phone
-                    ),
+                phone:
+                  normalizeString(
+                    request.phone
+                  ),
 
-                  email:
-                    normalizedEmail,
+                email:
+                  normalizedEmail,
 
-                  companyName:
-                    normalizeString(
-                      request.companyName
-                    ),
+                companyName:
+                  normalizeString(
+                    request.companyName
+                  ),
 
-                  dealerCode:
-                    normalizeString(
-                      request.dealerCode
-                    ),
+                dealerCode:
+                  normalizeString(
+                    request.dealerCode
+                  ),
 
-                  gstin:
-                    normalizeString(
-                      request.gstin
-                    ).toUpperCase(),
+                gstin:
+                  normalizeString(
+                    request.gstin
+                  ).toUpperCase(),
 
-                  address:
-                    normalizeString(
-                      request.address
-                    ),
+                address:
+                  normalizeString(
+                    request.address
+                  ),
 
-                  city:
-                    normalizeString(
-                      request.city
-                    ),
+                city:
+                  normalizeString(
+                    request.city
+                  ),
 
-                  state:
-                    normalizeString(
-                      request.state
-                    ),
+                state:
+                  normalizeString(
+                    request.state
+                  ),
 
-                  pincode:
-                    normalizeString(
-                      request.pincode
-                    ),
+                pincode:
+                  normalizeString(
+                    request.pincode
+                  ),
 
-                  active: true,
-                },
-              ],
-              { session }
-            );
+                active: true,
+              },
+            ],
+            { session }
+          );
 
           /* =========================================
              CREATE OWNER
@@ -2273,29 +2441,28 @@ export const approveRegistrationRequest =
 
           const [
             createdUser,
-          ] =
-            await User.create(
-              [
-                {
-                  name:
-                    cleanOwnerName,
+          ] = await User.create(
+            [
+              {
+                name:
+                  cleanOwnerName,
 
-                  email:
-                    normalizedEmail,
+                email:
+                  normalizedEmail,
 
-                  password:
-                    request.password,
+                password:
+                  request.password,
 
-                  role: "owner",
+                role: "owner",
 
-                  pumpId:
-                    createdPump._id,
+                pumpId:
+                  createdPump._id,
 
-                  active: true,
-                },
-              ],
-              { session }
-            );
+                active: true,
+              },
+            ],
+            { session }
+          );
 
           /* =========================================
              GENERATE PUMP CODE
@@ -2312,59 +2479,58 @@ export const approveRegistrationRequest =
 
           [
             createdClient,
-          ] =
-            await Client.create(
-              [
-                {
-                  pumpId:
-                    createdPump._id,
+          ] = await Client.create(
+            [
+              {
+                pumpId:
+                  createdPump._id,
 
-                  ownerUserId:
-                    createdUser._id,
+                ownerUserId:
+                  createdUser._id,
 
-                  pumpName:
-                    cleanPumpName,
+                pumpName:
+                  cleanPumpName,
 
-                  ownerName:
-                    cleanOwnerName,
+                ownerName:
+                  cleanOwnerName,
 
-                  email:
-                    normalizedEmail,
+                email:
+                  normalizedEmail,
 
-                  phone:
-                    normalizeString(
-                      request.phone
-                    ),
+                phone:
+                  normalizeString(
+                    request.phone
+                  ),
 
-                  address:
-                    normalizeString(
-                      request.address
-                    ),
+                address:
+                  normalizeString(
+                    request.address
+                  ),
 
-                  pumpCode,
+                pumpCode,
 
-                  plan:
-                    normalizedPlan,
+                plan:
+                  normalizedPlan,
 
-                  status: "active",
+                status: "active",
 
-                  subscriptionStart:
-                    new Date(),
+                subscriptionStart:
+                  new Date(),
 
-                  subscriptionEnd:
-                    null,
+                subscriptionEnd:
+                  null,
 
-                  notes:
-                    normalizeString(
-                      request.notes
-                    ),
+                notes:
+                  normalizeString(
+                    request.notes
+                  ),
 
-                  createdBy:
-                    authenticatedUserId,
-                },
-              ],
-              { session }
-            );
+                createdBy:
+                  authenticatedUserId,
+              },
+            ],
+            { session }
+          );
 
           /* =========================================
              MARK REQUEST APPROVED
@@ -2401,8 +2567,7 @@ export const approveRegistrationRequest =
             session,
           });
 
-          createdRequest =
-            request;
+          createdRequest = request;
         }
       );
 
@@ -2411,13 +2576,9 @@ export const approveRegistrationRequest =
       ============================================= */
 
       const safeRequest =
-        createdRequest?.toObject
-          ? createdRequest.toObject()
-          : createdRequest;
-
-      if (safeRequest) {
-        delete safeRequest.password;
-      }
+        sanitizeRegistrationRequest(
+          createdRequest
+        );
 
       return res.status(200).json({
         success: true,
@@ -2527,7 +2688,9 @@ export const approveRegistrationRequest =
           "APPROVAL_ERROR",
       });
     } finally {
-      await session.endSession();
+      if (session) {
+        await session.endSession();
+      }
     }
   };
 
@@ -2537,8 +2700,7 @@ export const approveRegistrationRequest =
 
 export const rejectRegistrationRequest =
   async (req, res) => {
-    const session =
-      await mongoose.startSession();
+    let session = null;
 
     try {
       if (
@@ -2572,15 +2734,19 @@ export const rejectRegistrationRequest =
         });
       }
 
+      session =
+        await mongoose.startSession();
+
       let updatedRequest = null;
 
       await session.withTransaction(
         async () => {
           /*
-           * Load only the pending request.
+           * Only pending requests can be rejected.
            *
-           * This prevents processing an already
-           * approved/rejected request.
+           * Keeping the status condition inside the
+           * transaction prevents processing a request
+           * that has already been approved/rejected.
            */
 
           const request =
@@ -2603,27 +2769,20 @@ export const rejectRegistrationRequest =
                 .session(session);
 
             if (!existing) {
-              const error =
-                new Error(
-                  "REQUEST_NOT_FOUND"
-                );
-
-              error.statusCode = 404;
-
-              throw error;
+              throw createControllerError(
+                "REQUEST_NOT_FOUND",
+                404
+              );
             }
 
-            const error =
-              new Error(
-                "REQUEST_NOT_PENDING"
-              );
-
-            error.statusCode = 400;
-
-            error.requestStatus =
-              existing.status;
-
-            throw error;
+            throw createControllerError(
+              "REQUEST_NOT_PENDING",
+              400,
+              {
+                requestStatus:
+                  existing.status,
+              }
+            );
           }
 
           request.status =
@@ -2632,18 +2791,16 @@ export const rejectRegistrationRequest =
           request.rejectionReason =
             cleanReason;
 
-          /*
-           * Rejection must use rejectedBy/rejectedAt.
-           *
-           * approvedBy/approvedAt must never be
-           * populated when rejecting a request.
-           */
-
           request.rejectedBy =
             req.user?._id || null;
 
           request.rejectedAt =
             new Date();
+
+          /*
+           * Rejected request must never contain
+           * approval metadata.
+           */
 
           request.approvedBy =
             null;
@@ -2661,13 +2818,9 @@ export const rejectRegistrationRequest =
       );
 
       const safeRequest =
-        updatedRequest?.toObject
-          ? updatedRequest.toObject()
-          : updatedRequest;
-
-      if (safeRequest) {
-        delete safeRequest.password;
-      }
+        sanitizeRegistrationRequest(
+          updatedRequest
+        );
 
       return res.status(200).json({
         success: true,
@@ -2731,6 +2884,8 @@ export const rejectRegistrationRequest =
           "REJECTION_ERROR",
       });
     } finally {
-      await session.endSession();
+      if (session) {
+        await session.endSession();
+      }
     }
   };

@@ -8,23 +8,35 @@ import {
   getPaymentSummary,
 } from "../controllers/salesController.js";
 
-const router =
-  express.Router();
+const router = express.Router();
 
-router.use(
-  authMiddleware
-);
+/*
+|--------------------------------------------------------------------------
+| AUTHENTICATION
+|--------------------------------------------------------------------------
+*/
 
+router.use(authMiddleware);
+
+/*
+|--------------------------------------------------------------------------
+| SALES
+|--------------------------------------------------------------------------
+*/
+
+// GET /api/sales/daily
 router.get(
   "/daily",
   getDailySales
 );
 
+// GET /api/sales/history
 router.get(
   "/history",
   getSalesHistory
 );
 
+// GET /api/sales/payment-summary
 router.get(
   "/payment-summary",
   getPaymentSummary

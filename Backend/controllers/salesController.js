@@ -2,6 +2,17 @@ import Sale from "../models/Sale.js";
 import NozzleReading from "../models/NozzleReading.js";
 
 /* =====================================================
+   CONSTANTS
+===================================================== */
+
+const PAYMENT_METHODS = [
+  "cash",
+  "upi",
+  "card",
+  "credit",
+];
+
+/* =====================================================
    HELPERS
 ===================================================== */
 
@@ -10,29 +21,51 @@ const getPumpId = (req) =>
   req.user?.pumpId ||
   null;
 
-const getLocalDate = () => {
-  const now = new Date();
+/* =====================================================
+   INDIA DATE
+===================================================== */
 
-  const year =
-    now.getFullYear();
-
-  const month = String(
-    now.getMonth() + 1
-  ).padStart(2, "0");
-
-  const day = String(
-    now.getDate()
-  ).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
+const getIndiaDate = () => {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 };
 
-const normalizeFuelType = (
-  value
-) => {
-  const fuel = String(
-    value || ""
-  )
+/*
+ * Kept for backward compatibility.
+ */
+const getLocalDate = () => getIndiaDate();
+
+/* =====================================================
+   INDIA TIME FALLBACK
+===================================================== */
+
+const getIndiaTimeFromDate = (value) => {
+  if (!value) return "";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(date);
+};
+
+/* =====================================================
+   NORMALIZE FUEL
+===================================================== */
+
+const normalizeFuelType = (value) => {
+  const fuel = String(value || "")
     .trim()
     .toLowerCase();
 
@@ -50,51 +83,351 @@ const normalizeFuelType = (
   return fuel;
 };
 
-const readingToSale = (
-  reading
-) => ({
-  _id: reading._id,
+/* =====================================================
+   NORMALIZE PAYMENT
+===================================================== */
 
-  nozzleId:
-    reading.nozzleId,
+const normalizePaymentMethod = (value) =>
+  String(value || "cash")
+    .trim()
+    .toLowerCase();
 
-  readingId:
-    reading._id,
+/* =====================================================
+   VALID PAYMENT METHOD
+===================================================== */
 
-  fuelType:
+const isValidPaymentMethod = (value) =>
+  PAYMENT_METHODS.includes(
+    normalizePaymentMethod(value)
+  );
+
+/* =====================================================
+   PAYMENT BREAKDOWN
+===================================================== */
+
+const getPaymentBreakdown = (transaction) => {
+  const breakdown = {};
+
+  /*
+   * New split-payment records.
+   */
+  if (
+    Array.isArray(transaction?.payments) &&
+    transaction.payments.length > 0
+  ) {
+    transaction.payments.forEach((payment) => {
+      const method = normalizePaymentMethod(
+        payment?.method
+      );
+
+      const amount = Number(
+        payment?.amount || 0
+      );
+
+      if (
+        PAYMENT_METHODS.includes(method) &&
+        Number.isFinite(amount) &&
+        amount > 0
+      ) {
+        breakdown[method] =
+          (breakdown[method] || 0) +
+          amount;
+      }
+    });
+
+    /*
+     * If valid payment entries were found,
+     * use them.
+     */
+    if (
+      Object.keys(breakdown).length > 0
+    ) {
+      return breakdown;
+    }
+  }
+
+  /*
+   * Backward compatibility for old records.
+   */
+  const method = normalizePaymentMethod(
+    transaction?.paymentMethod
+  );
+
+  const total = Number(
+    transaction?.totalAmount || 0
+  );
+
+  if (
+    PAYMENT_METHODS.includes(method) &&
+    Number.isFinite(total) &&
+    total > 0
+  ) {
+    breakdown[method] = total;
+  }
+
+  return breakdown;
+};
+
+/* =====================================================
+   NORMALIZE PAYMENT ARRAY
+===================================================== */
+
+const getNormalizedPayments = (
+  transaction
+) => {
+  if (
+    Array.isArray(transaction?.payments) &&
+    transaction.payments.length > 0
+  ) {
+    return transaction.payments
+      .map((payment) => ({
+        method: normalizePaymentMethod(
+          payment?.method
+        ),
+
+        amount: Number(
+          payment?.amount || 0
+        ),
+      }))
+      .filter(
+        (payment) =>
+          PAYMENT_METHODS.includes(
+            payment.method
+          ) &&
+          Number.isFinite(payment.amount) &&
+          payment.amount > 0
+      );
+  }
+
+  const breakdown =
+    getPaymentBreakdown(transaction);
+
+  return Object.entries(breakdown).map(
+    ([method, amount]) => ({
+      method,
+      amount,
+    })
+  );
+};
+
+/* =====================================================
+   PAYMENT METHOD MATCH
+===================================================== */
+
+const hasPaymentMethod = (
+  transaction,
+  requestedMethod
+) => {
+  const method =
+    normalizePaymentMethod(
+      requestedMethod
+    );
+
+  if (
+    !PAYMENT_METHODS.includes(method)
+  ) {
+    return false;
+  }
+
+  const breakdown =
+    getPaymentBreakdown(transaction);
+
+  return (
+    Number(breakdown[method] || 0) > 0
+  );
+};
+
+/* =====================================================
+   READING -> SALE FORMAT
+===================================================== */
+
+const readingToSale = (reading) => {
+  const payments =
+    getNormalizedPayments(reading);
+
+  return {
+    _id: reading._id,
+
+    nozzleId:
+      reading.nozzleId,
+
+    readingId:
+      reading._id,
+
+    fuelType:
+      normalizeFuelType(
+        reading.fuelType
+      ),
+
+    quantity:
+      Number(
+        reading.litresSold || 0
+      ),
+
+    pricePerLitre:
+      Number(
+        reading.pricePerLitre || 0
+      ),
+
+    totalAmount:
+      Number(
+        reading.totalAmount || 0
+      ),
+
+    paymentMethod:
+      normalizePaymentMethod(
+        reading.paymentMethod
+      ),
+
+    payments,
+
+    readingTime:
+      reading.readingTime ||
+      getIndiaTimeFromDate(
+        reading.createdAt
+      ),
+
+    saleDate:
+      reading.readingDate,
+
+    source:
+      "nozzle",
+
+    note:
+      reading.note || "",
+
+    createdBy:
+      reading.createdBy,
+
+    createdAt:
+      reading.createdAt,
+
+    updatedAt:
+      reading.updatedAt,
+  };
+};
+
+/* =====================================================
+   ROUND SUMMARY
+===================================================== */
+
+const roundSummary = (summary) => {
+  Object.keys(summary).forEach((key) => {
+    summary[key] = Number(
+      Number(
+        summary[key] || 0
+      ).toFixed(2)
+    );
+  });
+
+  return summary;
+};
+
+/* =====================================================
+   ADD TRANSACTION TO SUMMARY
+===================================================== */
+
+const addTransactionToSummary = (
+  summary,
+  transaction
+) => {
+  const fuelType =
     normalizeFuelType(
-      reading.fuelType
-    ),
+      transaction.fuelType
+    );
 
-  quantity: Number(
-    reading.litresSold || 0
-  ),
+  const amount = Number(
+    transaction.totalAmount || 0
+  );
 
-  pricePerLitre: Number(
-    reading.pricePerLitre || 0
-  ),
+  const litres = Number(
+    transaction.quantity ??
+      transaction.litresSold ??
+      0
+  );
 
-  totalAmount: Number(
-    reading.totalAmount || 0
-  ),
+  if (Number.isFinite(amount)) {
+    summary.totalSale += amount;
+  }
 
-  paymentMethod:
-    String(
-      reading.paymentMethod ||
-        "cash"
-    ).toLowerCase(),
+  if (Number.isFinite(litres)) {
+    summary.totalLitres += litres;
+  }
 
-  saleDate:
-    reading.readingDate,
+  if (fuelType === "petrol") {
+    summary.petrolSale += amount;
+    summary.petrolLitres += litres;
+  }
 
-  source: "nozzle",
+  if (fuelType === "diesel") {
+    summary.dieselSale += amount;
+    summary.dieselLitres += litres;
+  }
 
-  note:
-    reading.note || "",
+  const breakdown =
+    getPaymentBreakdown(
+      transaction
+    );
 
-  createdAt:
-    reading.createdAt,
-});
+  Object.entries(
+    breakdown
+  ).forEach(
+    ([method, paymentAmount]) => {
+      if (
+        summary[method] !== undefined
+      ) {
+        summary[method] += Number(
+          paymentAmount || 0
+        );
+      }
+    }
+  );
+};
+
+/* =====================================================
+   FORMAT MANUAL SALE
+===================================================== */
+
+const formatManualSale = (sale) => {
+  const object =
+    sale?.toObject
+      ? sale.toObject()
+      : sale;
+
+  return {
+    ...object,
+
+    fuelType:
+      normalizeFuelType(
+        object.fuelType
+      ),
+
+    paymentMethod:
+      normalizePaymentMethod(
+        object.paymentMethod
+      ),
+
+    payments:
+      getNormalizedPayments(
+        object
+      ),
+
+    readingTime:
+      object.readingTime ||
+      getIndiaTimeFromDate(
+        object.createdAt
+      ),
+  };
+};
+
+/* =====================================================
+   COMMON POPULATE
+===================================================== */
+
+const nozzlePopulate = {
+  path: "nozzleId",
+  select: "nozzleNumber fuelType",
+};
 
 /* =====================================================
    DAILY SALES
@@ -118,54 +451,75 @@ export const getDailySales =
         req.query.date ||
         getLocalDate();
 
-      const readings =
-        await NozzleReading.find({
+      /*
+       * Run both MongoDB queries at
+       * the same time.
+       */
+      const [
+        readings,
+        manualSales,
+      ] = await Promise.all([
+        NozzleReading.find({
           pumpId,
           readingDate: date,
         })
-          .populate(
-            "nozzleId",
-            "nozzleNumber fuelType"
+          .select(
+            "_id nozzleId fuelType litresSold pricePerLitre totalAmount paymentMethod payments readingTime readingDate note createdBy createdAt updatedAt"
           )
+          .populate(nozzlePopulate)
           .sort({
+            readingDate: -1,
+            readingTime: -1,
             createdAt: -1,
-          });
+          })
+          .lean(),
 
-      const manualSales =
-        await Sale.find({
+        Sale.find({
           pumpId,
           saleDate: date,
-          source: { $in: ["manual", "payment"] },
+          source: {
+            $in: [
+              "manual",
+              "payment",
+            ],
+          },
         })
-          .populate(
-            "nozzleId",
-            "nozzleNumber fuelType"
+          .select(
+            "_id pumpId nozzleId fuelType quantity pricePerLitre totalAmount paymentMethod payments readingTime saleDate source note createdBy providerPaymentId paymentProvider createdAt updatedAt"
           )
+          .populate(nozzlePopulate)
           .sort({
             createdAt: -1,
-          });
+          })
+          .lean(),
+      ]);
 
+      /*
+       * Nozzle sales come from
+       * NozzleReading.
+       */
       const nozzleSales =
         readings.map(
           readingToSale
         );
 
+      /*
+       * Manual/payment sales come
+       * from Sale.
+       */
       const formattedManual =
         manualSales.map(
-          (sale) => ({
-            ...sale.toObject(),
-
-            fuelType:
-              normalizeFuelType(
-                sale.fuelType
-              ),
-          })
+          formatManualSale
         );
 
       const sales = [
         ...nozzleSales,
         ...formattedManual,
       ];
+
+      /* =====================================
+         SUMMARY
+      ===================================== */
 
       const summary = {
         totalSale: 0,
@@ -186,103 +540,14 @@ export const getDailySales =
 
       sales.forEach(
         (sale) => {
-          const fuelType =
-            normalizeFuelType(
-              sale.fuelType
-            );
-
-          const amount =
-            Number(
-              sale.totalAmount ||
-                0
-            );
-
-          const litres =
-            Number(
-              sale.quantity ||
-                sale.litresSold ||
-                0
-            );
-
-          summary.totalSale +=
-            amount;
-
-          summary.totalLitres +=
-            litres;
-
-          if (
-            fuelType ===
-            "petrol"
-          ) {
-            summary.petrolSale +=
-              amount;
-
-            summary.petrolLitres +=
-              litres;
-          }
-
-          if (
-            fuelType ===
-            "diesel"
-          ) {
-            summary.dieselSale +=
-              amount;
-
-            summary.dieselLitres +=
-              litres;
-          }
-
-          const payment =
-            String(
-              sale.paymentMethod ||
-                "cash"
-            ).toLowerCase();
-
-          if (
-            summary[payment] !==
-            undefined
-          ) {
-            summary[payment] +=
-              amount;
-          }
+          addTransactionToSummary(
+            summary,
+            sale
+          );
         }
       );
 
-      Object.keys(summary).forEach(
-        (key) => {
-          summary[key] =
-            Number(
-              summary[key].toFixed(
-                2
-              )
-            );
-        }
-      );
-
-      console.log(
-        "DAILY SALES DATE:",
-        date
-      );
-
-      console.log(
-        "NOZZLE SALES:",
-        nozzleSales.length
-      );
-
-      console.log(
-        "PETROL SOLD:",
-        summary.petrolLitres
-      );
-
-      console.log(
-        "DIESEL SOLD:",
-        summary.dieselLitres
-      );
-
-      console.log(
-        "DAILY TOTAL:",
-        summary.totalSale
-      );
+      roundSummary(summary);
 
       return res.status(200).json({
         success: true,
@@ -299,7 +564,7 @@ export const getDailySales =
     } catch (error) {
       console.error(
         "DAILY SALES ERROR:",
-        error
+        error.message
       );
 
       return res.status(500).json({
@@ -311,7 +576,7 @@ export const getDailySales =
   };
 
 /* =====================================================
-   HISTORY
+   SALES HISTORY
 ===================================================== */
 
 export const getSalesHistory =
@@ -334,6 +599,40 @@ export const getSalesHistory =
         paymentMethod,
       } = req.query;
 
+      const requestedFuel =
+        fuelType
+          ? normalizeFuelType(
+              fuelType
+            )
+          : null;
+
+      const requestedPayment =
+        paymentMethod
+          ? normalizePaymentMethod(
+              paymentMethod
+            )
+          : null;
+
+      /*
+       * Validate payment filter.
+       */
+      if (
+        requestedPayment &&
+        !PAYMENT_METHODS.includes(
+          requestedPayment
+        )
+      ) {
+        return res.status(200).json({
+          success: true,
+          count: 0,
+          sales: [],
+        });
+      }
+
+      /* =====================================
+         NOZZLE QUERY
+      ===================================== */
+
       const readingFilter = {
         pumpId,
       };
@@ -343,48 +642,61 @@ export const getSalesHistory =
           date;
       }
 
-      if (paymentMethod) {
-        readingFilter.paymentMethod =
-          String(
-            paymentMethod
-          ).toLowerCase();
+      if (
+        requestedFuel === "petrol" ||
+        requestedFuel === "diesel"
+      ) {
+        /*
+         * Fuel filtering is now done
+         * directly by MongoDB.
+         */
+        readingFilter.fuelType =
+          requestedFuel;
       }
 
-      const readings =
-        await NozzleReading.find(
-          readingFilter
-        )
-          .populate(
-            "nozzleId",
-            "nozzleNumber fuelType"
-          )
-          .sort({
-            createdAt: -1,
-          });
+      if (requestedPayment) {
+        /*
+         * Support both:
+         *
+         * old:
+         * paymentMethod
+         *
+         * new:
+         * payments[]
+         */
+        readingFilter.$or = [
+          {
+            paymentMethod:
+              requestedPayment,
+          },
+          {
+            payments: {
+              $elemMatch: {
+                method:
+                  requestedPayment,
 
-      let nozzleSales =
-        readings.map(
-          readingToSale
-        );
-
-      if (fuelType) {
-        const requestedFuel =
-          normalizeFuelType(
-            fuelType
-          );
-
-        nozzleSales =
-          nozzleSales.filter(
-            (sale) =>
-              normalizeFuelType(
-                sale.fuelType
-              ) === requestedFuel
-          );
+                amount: {
+                  $gt: 0,
+                },
+              },
+            },
+          },
+        ];
       }
+
+      /* =====================================
+         MANUAL / PAYMENT QUERY
+      ===================================== */
 
       const manualFilter = {
         pumpId,
-        source: { $in: ["manual", "payment"] },
+
+        source: {
+          $in: [
+            "manual",
+            "payment",
+          ],
+        },
       };
 
       if (date) {
@@ -392,66 +704,171 @@ export const getSalesHistory =
           date;
       }
 
-      if (paymentMethod) {
-        manualFilter.paymentMethod =
-          String(
-            paymentMethod
-          ).toLowerCase();
+      if (
+        requestedFuel === "petrol" ||
+        requestedFuel === "diesel"
+      ) {
+        manualFilter.fuelType =
+          requestedFuel;
       }
 
-      const manualSales =
-        await Sale.find(
+      if (requestedPayment) {
+        manualFilter.$or = [
+          {
+            paymentMethod:
+              requestedPayment,
+          },
+          {
+            payments: {
+              $elemMatch: {
+                method:
+                  requestedPayment,
+
+                amount: {
+                  $gt: 0,
+                },
+              },
+            },
+          },
+        ];
+      }
+
+      /*
+       * Run both queries simultaneously.
+       */
+      const [
+        readings,
+        manualSales,
+      ] = await Promise.all([
+        NozzleReading.find(
+          readingFilter
+        )
+          .select(
+            "_id nozzleId fuelType litresSold pricePerLitre totalAmount paymentMethod payments readingTime readingDate note createdBy createdAt updatedAt"
+          )
+          .populate(nozzlePopulate)
+          .sort({
+            readingDate: -1,
+            readingTime: -1,
+            createdAt: -1,
+          })
+          .lean(),
+
+        Sale.find(
           manualFilter
         )
-          .populate(
-            "nozzleId",
-            "nozzleNumber fuelType"
+          .select(
+            "_id pumpId nozzleId fuelType quantity pricePerLitre totalAmount paymentMethod payments readingTime saleDate source note createdBy providerPaymentId paymentProvider createdAt updatedAt"
           )
+          .populate(nozzlePopulate)
           .sort({
+            saleDate: -1,
+            readingTime: -1,
             createdAt: -1,
-          });
-
-      let formattedManual =
-        manualSales.map(
-          (sale) => ({
-            ...sale.toObject(),
-
-            fuelType:
-              normalizeFuelType(
-                sale.fuelType
-              ),
           })
+          .lean(),
+      ]);
+
+      /* =====================================
+         FORMAT
+      ===================================== */
+
+      const nozzleSales =
+        readings.map(
+          readingToSale
         );
 
-      if (fuelType) {
-        const requestedFuel =
-          normalizeFuelType(
-            fuelType
-          );
+      const formattedManual =
+        manualSales.map(
+          formatManualSale
+        );
 
-        formattedManual =
-          formattedManual.filter(
-            (sale) =>
-              sale.fuelType ===
-              requestedFuel
-          );
-      }
+      /*
+       * MongoDB already handled:
+       *
+       * fuelType
+       * paymentMethod
+       *
+       * so we do not need to filter
+       * those records again in JS.
+       */
 
       const sales = [
         ...nozzleSales,
         ...formattedManual,
       ];
 
+      /* =====================================
+         FINAL COMBINED SORT
+      ===================================== */
+
+      sales.sort(
+        (a, b) => {
+          const dateA =
+            String(
+              a.saleDate || ""
+            );
+
+          const dateB =
+            String(
+              b.saleDate || ""
+            );
+
+          if (
+            dateA !== dateB
+          ) {
+            return dateB.localeCompare(
+              dateA
+            );
+          }
+
+          const timeA =
+            String(
+              a.readingTime || ""
+            );
+
+          const timeB =
+            String(
+              b.readingTime || ""
+            );
+
+          if (
+            timeA !== timeB
+          ) {
+            return timeB.localeCompare(
+              timeA
+            );
+          }
+
+          const createdA =
+            new Date(
+              a.createdAt || 0
+            ).getTime();
+
+          const createdB =
+            new Date(
+              b.createdAt || 0
+            ).getTime();
+
+          return (
+            createdB -
+            createdA
+          );
+        }
+      );
+
       return res.status(200).json({
         success: true,
+
         count:
           sales.length,
+
         sales,
       });
     } catch (error) {
       console.error(
         "SALES HISTORY ERROR:",
-        error
+        error.message
       );
 
       return res.status(500).json({
@@ -484,18 +901,41 @@ export const getPaymentSummary =
         req.query.date ||
         getLocalDate();
 
-      const readings =
-        await NozzleReading.find({
+      /*
+       * Only retrieve fields needed
+       * for payment calculations.
+       *
+       * This is much lighter than
+       * loading complete documents.
+       */
+      const [
+        readings,
+        manualSales,
+      ] = await Promise.all([
+        NozzleReading.find({
           pumpId,
           readingDate: date,
-        });
+        })
+          .select(
+            "totalAmount paymentMethod payments"
+          )
+          .lean(),
 
-      const manualSales =
-        await Sale.find({
+        Sale.find({
           pumpId,
           saleDate: date,
-          source: { $in: ["manual", "payment"] },
-        });
+          source: {
+            $in: [
+              "manual",
+              "payment",
+            ],
+          },
+        })
+          .select(
+            "totalAmount paymentMethod payments"
+          )
+          .lean(),
+      ]);
 
       const summary = {
         cash: 0,
@@ -505,66 +945,68 @@ export const getPaymentSummary =
         total: 0,
       };
 
-      const transactions = [
-        ...readings.map(
-          (reading) => ({
-            paymentMethod:
-              reading.paymentMethod,
+      /*
+       * Process both transaction
+       * collections.
+       */
+      const processTransaction = (
+        item
+      ) => {
+        const amount =
+          Number(
+            item.totalAmount || 0
+          );
 
-            totalAmount:
-              reading.totalAmount,
-          })
-        ),
-
-        ...manualSales,
-      ];
-
-      transactions.forEach(
-        (item) => {
-          const amount =
-            Number(
-              item.totalAmount || 0
-            );
-
-          const payment =
-            String(
-              item.paymentMethod ||
-                "cash"
-            ).toLowerCase();
-
+        if (
+          Number.isFinite(amount)
+        ) {
           summary.total +=
             amount;
+        }
 
-          if (
-            summary[payment] !==
-            undefined
-          ) {
-            summary[payment] +=
-              amount;
+        const breakdown =
+          getPaymentBreakdown(
+            item
+          );
+
+        Object.entries(
+          breakdown
+        ).forEach(
+          ([method, paymentAmount]) => {
+            if (
+              summary[method] !==
+              undefined
+            ) {
+              summary[method] +=
+                Number(
+                  paymentAmount || 0
+                );
+            }
           }
-        }
+        );
+      };
+
+      readings.forEach(
+        processTransaction
       );
 
-      Object.keys(summary).forEach(
-        (key) => {
-          summary[key] =
-            Number(
-              summary[key].toFixed(
-                2
-              )
-            );
-        }
+      manualSales.forEach(
+        processTransaction
       );
+
+      roundSummary(summary);
 
       return res.status(200).json({
         success: true,
+
         date,
+
         summary,
       });
     } catch (error) {
       console.error(
         "PAYMENT SUMMARY ERROR:",
-        error
+        error.message
       );
 
       return res.status(500).json({

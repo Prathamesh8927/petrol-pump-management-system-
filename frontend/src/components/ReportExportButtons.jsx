@@ -21,6 +21,17 @@ import {
   printReport,
 } from "../utils/reportExport";
 
+const DEFAULT_PUMP = {
+  pumpName: "My Petrol Pump",
+  ownerName: "Pump Owner",
+  companyName: "",
+  dealerCode: "",
+  address: "",
+  city: "",
+  state: "",
+  pincode: "",
+};
+
 const ReportExportButtons = ({
   report,
   title,
@@ -28,103 +39,107 @@ const ReportExportButtons = ({
   const [
     pump,
     setPump,
-  ] = useState({
-    pumpName:
-      "My Petrol Pump",
-
-    ownerName:
-      "Pump Owner",
-
-    companyName: "",
-
-    dealerCode: "",
-
-    address: "",
-
-    city: "",
-
-    state: "",
-
-    pincode: "",
-  });
+  ] = useState(DEFAULT_PUMP);
 
   /* =====================================
      LOAD SETTINGS
   ===================================== */
 
   useEffect(() => {
-    const loadSettings =
-      async () => {
-        try {
-          const data =
-            await getPumpSettings();
+    let isMounted = true;
 
-          const settings =
-            data.settings || {};
+    const loadSettings = async () => {
+      try {
+        const data =
+          await getPumpSettings();
 
-          setPump({
-            pumpName:
-              settings.pumpName ||
-              "My Petrol Pump",
+        if (!isMounted) {
+          return;
+        }
 
-            ownerName:
-              settings.ownerName ||
-              "Pump Owner",
+        const settings =
+          data?.settings ||
+          data?.pump ||
+          data ||
+          {};
 
-            companyName:
-              settings.companyName ||
-              "",
+        setPump({
+          pumpName:
+            settings.pumpName ||
+            DEFAULT_PUMP.pumpName,
 
-            dealerCode:
-              settings.dealerCode ||
-              "",
+          ownerName:
+            settings.ownerName ||
+            DEFAULT_PUMP.ownerName,
 
-            address:
-              settings.address ||
-              "",
+          companyName:
+            settings.companyName ||
+            "",
 
-            city:
-              settings.city ||
-              "",
+          dealerCode:
+            settings.dealerCode ||
+            "",
 
-            state:
-              settings.state ||
-              "",
+          address:
+            settings.address ||
+            "",
 
-            pincode:
-              settings.pincode ||
-              "",
-          });
-        } catch (error) {
+          city:
+            settings.city ||
+            "",
+
+          state:
+            settings.state ||
+            "",
+
+          pincode:
+            settings.pincode ||
+            "",
+        });
+      } catch (error) {
+        if (import.meta.env.DEV) {
           console.error(
             "REPORT PUMP SETTINGS ERROR:",
-            error
+            error.response?.data
+              ?.message ||
+              error.message ||
+              error
           );
         }
-      };
+      }
+    };
 
     loadSettings();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   /* =====================================
      COMMON DATA
   ===================================== */
 
-  const exportData = {
-    report,
-
-    title,
-
-    ...pump,
-  };
-
   if (!report) {
     return null;
   }
 
-  return (
-    <div className="report-export-buttons">
+  const exportData = {
+    report,
+    title,
+    ...pump,
+  };
 
+  /* =====================================
+     UI
+  ===================================== */
+
+  return (
+    <div
+      className="report-export-buttons"
+      role="group"
+      aria-label="Report export options"
+    >
       {/* PDF */}
 
       <button
@@ -135,12 +150,16 @@ const ReportExportButtons = ({
             exportData
           )
         }
+        title="Export PDF"
       >
         <FileText
           size={16}
+          aria-hidden="true"
         />
 
-        PDF
+        <span>
+          PDF
+        </span>
       </button>
 
       {/* EXCEL */}
@@ -153,12 +172,16 @@ const ReportExportButtons = ({
             exportData
           )
         }
+        title="Export Excel"
       >
         <FileSpreadsheet
           size={16}
+          aria-hidden="true"
         />
 
-        Excel
+        <span>
+          Excel
+        </span>
       </button>
 
       {/* CSV */}
@@ -171,12 +194,16 @@ const ReportExportButtons = ({
             exportData
           )
         }
+        title="Export CSV"
       >
         <FileDown
           size={16}
+          aria-hidden="true"
         />
 
-        CSV
+        <span>
+          CSV
+        </span>
       </button>
 
       {/* PRINT */}
@@ -189,14 +216,17 @@ const ReportExportButtons = ({
             exportData
           )
         }
+        title="Print report"
       >
         <Printer
           size={16}
+          aria-hidden="true"
         />
 
-        Print
+        <span>
+          Print
+        </span>
       </button>
-
     </div>
   );
 };

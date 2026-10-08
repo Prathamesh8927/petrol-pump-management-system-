@@ -10,7 +10,6 @@ const passwordResetRequestSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-      index: true,
     },
 
     email: {
@@ -19,7 +18,6 @@ const passwordResetRequestSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
       maxlength: 254,
-      index: true,
     },
 
     /* =====================================================
@@ -35,7 +33,6 @@ const passwordResetRequestSchema = new mongoose.Schema(
         "completed",
       ],
       default: "pending",
-      index: true,
     },
 
     /* =====================================================
@@ -77,14 +74,16 @@ const passwordResetRequestSchema = new mongoose.Schema(
 
     /* =====================================================
        SECURE RESET TOKEN
-
-       IMPORTANT:
-       - Never store the raw reset token.
-       - Store only the SHA-256 hash.
-       - undefined means the field is absent from MongoDB.
-       - This works with the partial unique index below.
     ===================================================== */
 
+    /*
+     * NEVER store the raw reset token.
+     *
+     * Store only the SHA-256 hash.
+     *
+     * select:false prevents the hash from being returned
+     * in normal queries.
+     */
     resetTokenHash: {
       type: String,
       default: undefined,
@@ -94,7 +93,6 @@ const passwordResetRequestSchema = new mongoose.Schema(
     resetTokenExpiresAt: {
       type: Date,
       default: null,
-      index: true,
     },
 
     /* =====================================================
@@ -108,69 +106,91 @@ const passwordResetRequestSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
+    strict: true,
   }
 );
 
-/* =========================================================
+/* =====================================================
    INDEXES
-========================================================= */
+===================================================== */
 
 /*
- * Useful for checking requests belonging to an email
- * with a particular status.
- */
-passwordResetRequestSchema.index({
-  email: 1,
-  status: 1,
-});
-
-/*
- * Efficient lookup of a user's reset-request history.
- */
-passwordResetRequestSchema.index({
-  userId: 1,
-  status: 1,
-  createdAt: -1,
-});
-
-/*
- * Efficient admin listing/filtering by status.
- */
-passwordResetRequestSchema.index({
-  status: 1,
-  createdAt: -1,
-});
-
-/*
- * Efficient chronological lookup.
- */
-passwordResetRequestSchema.index({
-  createdAt: -1,
-});
-
-/*
- * SECURE RESET TOKEN INDEX
+ * 1. EMAIL + STATUS
  *
- * Only actual string token hashes are indexed.
+ * Useful for:
  *
- * This prevents multiple requests without a reset token
- * from conflicting with a unique index.
+ * - checking pending reset requests
+ * - finding reset requests by email
+ */
+passwordResetRequestSchema.index(
+  {
+    email: 1,
+    status: 1,
+  },
+  {
+    name: "idx_password_reset_email_status",
+  }
+);
+
+/*
+ * 2. USER + STATUS + CREATED
+ *
+ * Efficient user-specific reset history.
+ */
+passwordResetRequestSchema.index(
+  {
+    userId: 1,
+    status: 1,
+    createdAt: -1,
+  },
+  {
+    name: "idx_password_reset_user_status_created",
+  }
+);
+
+/*
+ * 3. STATUS + CREATED
+ *
+ * Useful for admin approval/rejection screens.
  *
  * Example:
  *
- * pending request:
- *   resetTokenHash = undefined
- *   -> NOT indexed
+ * pending requests, newest first.
+ */
+passwordResetRequestSchema.index(
+  {
+    status: 1,
+    createdAt: -1,
+  },
+  {
+    name: "idx_password_reset_status_created",
+  }
+);
+
+/*
+ * 4. CREATED
  *
- * approved request:
- *   resetTokenHash = "64-character SHA-256 hash"
- *   -> indexed
+ * Useful when displaying all requests chronologically,
+ * regardless of status.
+ */
+passwordResetRequestSchema.index(
+  {
+    createdAt: -1,
+  },
+  {
+    name: "idx_password_reset_created",
+  }
+);
+
+/*
+ * 5. RESET TOKEN HASH
  *
- * completed request:
- *   resetTokenHash = undefined
- *   -> NOT indexed
+ * Only real token hashes are indexed.
  *
- * Two real token hashes can never be identical.
+ * Multiple documents without a reset token are allowed.
+ *
+ * This protects against accidentally having the same
+ * reset token hash stored twice.
  */
 passwordResetRequestSchema.index(
   {
@@ -187,9 +207,9 @@ passwordResetRequestSchema.index(
   }
 );
 
-/* =========================================================
+/* =====================================================
    MODEL
-========================================================= */
+===================================================== */
 
 const PasswordResetRequest =
   mongoose.models.PasswordResetRequest ||

@@ -1,10 +1,10 @@
 import {
-  Navigate,
-} from "react-router-dom";
-
-import {
   useContext,
 } from "react";
+
+import {
+  Navigate,
+} from "react-router-dom";
 
 import {
   AuthContext,
@@ -17,6 +17,10 @@ const SuperAdminRoute = ({
     user,
     loading,
   } = useContext(AuthContext);
+
+  const userRole = String(
+    user?.role || ""
+  ).trim().toLowerCase();
 
   /* =====================================================
      AUTH LOADING
@@ -62,7 +66,7 @@ const SuperAdminRoute = ({
      SUPER ADMIN AUTHORIZATION
   ===================================================== */
 
-  if (user.role !== "superadmin") {
+  if (userRole !== "superadmin") {
     return (
       <Navigate
         to="/dashboard"

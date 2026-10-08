@@ -15,6 +15,10 @@ export const getNozzles = async () => {
 ===================================================== */
 
 export const addNozzle = async (payload) => {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Nozzle data is required.");
+  }
+
   const response = await api.post(
     "/nozzles",
     payload
@@ -31,8 +35,16 @@ export const updateNozzle = async (
   nozzleId,
   payload
 ) => {
+  if (!nozzleId) {
+    throw new Error("Nozzle ID is required.");
+  }
+
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Nozzle update data is required.");
+  }
+
   const response = await api.put(
-    `/nozzles/${nozzleId}`,
+    `/nozzles/${encodeURIComponent(nozzleId)}`,
     payload
   );
 
@@ -46,8 +58,12 @@ export const updateNozzle = async (
 export const deleteNozzle = async (
   nozzleId
 ) => {
+  if (!nozzleId) {
+    throw new Error("Nozzle ID is required.");
+  }
+
   const response = await api.delete(
-    `/nozzles/${nozzleId}`
+    `/nozzles/${encodeURIComponent(nozzleId)}`
   );
 
   return response?.data ?? response;
@@ -60,6 +76,12 @@ export const deleteNozzle = async (
 export const addNozzleReading = async (
   payload
 ) => {
+  if (!payload || typeof payload !== "object") {
+    throw new Error(
+      "Nozzle reading data is required."
+    );
+  }
+
   const response = await api.post(
     "/nozzles/readings",
     payload
@@ -82,8 +104,16 @@ export const updateNozzleReading = async (
     );
   }
 
+  if (!payload || typeof payload !== "object") {
+    throw new Error(
+      "Nozzle reading update data is required."
+    );
+  }
+
   const response = await api.put(
-    `/nozzles/readings/${readingId}`,
+    `/nozzles/readings/${encodeURIComponent(
+      readingId
+    )}`,
     payload
   );
 
@@ -95,21 +125,20 @@ export const updateNozzleReading = async (
 
    ReadingHistory uses this function.
 
-   It intentionally requests the complete collection
-   through the history flag.
+   The history flag is intentionally preserved
+   for compatibility with the existing backend.
 ===================================================== */
 
 export const getNozzleReadingHistory =
   async () => {
-    const response =
-      await api.get(
-        "/nozzles/readings",
-        {
-          params: {
-            history: true,
-          },
-        }
-      );
+    const response = await api.get(
+      "/nozzles/readings",
+      {
+        params: {
+          history: true,
+        },
+      }
+    );
 
     return response?.data ?? response;
   };
@@ -117,10 +146,13 @@ export const getNozzleReadingHistory =
 /* =====================================================
    GET NOZZLE READINGS
 
-   Existing server-side API.
-
-   Keep this for screens that specifically require
-   server-side filtering/pagination.
+   Supports server-side:
+   - pagination
+   - date
+   - shift
+   - staff
+   - nozzle
+   - payment method
 ===================================================== */
 
 export const getNozzleReadings = async ({
@@ -154,17 +186,32 @@ export const getNozzleReadings = async ({
   }
 
   if (paymentMethod) {
-    params.paymentMethod =
-      paymentMethod;
+    params.paymentMethod = paymentMethod;
   }
 
-  const response =
-    await api.get(
-      "/nozzles/readings",
-      {
-        params,
-      }
-    );
+  const response = await api.get(
+    "/nozzles/readings",
+    {
+      params,
+    }
+  );
 
   return response?.data ?? response;
+};
+
+/* =====================================================
+   DEFAULT EXPORT
+===================================================== */
+
+export default {
+  getNozzles,
+  addNozzle,
+  updateNozzle,
+  deleteNozzle,
+
+  addNozzleReading,
+  updateNozzleReading,
+
+  getNozzleReadingHistory,
+  getNozzleReadings,
 };

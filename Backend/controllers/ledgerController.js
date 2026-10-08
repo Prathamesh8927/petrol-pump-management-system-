@@ -5,12 +5,26 @@ import LedgerEntry from "../models/LedgerEntry.js";
 import FuelPrice from "../models/FuelPrice.js";
 
 /* =====================================================
+   CONSTANTS
+===================================================== */
+
+const BUSINESS_TIMEZONE = "Asia/Kolkata";
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+const VALID_FUEL_TYPES = new Set([
+  "petrol",
+  "diesel",
+]);
+
+const MAX_NOTE_LENGTH = 500;
+
+/* =====================================================
    HELPERS
 ===================================================== */
 
 const todayString = () =>
   new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Kolkata",
+    timeZone: BUSINESS_TIMEZONE,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -23,7 +37,7 @@ const normalizeDate = (value) => {
     return todayString();
   }
 
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+  if (!DATE_REGEX.test(date)) {
     return null;
   }
 
@@ -58,12 +72,69 @@ const getAuthorizedPumpId = (req) => {
   return pumpId;
 };
 
-const getAuthorizedUserId = (req) => {
-  return (
-    req.user?._id ||
-    req.user?.userId ||
-    null
-  );
+const getAuthorizedUserId = (req) =>
+  req.user?._id ||
+  req.user?.userId ||
+  null;
+
+const isValidObjectId = (id) =>
+  mongoose.Types.ObjectId.isValid(id);
+
+const normalizeFuelType = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase();
+
+const normalizeNote = (value) =>
+  String(value || "").trim();
+
+const handleValidationError = (
+  error,
+  fallbackMessage,
+  fallbackCode
+) => {
+  if (Number.isInteger(error?.statusCode)) {
+    return {
+      status: error.statusCode,
+      message:
+        error.message || fallbackMessage,
+      code:
+        error.code || fallbackCode,
+    };
+  }
+
+  if (error?.name === "ValidationError") {
+    return {
+      status: 400,
+      message: fallbackMessage,
+      code: fallbackCode,
+    };
+  }
+
+  if (error?.name === "CastError") {
+    return {
+      status: 400,
+      message: "Invalid data provided.",
+      code: fallbackCode,
+    };
+  }
+
+  if (error?.code === 11000) {
+    return {
+      status: 409,
+      message:
+        "This record could not be created because a duplicate record was detected.",
+      code: error.code,
+    };
+  }
+
+  return {
+    status: 500,
+    message:
+      error?.message || fallbackMessage,
+    code:
+      error?.code || fallbackCode,
+  };
 };
 
 /* =====================================================
@@ -73,58 +144,44 @@ const getAuthorizedUserId = (req) => {
 const calculateCustomerAdvance = (
   entries = []
 ) => {
-  const advanceEntries = entries.filter(
-    (entry) =>
-      entry.entryType === "advance"
-  );
+  let totalAdvanceReceived = 0;
+  let totalAdvanceApplied = 0;
 
-  const purchases = entries.filter(
-    (entry) =>
-      entry.entryType === "purchase"
-  );
+  for (const entry of entries) {
+    if (entry.entryType === "advance") {
+      totalAdvanceReceived += Number(
+        entry.advanceAmount ??
+          entry.paymentAmount ??
+          entry.totalAmount ??
+          0
+      );
+    }
 
-  const totalAdvanceReceived =
-    roundMoney(
-      advanceEntries.reduce(
-        (total, entry) =>
-          total +
-          Number(
-            entry.advanceAmount ||
-              entry.paymentAmount ||
-              entry.totalAmount ||
-              0
-          ),
-        0
-      )
-    );
+    if (entry.entryType === "purchase") {
+      totalAdvanceApplied += Number(
+        entry.advanceAppliedAmount || 0
+      );
+    }
+  }
 
-  const totalAdvanceApplied =
-    roundMoney(
-      purchases.reduce(
-        (total, entry) =>
-          total +
-          Number(
-            entry.advanceAppliedAmount ||
-              0
-          ),
-        0
-      )
-    );
+  totalAdvanceReceived =
+    roundMoney(totalAdvanceReceived);
 
-  const calculatedBalance =
-    roundMoney(
+  totalAdvanceApplied =
+    roundMoney(totalAdvanceApplied);
+
+  return {
+    totalAdvanceReceived,
+
+    totalAdvanceApplied,
+
+    advanceBalance: roundMoney(
       Math.max(
         totalAdvanceReceived -
           totalAdvanceApplied,
         0
       )
-    );
-
-  return {
-    totalAdvanceReceived,
-    totalAdvanceApplied,
-    advanceBalance:
-      calculatedBalance,
+    ),
   };
 };
 
@@ -140,79 +197,62 @@ const calculateCustomerSummary = async (
   let query = LedgerEntry.find({
     pumpId,
     customerId,
-  });
+  }).select(
+    "entryType totalAmount paidAmount paymentAmount advanceAmount advanceAppliedAmount"
+  );
 
   if (session) {
     query = query.session(session);
   }
 
-  const entries = await query;
+  const entries = await query.lean();
 
-  const purchases = entries.filter(
-    (entry) =>
-      entry.entryType === "purchase"
-  );
+  let totalPurchased = 0;
+  let purchasePaid = 0;
+  let paymentReceived = 0;
 
-  const payments = entries.filter(
-    (entry) =>
-      entry.entryType === "payment"
-  );
+  let purchaseCount = 0;
+  let paymentCount = 0;
+  let advanceCount = 0;
 
-  const advances = entries.filter(
-    (entry) =>
-      entry.entryType === "advance"
-  );
+  for (const entry of entries) {
+    if (entry.entryType === "purchase") {
+      totalPurchased += Number(
+        entry.totalAmount || 0
+      );
 
-  const totalPurchased =
-    roundMoney(
-      purchases.reduce(
-        (total, entry) =>
-          total +
-          Number(
-            entry.totalAmount || 0
-          ),
-        0
-      )
-    );
+      purchasePaid += Number(
+        entry.paidAmount || 0
+      );
 
-  /*
-   * paidAmount represents normal payment
-   * made at the time of purchase.
-   */
-  const purchasePaid =
-    roundMoney(
-      purchases.reduce(
-        (total, entry) =>
-          total +
-          Number(
-            entry.paidAmount || 0
-          ),
-        0
-      )
-    );
+      purchaseCount += 1;
+    }
 
-  const paymentReceived =
-    roundMoney(
-      payments.reduce(
-        (total, entry) =>
-          total +
-          Number(
-            entry.paymentAmount || 0
-          ),
-        0
-      )
-    );
+    if (entry.entryType === "payment") {
+      paymentReceived += Number(
+        entry.paymentAmount || 0
+      );
+
+      paymentCount += 1;
+    }
+
+    if (entry.entryType === "advance") {
+      advanceCount += 1;
+    }
+  }
+
+  totalPurchased =
+    roundMoney(totalPurchased);
+
+  purchasePaid =
+    roundMoney(purchasePaid);
+
+  paymentReceived =
+    roundMoney(paymentReceived);
 
   const advanceData =
-    calculateCustomerAdvance(
-      entries
-    );
+    calculateCustomerAdvance(entries);
 
-  /*
-   * Total money received by the pump,
-   * including advance payments already
-   * applied to purchases.
-   */
   const totalPaid =
     roundMoney(
       purchasePaid +
@@ -221,31 +261,42 @@ const calculateCustomerSummary = async (
     );
 
   /*
-   * Pending is calculated from purchase
-   * amount minus normal paid amount and
-   * advance applied to purchases.
+   * Calculate pending from purchases.
+   *
+   * Important:
+   * paymentReceived is normal payment made later.
+   * advanceAppliedAmount is separately deducted.
    */
+  let purchasePending = 0;
+
+  for (const entry of entries) {
+    if (entry.entryType !== "purchase") {
+      continue;
+    }
+
+    const total =
+      Number(entry.totalAmount || 0);
+
+    const paid =
+      Number(entry.paidAmount || 0);
+
+    const advanceApplied =
+      Number(
+        entry.advanceAppliedAmount || 0
+      );
+
+    purchasePending += Math.max(
+      total -
+        paid -
+        advanceApplied,
+      0
+    );
+  }
+
   const totalPending =
     roundMoney(
       Math.max(
-        purchases.reduce(
-          (total, entry) =>
-            total +
-            Math.max(
-              Number(
-                entry.totalAmount || 0
-              ) -
-                Number(
-                  entry.paidAmount || 0
-                ) -
-                Number(
-                  entry.advanceAppliedAmount ||
-                    0
-                ),
-              0
-            ),
-          0
-        ) -
+        purchasePending -
           paymentReceived,
         0
       )
@@ -258,14 +309,11 @@ const calculateCustomerSummary = async (
 
     totalPending,
 
-    purchaseCount:
-      purchases.length,
+    purchaseCount,
 
-    paymentCount:
-      payments.length,
+    paymentCount,
 
-    advanceCount:
-      advances.length,
+    advanceCount,
 
     totalAdvanceReceived:
       advanceData.totalAdvanceReceived,
@@ -276,6 +324,244 @@ const calculateCustomerSummary = async (
     advanceBalance:
       advanceData.advanceBalance,
   };
+};
+
+/* =====================================================
+   GET CUSTOMER SUMMARIES - AGGREGATED
+   ===================================================== */
+
+const getCustomerSummaries = async (
+  pumpId,
+  customerIds
+) => {
+  if (!customerIds?.length) {
+    return new Map();
+  }
+
+  const summaries =
+    await LedgerEntry.aggregate([
+      {
+        $match: {
+          pumpId:
+            new mongoose.Types.ObjectId(
+              pumpId
+            ),
+
+          customerId: {
+            $in: customerIds.map(
+              (id) =>
+                new mongoose.Types.ObjectId(
+                  id
+                )
+            ),
+          },
+        },
+      },
+
+      {
+        $group: {
+          _id: "$customerId",
+
+          entries: {
+            $push: {
+              entryType: "$entryType",
+
+              totalAmount:
+                "$totalAmount",
+
+              paidAmount:
+                "$paidAmount",
+
+              paymentAmount:
+                "$paymentAmount",
+
+              advanceAmount:
+                "$advanceAmount",
+
+              advanceAppliedAmount:
+                "$advanceAppliedAmount",
+            },
+          },
+        },
+      },
+    ]);
+
+  const summaryMap = new Map();
+
+  for (const group of summaries) {
+    const entries =
+      group.entries || [];
+
+    let totalPurchased = 0;
+    let purchasePaid = 0;
+    let paymentReceived = 0;
+
+    let purchasePending = 0;
+
+    let purchaseCount = 0;
+    let paymentCount = 0;
+    let advanceCount = 0;
+
+    let totalAdvanceReceived = 0;
+    let totalAdvanceApplied = 0;
+
+    for (const entry of entries) {
+      if (
+        entry.entryType ===
+        "purchase"
+      ) {
+        const total =
+          Number(
+            entry.totalAmount || 0
+          );
+
+        const paid =
+          Number(
+            entry.paidAmount || 0
+          );
+
+        const advanceApplied =
+          Number(
+            entry.advanceAppliedAmount ||
+              0
+          );
+
+        totalPurchased += total;
+
+        purchasePaid += paid;
+
+        purchasePending += Math.max(
+          total -
+            paid -
+            advanceApplied,
+          0
+        );
+
+        totalAdvanceApplied +=
+          advanceApplied;
+
+        purchaseCount += 1;
+      }
+
+      if (
+        entry.entryType ===
+        "payment"
+      ) {
+        paymentReceived +=
+          Number(
+            entry.paymentAmount || 0
+          );
+
+        paymentCount += 1;
+      }
+
+      if (
+        entry.entryType ===
+        "advance"
+      ) {
+        totalAdvanceReceived +=
+          Number(
+            entry.advanceAmount ??
+              entry.paymentAmount ??
+              entry.totalAmount ??
+              0
+          );
+
+        advanceCount += 1;
+      }
+    }
+
+    totalPurchased =
+      roundMoney(totalPurchased);
+
+    purchasePaid =
+      roundMoney(purchasePaid);
+
+    paymentReceived =
+      roundMoney(paymentReceived);
+
+    totalAdvanceReceived =
+      roundMoney(
+        totalAdvanceReceived
+      );
+
+    totalAdvanceApplied =
+      roundMoney(
+        totalAdvanceApplied
+      );
+
+    const totalPaid =
+      roundMoney(
+        purchasePaid +
+          paymentReceived +
+          totalAdvanceApplied
+      );
+
+    const totalPending =
+      roundMoney(
+        Math.max(
+          purchasePending -
+            paymentReceived,
+          0
+        )
+      );
+
+    const advanceBalance =
+      roundMoney(
+        Math.max(
+          totalAdvanceReceived -
+            totalAdvanceApplied,
+          0
+        )
+      );
+
+    summaryMap.set(
+      String(group._id),
+      {
+        totalPurchased,
+
+        totalPaid,
+
+        totalPending,
+
+        purchaseCount,
+
+        paymentCount,
+
+        advanceCount,
+
+        totalAdvanceReceived,
+
+        totalAdvanceApplied,
+
+        advanceBalance,
+      }
+    );
+  }
+
+  /*
+   * Customers with no ledger entries
+   * should still receive a zero summary.
+   */
+  for (const customerId of customerIds) {
+    const key = String(customerId);
+
+    if (!summaryMap.has(key)) {
+      summaryMap.set(key, {
+        totalPurchased: 0,
+        totalPaid: 0,
+        totalPending: 0,
+        purchaseCount: 0,
+        paymentCount: 0,
+        advanceCount: 0,
+        totalAdvanceReceived: 0,
+        totalAdvanceApplied: 0,
+        advanceBalance: 0,
+      });
+    }
+  }
+
+  return summaryMap;
 };
 
 /* =====================================================
@@ -338,27 +624,55 @@ export const addLedgerCustomer = async (
       });
     }
 
-    let existingCustomer = null;
+    const normalizedVehicleNumber =
+      String(
+        vehicleNumber || ""
+      )
+        .trim()
+        .toUpperCase();
 
+    const normalizedAddress =
+      String(
+        address || ""
+      ).trim();
+
+    const normalizedNote =
+      normalizeNote(note);
+
+    if (
+      normalizedNote.length >
+      MAX_NOTE_LENGTH
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Note cannot exceed 500 characters.",
+        code:
+          "NOTE_TOO_LONG",
+      });
+    }
+
+    /*
+     * Only active customers with the same
+     * phone are considered duplicates.
+     */
     if (normalizedPhone) {
-      existingCustomer =
-        await LedgerCustomer.findOne({
+      const existingCustomer =
+        await LedgerCustomer.exists({
           pumpId,
           phone: normalizedPhone,
           status: "active",
         });
-    }
 
-    if (existingCustomer) {
-      return res.status(409).json({
-        success: false,
-        message:
-          "Customer already exists. Open the existing ledger and add a new purchase.",
-        customer:
-          existingCustomer,
-        code:
-          "CUSTOMER_ALREADY_EXISTS",
-      });
+      if (existingCustomer) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "Customer already exists. Open the existing ledger and add a new purchase.",
+          code:
+            "CUSTOMER_ALREADY_EXISTS",
+        });
+      }
     }
 
     const customer =
@@ -372,27 +686,17 @@ export const addLedgerCustomer = async (
           normalizedPhone,
 
         vehicleNumber:
-          String(
-            vehicleNumber || ""
-          )
-            .trim()
-            .toUpperCase(),
+          normalizedVehicleNumber,
 
         address:
-          String(
-            address || ""
-          ).trim(),
+          normalizedAddress,
 
         note:
-          String(
-            note || ""
-          ).trim(),
+          normalizedNote,
 
-        currentBalance:
-          0,
+        currentBalance: 0,
 
-        status:
-          "active",
+        status: "active",
       });
 
     return res.status(201).json({
@@ -409,18 +713,17 @@ export const addLedgerCustomer = async (
       error
     );
 
-    return res.status(
-      error?.statusCode || 500
-    ).json({
-      success: false,
-
-      message:
-        error?.message ||
+    const result =
+      handleValidationError(
+        error,
         "Unable to add customer",
+        "ADD_LEDGER_CUSTOMER_ERROR"
+      );
 
-      code:
-        error?.code ||
-        "ADD_LEDGER_CUSTOMER_ERROR",
+    return res.status(result.status).json({
+      success: false,
+      message: result.message,
+      code: result.code,
     });
   }
 };
@@ -437,126 +740,136 @@ export const getLedgerCustomers = async (
     const pumpId =
       getAuthorizedPumpId(req);
 
+    /*
+     * One customer query.
+     */
     const customers =
       await LedgerCustomer.find({
         pumpId,
         status: "active",
-      }).sort({
-        createdAt: -1,
+      })
+        .sort({
+          createdAt: -1,
+        })
+        .lean();
+
+    if (!customers.length) {
+      return res.status(200).json({
+        success: true,
+
+        count: 0,
+
+        customers: [],
+
+        totalPurchased: 0,
+
+        totalPaid: 0,
+
+        totalPending: 0,
+
+        totalAdvanceReceived: 0,
+
+        totalAdvanceApplied: 0,
+
+        totalAdvanceBalance: 0,
       });
+    }
+
+    /*
+     * IMPORTANT OPTIMIZATION:
+     *
+     * Old code:
+     *
+     * customers.map(() =>
+     *   calculateCustomerSummary()
+     * )
+     *
+     * This creates N database queries.
+     *
+     * New code:
+     * one aggregation for all customers.
+     */
+    const customerIds =
+      customers.map(
+        (customer) =>
+          customer._id
+      );
+
+    const summaryMap =
+      await getCustomerSummaries(
+        pumpId,
+        customerIds
+      );
+
+    let totalPurchased = 0;
+    let totalPaid = 0;
+    let totalPending = 0;
+    let totalAdvanceReceived = 0;
+    let totalAdvanceApplied = 0;
+    let totalAdvanceBalance = 0;
 
     const customersWithSummary =
-      await Promise.all(
-        customers.map(
-          async (customer) => {
-            const summary =
-              await calculateCustomerSummary(
-                pumpId,
-                customer._id
-              );
+      customers.map(
+        (customer) => {
+          const summary =
+            summaryMap.get(
+              String(customer._id)
+            );
 
-            return {
-              ...customer.toObject(),
-              ...summary,
+          const finalSummary =
+            summary || {
+              totalPurchased: 0,
+              totalPaid: 0,
+              totalPending: 0,
+              purchaseCount: 0,
+              paymentCount: 0,
+              advanceCount: 0,
+              totalAdvanceReceived: 0,
+              totalAdvanceApplied: 0,
+              advanceBalance: 0,
             };
-          }
-        )
-      );
 
-    const totalPurchased =
-      roundMoney(
-        customersWithSummary.reduce(
-          (
-            total,
-            customer
-          ) =>
-            total +
+          totalPurchased +=
             Number(
-              customer.totalPurchased ||
+              finalSummary.totalPurchased ||
                 0
-            ),
-          0
-        )
-      );
+            );
 
-    const totalPaid =
-      roundMoney(
-        customersWithSummary.reduce(
-          (
-            total,
-            customer
-          ) =>
-            total +
+          totalPaid +=
             Number(
-              customer.totalPaid ||
+              finalSummary.totalPaid ||
                 0
-            ),
-          0
-        )
-      );
+            );
 
-    const totalPending =
-      roundMoney(
-        customersWithSummary.reduce(
-          (
-            total,
-            customer
-          ) =>
-            total +
+          totalPending +=
             Number(
-              customer.totalPending ||
+              finalSummary.totalPending ||
                 0
-            ),
-          0
-        )
-      );
+            );
 
-    const totalAdvanceReceived =
-      roundMoney(
-        customersWithSummary.reduce(
-          (
-            total,
-            customer
-          ) =>
-            total +
+          totalAdvanceReceived +=
             Number(
-              customer.totalAdvanceReceived ||
+              finalSummary.totalAdvanceReceived ||
                 0
-            ),
-          0
-        )
-      );
+            );
 
-    const totalAdvanceApplied =
-      roundMoney(
-        customersWithSummary.reduce(
-          (
-            total,
-            customer
-          ) =>
-            total +
+          totalAdvanceApplied +=
             Number(
-              customer.totalAdvanceApplied ||
+              finalSummary.totalAdvanceApplied ||
                 0
-            ),
-          0
-        )
-      );
+            );
 
-    const totalAdvanceBalance =
-      roundMoney(
-        customersWithSummary.reduce(
-          (
-            total,
-            customer
-          ) =>
-            total +
+          totalAdvanceBalance +=
             Number(
-              customer.advanceBalance ||
+              finalSummary.advanceBalance ||
                 0
-            ),
-          0
-        )
+            );
+
+          return {
+            ...customer,
+            ...finalSummary,
+          };
+        }
       );
 
     return res.status(200).json({
@@ -568,17 +881,29 @@ export const getLedgerCustomers = async (
       customers:
         customersWithSummary,
 
-      totalPurchased,
+      totalPurchased:
+        roundMoney(totalPurchased),
 
-      totalPaid,
+      totalPaid:
+        roundMoney(totalPaid),
 
-      totalPending,
+      totalPending:
+        roundMoney(totalPending),
 
-      totalAdvanceReceived,
+      totalAdvanceReceived:
+        roundMoney(
+          totalAdvanceReceived
+        ),
 
-      totalAdvanceApplied,
+      totalAdvanceApplied:
+        roundMoney(
+          totalAdvanceApplied
+        ),
 
-      totalAdvanceBalance,
+      totalAdvanceBalance:
+        roundMoney(
+          totalAdvanceBalance
+        ),
     });
   } catch (error) {
     console.error(
@@ -586,18 +911,17 @@ export const getLedgerCustomers = async (
       error
     );
 
-    return res.status(
-      error?.statusCode || 500
-    ).json({
-      success: false,
-
-      message:
-        error?.message ||
+    const result =
+      handleValidationError(
+        error,
         "Unable to load ledger customers",
+        "GET_LEDGER_CUSTOMERS_ERROR"
+      );
 
-      code:
-        error?.code ||
-        "GET_LEDGER_CUSTOMERS_ERROR",
+    return res.status(result.status).json({
+      success: false,
+      message: result.message,
+      code: result.code,
     });
   }
 };
@@ -617,11 +941,7 @@ export const getCustomerLedger = async (
     const { id } =
       req.params;
 
-    if (
-      !mongoose.Types.ObjectId.isValid(
-        id
-      )
-    ) {
+    if (!isValidObjectId(id)) {
       return res.status(400).json({
         success: false,
         message:
@@ -635,7 +955,7 @@ export const getCustomerLedger = async (
       await LedgerCustomer.findOne({
         _id: id,
         pumpId,
-      });
+      }).lean();
 
     if (!customer) {
       return res.status(404).json({
@@ -657,7 +977,7 @@ export const getCustomerLedger = async (
       success: true,
 
       customer: {
-        ...customer.toObject(),
+        ...customer,
         ...summary,
       },
     });
@@ -667,18 +987,17 @@ export const getCustomerLedger = async (
       error
     );
 
-    return res.status(
-      error?.statusCode || 500
-    ).json({
-      success: false,
-
-      message:
-        error?.message ||
+    const result =
+      handleValidationError(
+        error,
         "Unable to load customer",
+        "GET_CUSTOMER_LEDGER_ERROR"
+      );
 
-      code:
-        error?.code ||
-        "GET_CUSTOMER_LEDGER_ERROR",
+    return res.status(result.status).json({
+      success: false,
+      message: result.message,
+      code: result.code,
     });
   }
 };
@@ -699,11 +1018,7 @@ export const updateLedgerCustomer =
       const { id } =
         req.params;
 
-      if (
-        !mongoose.Types.ObjectId.isValid(
-          id
-        )
-      ) {
+      if (!isValidObjectId(id)) {
         return res.status(400).json({
           success: false,
           message:
@@ -737,9 +1052,7 @@ export const updateLedgerCustomer =
         note,
       } = req.body || {};
 
-      if (
-        name !== undefined
-      ) {
+      if (name !== undefined) {
         const value =
           String(name).trim();
 
@@ -753,17 +1066,68 @@ export const updateLedgerCustomer =
           });
         }
 
-        customer.name =
-          value;
+        if (value.length > 150) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Customer name cannot exceed 150 characters",
+            code:
+              "CUSTOMER_NAME_TOO_LONG",
+          });
+        }
+
+        customer.name = value;
       }
 
-      if (
-        phone !== undefined
-      ) {
+      if (phone !== undefined) {
+        const normalizedPhone =
+          String(phone).trim();
+
+        if (
+          normalizedPhone.length > 30
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Phone number cannot exceed 30 characters",
+            code:
+              "CUSTOMER_PHONE_TOO_LONG",
+          });
+        }
+
+        /*
+         * Prevent changing a customer's phone
+         * to another active customer's phone.
+         */
+        if (
+          normalizedPhone &&
+          normalizedPhone !==
+            customer.phone
+        ) {
+          const duplicate =
+            await LedgerCustomer.exists({
+              _id: {
+                $ne: customer._id,
+              },
+              pumpId,
+              phone:
+                normalizedPhone,
+              status: "active",
+            });
+
+          if (duplicate) {
+            return res.status(409).json({
+              success: false,
+              message:
+                "Another active customer already uses this phone number.",
+              code:
+                "CUSTOMER_PHONE_ALREADY_EXISTS",
+            });
+          }
+        }
+
         customer.phone =
-          String(
-            phone
-          ).trim();
+          normalizedPhone;
       }
 
       if (
@@ -788,13 +1152,25 @@ export const updateLedgerCustomer =
           ).trim();
       }
 
-      if (
-        note !== undefined
-      ) {
+      if (note !== undefined) {
+        const normalizedNote =
+          normalizeNote(note);
+
+        if (
+          normalizedNote.length >
+          MAX_NOTE_LENGTH
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Note cannot exceed 500 characters.",
+            code:
+              "NOTE_TOO_LONG",
+          });
+        }
+
         customer.note =
-          String(
-            note
-          ).trim();
+          normalizedNote;
       }
 
       await customer.save();
@@ -813,18 +1189,17 @@ export const updateLedgerCustomer =
         error
       );
 
-      return res.status(
-        error?.statusCode || 500
-      ).json({
-        success: false,
-
-        message:
-          error?.message ||
+      const result =
+        handleValidationError(
+          error,
           "Unable to update customer",
+          "UPDATE_LEDGER_CUSTOMER_ERROR"
+        );
 
-        code:
-          error?.code ||
-          "UPDATE_LEDGER_CUSTOMER_ERROR",
+      return res.status(result.status).json({
+        success: false,
+        message: result.message,
+        code: result.code,
       });
     }
   };
@@ -845,11 +1220,7 @@ export const deleteLedgerCustomer =
       const { id } =
         req.params;
 
-      if (
-        !mongoose.Types.ObjectId.isValid(
-          id
-        )
-      ) {
+      if (!isValidObjectId(id)) {
         return res.status(400).json({
           success: false,
           message:
@@ -891,18 +1262,17 @@ export const deleteLedgerCustomer =
         error
       );
 
-      return res.status(
-        error?.statusCode || 500
-      ).json({
-        success: false,
-
-        message:
-          error?.message ||
+      const result =
+        handleValidationError(
+          error,
           "Unable to remove customer",
+          "DELETE_CUSTOMER_ERROR"
+        );
 
-        code:
-          error?.code ||
-          "DELETE_CUSTOMER_ERROR",
+      return res.status(result.status).json({
+        success: false,
+        message: result.message,
+        code: result.code,
       });
     }
   };
@@ -937,7 +1307,7 @@ export const addLedgerAdvance =
       } = req.body || {};
 
       if (
-        !mongoose.Types.ObjectId.isValid(
+        !isValidObjectId(
           customerId
         )
       ) {
@@ -984,13 +1354,11 @@ export const addLedgerAdvance =
       }
 
       const normalizedNote =
-        String(
-          note || ""
-        ).trim();
+        normalizeNote(note);
 
       if (
         normalizedNote.length >
-        500
+        MAX_NOTE_LENGTH
       ) {
         return res.status(400).json({
           success: false,
@@ -1025,12 +1393,21 @@ export const addLedgerAdvance =
             throw error;
           }
 
+          /*
+           * Only fields required for advance
+           * calculation are loaded.
+           */
           const existingEntries =
             await LedgerEntry.find({
               pumpId,
               customerId:
                 customer._id,
-            }).session(session);
+            })
+              .select(
+                "entryType totalAmount paidAmount paymentAmount advanceAmount advanceAppliedAmount"
+              )
+              .lean()
+              .session(session);
 
           const {
             advanceBalance:
@@ -1148,41 +1525,29 @@ export const addLedgerAdvance =
     } catch (error) {
       console.error(
         "ADD LEDGER ADVANCE ERROR:",
-        error
+        {
+          message:
+            error?.message,
+          code:
+            error?.code,
+          name:
+            error?.name,
+          statusCode:
+            error?.statusCode,
+        }
       );
 
-      const status =
-        Number.isInteger(
-          error?.statusCode
-        )
-          ? error.statusCode
-          : error?.name ===
-              "ValidationError"
-            ? 400
-            : error?.name ===
-                "CastError"
-              ? 400
-              : error?.code ===
-                  11000
-                ? 409
-                : 500;
+      const result =
+        handleValidationError(
+          error,
+          "Unable to add advance",
+          "ADD_LEDGER_ADVANCE_ERROR"
+        );
 
-      return res.status(status).json({
+      return res.status(result.status).json({
         success: false,
-
-        message:
-          error?.name ===
-          "ValidationError"
-            ? "Advance data is invalid."
-            : error?.code ===
-                11000
-              ? "This advance could not be added because a duplicate record was detected."
-              : error?.message ||
-                "Unable to add advance",
-
-        code:
-          error?.code ||
-          "ADD_LEDGER_ADVANCE_ERROR",
+        message: result.message,
+        code: result.code,
       });
     } finally {
       await session.endSession();
@@ -1221,12 +1586,12 @@ export const addCustomerPurchase =
         note = "",
       } = req.body || {};
 
-      // ------------------------------------------------
-      // CUSTOMER
-      // ------------------------------------------------
+      /* ---------------------------------------------
+         CUSTOMER ID
+      --------------------------------------------- */
 
       if (
-        !mongoose.Types.ObjectId.isValid(
+        !isValidObjectId(
           customerId
         )
       ) {
@@ -1239,22 +1604,17 @@ export const addCustomerPurchase =
         });
       }
 
-      // ------------------------------------------------
-      // FUEL
-      // ------------------------------------------------
+      /* ---------------------------------------------
+         FUEL
+      --------------------------------------------- */
 
       const normalizedFuel =
-        String(
-          fuelType || ""
-        )
-          .trim()
-          .toLowerCase();
+        normalizeFuelType(
+          fuelType
+        );
 
       if (
-        ![
-          "petrol",
-          "diesel",
-        ].includes(
+        !VALID_FUEL_TYPES.has(
           normalizedFuel
         )
       ) {
@@ -1267,9 +1627,9 @@ export const addCustomerPurchase =
         });
       }
 
-      // ------------------------------------------------
-      // AMOUNTS
-      // ------------------------------------------------
+      /* ---------------------------------------------
+         AMOUNTS
+      --------------------------------------------- */
 
       const total =
         roundMoney(
@@ -1310,16 +1670,9 @@ export const addCustomerPurchase =
         });
       }
 
-      // ------------------------------------------------
-      // FUEL RATE
-      // ------------------------------------------------
-      //
-      // The frontend may send the rate.
-      //
-      // If no valid rate is supplied, automatically
-      // fetch the current rate configured for this
-      // pump and fuel type.
-      //
+      /* ---------------------------------------------
+         RATE
+      --------------------------------------------- */
 
       let purchaseRate =
         roundMoney(
@@ -1332,10 +1685,10 @@ export const addCustomerPurchase =
           )
         );
 
-      // ------------------------------------------------
-      // GET CURRENT FUEL RATE
-      // ------------------------------------------------
-
+      /*
+       * If frontend did not provide a valid rate,
+       * use current pump fuel price.
+       */
       if (
         !Number.isFinite(
           purchaseRate
@@ -1347,9 +1700,14 @@ export const addCustomerPurchase =
             pumpId,
             fuelType:
               normalizedFuel,
-          }).sort({
-            updatedAt: -1,
-          });
+          })
+            .sort({
+              updatedAt: -1,
+            })
+            .select(
+              "price sellingPrice currentPrice rate"
+            )
+            .lean();
 
         purchaseRate =
           roundMoney(
@@ -1362,10 +1720,6 @@ export const addCustomerPurchase =
             )
           );
       }
-
-      // ------------------------------------------------
-      // VALIDATE FUEL RATE
-      // ------------------------------------------------
 
       if (
         !Number.isFinite(
@@ -1384,11 +1738,9 @@ export const addCustomerPurchase =
         });
       }
 
-      // ------------------------------------------------
-      // CALCULATE QUANTITY
-      //
-      // Quantity = Purchase Amount / Fuel Rate
-      // ------------------------------------------------
+      /* ---------------------------------------------
+         QUANTITY
+      --------------------------------------------- */
 
       const quantity =
         Number(
@@ -1411,9 +1763,9 @@ export const addCustomerPurchase =
         });
       }
 
-      // ------------------------------------------------
-      // DATE
-      // ------------------------------------------------
+      /* ---------------------------------------------
+         DATE
+      --------------------------------------------- */
 
       const normalizedEntryDate =
         normalizeDate(
@@ -1430,18 +1782,16 @@ export const addCustomerPurchase =
         });
       }
 
-      // ------------------------------------------------
-      // NOTE
-      // ------------------------------------------------
+      /* ---------------------------------------------
+         NOTE
+      --------------------------------------------- */
 
       const normalizedNote =
-        String(
-          note || ""
-        ).trim();
+        normalizeNote(note);
 
       if (
         normalizedNote.length >
-        500
+        MAX_NOTE_LENGTH
       ) {
         return res.status(400).json({
           success: false,
@@ -1456,9 +1806,9 @@ export const addCustomerPurchase =
 
       await session.withTransaction(
         async () => {
-          // --------------------------------------------
-          // CUSTOMER
-          // --------------------------------------------
+          /* -----------------------------------------
+             CUSTOMER
+          ----------------------------------------- */
 
           const customer =
             await LedgerCustomer.findOne({
@@ -1480,9 +1830,9 @@ export const addCustomerPurchase =
             throw error;
           }
 
-          // --------------------------------------------
-          // GET EXISTING ADVANCE
-          // --------------------------------------------
+          /* -----------------------------------------
+             EXISTING ADVANCE
+          ----------------------------------------- */
 
           const existingEntries =
             await LedgerEntry.find({
@@ -1490,10 +1840,10 @@ export const addCustomerPurchase =
               customerId:
                 customer._id,
             })
-              .sort({
-                entryDate: 1,
-                createdAt: 1,
-              })
+              .select(
+                "entryType totalAmount paidAmount paymentAmount advanceAmount advanceAppliedAmount"
+              )
+              .lean()
               .session(session);
 
           const {
@@ -1504,14 +1854,10 @@ export const addCustomerPurchase =
               existingEntries
             );
 
-          // --------------------------------------------
-          // CALCULATE ADVANCE USAGE
-          // --------------------------------------------
+          /* -----------------------------------------
+             NORMAL PAYMENT
+          ----------------------------------------- */
 
-          /*
-           * Only the unpaid portion of the purchase
-           * can consume advance.
-           */
           const amountAfterNormalPayment =
             roundMoney(
               Math.max(
@@ -1520,6 +1866,10 @@ export const addCustomerPurchase =
               )
             );
 
+          /* -----------------------------------------
+             ADVANCE USAGE
+          ----------------------------------------- */
+
           const advanceApplied =
             roundMoney(
               Math.min(
@@ -1527,6 +1877,10 @@ export const addCustomerPurchase =
                 amountAfterNormalPayment
               )
             );
+
+          /* -----------------------------------------
+             PENDING
+          ----------------------------------------- */
 
           const pending =
             roundMoney(
@@ -1538,6 +1892,10 @@ export const addCustomerPurchase =
               )
             );
 
+          /* -----------------------------------------
+             NEW ADVANCE BALANCE
+          ----------------------------------------- */
+
           const newAdvanceBalance =
             roundMoney(
               Math.max(
@@ -1547,9 +1905,9 @@ export const addCustomerPurchase =
               )
             );
 
-          // --------------------------------------------
-          // CREATE PURCHASE
-          // --------------------------------------------
+          /* -----------------------------------------
+             CREATE PURCHASE
+          ----------------------------------------- */
 
           const createdEntries =
             await LedgerEntry.create(
@@ -1566,25 +1924,12 @@ export const addCustomerPurchase =
                   fuelType:
                     normalizedFuel,
 
-                  /*
-                   * Purchase amount.
-                   */
                   totalAmount:
                     total,
 
-                  /*
-                   * Fuel rate used for this
-                   * purchase.
-                   */
                   rate:
                     purchaseRate,
 
-                  /*
-                   * paidAmount remains the amount
-                   * directly paid for this purchase.
-                   *
-                   * Advance is tracked separately.
-                   */
                   paidAmount:
                     paid,
 
@@ -1636,9 +1981,9 @@ export const addCustomerPurchase =
             throw error;
           }
 
-          // --------------------------------------------
-          // UPDATE PENDING CUSTOMER BALANCE
-          // --------------------------------------------
+          /* -----------------------------------------
+             CUSTOMER PENDING BALANCE
+          ----------------------------------------- */
 
           const currentBalance =
             roundMoney(
@@ -1661,9 +2006,9 @@ export const addCustomerPurchase =
             session,
           });
 
-          // --------------------------------------------
-          // SUMMARY
-          // --------------------------------------------
+          /* -----------------------------------------
+             SUMMARY
+          ----------------------------------------- */
 
           const summary =
             await calculateCustomerSummary(
@@ -1713,44 +2058,20 @@ export const addCustomerPurchase =
 
           customerId:
             req.params?.customerId,
-
-          pumpId:
-            req.user?.pumpId,
         }
       );
 
-      const status =
-        Number.isInteger(
-          error?.statusCode
-        )
-          ? error.statusCode
-          : error?.name ===
-              "ValidationError"
-            ? 400
-            : error?.name ===
-                "CastError"
-              ? 400
-              : error?.code ===
-                  11000
-                ? 409
-                : 500;
+      const result =
+        handleValidationError(
+          error,
+          "Unable to add purchase",
+          "ADD_CUSTOMER_PURCHASE_ERROR"
+        );
 
-      return res.status(status).json({
+      return res.status(result.status).json({
         success: false,
-
-        message:
-          error?.name ===
-          "ValidationError"
-            ? "Purchase data is invalid."
-            : error?.code ===
-                11000
-              ? "This purchase could not be added because a duplicate record was detected."
-              : error?.message ||
-                "Unable to add purchase",
-
-        code:
-          error?.code ||
-          "ADD_CUSTOMER_PURCHASE_ERROR",
+        message: result.message,
+        code: result.code,
       });
     } finally {
       await session.endSession();
@@ -1783,8 +2104,12 @@ export const addLedgerPayment =
         note = "",
       } = req.body || {};
 
+      /* ---------------------------------------------
+         CUSTOMER
+      --------------------------------------------- */
+
       if (
-        !mongoose.Types.ObjectId.isValid(
+        !isValidObjectId(
           customerId
         )
       ) {
@@ -1796,6 +2121,10 @@ export const addLedgerPayment =
             "INVALID_CUSTOMER_ID",
         });
       }
+
+      /* ---------------------------------------------
+         PAYMENT
+      --------------------------------------------- */
 
       const payment =
         roundMoney(
@@ -1815,6 +2144,10 @@ export const addLedgerPayment =
         });
       }
 
+      /* ---------------------------------------------
+         DATE
+      --------------------------------------------- */
+
       const normalizedEntryDate =
         normalizeDate(
           entryDate
@@ -1830,14 +2163,16 @@ export const addLedgerPayment =
         });
       }
 
+      /* ---------------------------------------------
+         NOTE
+      --------------------------------------------- */
+
       const normalizedNote =
-        String(
-          note || ""
-        ).trim();
+        normalizeNote(note);
 
       if (
         normalizedNote.length >
-        500
+        MAX_NOTE_LENGTH
       ) {
         return res.status(400).json({
           success: false,
@@ -1897,6 +2232,10 @@ export const addLedgerPayment =
 
             throw error;
           }
+
+          /* -----------------------------------------
+             CREATE PAYMENT
+          ----------------------------------------- */
 
           const createdEntries =
             await LedgerEntry.create(
@@ -1967,6 +2306,10 @@ export const addLedgerPayment =
             throw error;
           }
 
+          /* -----------------------------------------
+             UPDATE CUSTOMER BALANCE
+          ----------------------------------------- */
+
           customer.currentBalance =
             roundMoney(
               Math.max(
@@ -1979,6 +2322,10 @@ export const addLedgerPayment =
           await customer.save({
             session,
           });
+
+          /* -----------------------------------------
+             SUMMARY
+          ----------------------------------------- */
 
           const summary =
             await calculateCustomerSummary(
@@ -2013,41 +2360,35 @@ export const addLedgerPayment =
     } catch (error) {
       console.error(
         "ADD LEDGER PAYMENT ERROR:",
-        error
+        {
+          message:
+            error?.message,
+
+          code:
+            error?.code,
+
+          name:
+            error?.name,
+
+          statusCode:
+            error?.statusCode,
+
+          customerId:
+            req.body?.customerId,
+        }
       );
 
-      const status =
-        Number.isInteger(
-          error?.statusCode
-        )
-          ? error.statusCode
-          : error?.name ===
-              "ValidationError"
-            ? 400
-            : error?.name ===
-                "CastError"
-              ? 400
-              : error?.code ===
-                  11000
-                ? 409
-                : 500;
+      const result =
+        handleValidationError(
+          error,
+          "Unable to add payment",
+          "ADD_LEDGER_PAYMENT_ERROR"
+        );
 
-      return res.status(status).json({
+      return res.status(result.status).json({
         success: false,
-
-        message:
-          error?.name ===
-          "ValidationError"
-            ? "Payment data is invalid."
-            : error?.code ===
-                11000
-              ? "This payment could not be added because a duplicate record was detected."
-              : error?.message ||
-                "Unable to add payment",
-
-        code:
-          error?.code ||
-          "ADD_LEDGER_PAYMENT_ERROR",
+        message: result.message,
+        code: result.code,
       });
     } finally {
       await session.endSession();
@@ -2072,7 +2413,7 @@ export const getCustomerLedgerHistory =
       } = req.params;
 
       if (
-        !mongoose.Types.ObjectId.isValid(
+        !isValidObjectId(
           customerId
         )
       ) {
@@ -2085,13 +2426,31 @@ export const getCustomerLedgerHistory =
         });
       }
 
-      const customer =
-        await LedgerCustomer.findOne({
+      /*
+       * Customer and history can be fetched
+       * concurrently because neither depends
+       * on the other.
+       */
+      const [
+        customer,
+        entries,
+      ] = await Promise.all([
+        LedgerCustomer.findOne({
           _id:
             customerId,
-
           pumpId,
-        });
+        }).lean(),
+
+        LedgerEntry.find({
+          pumpId,
+          customerId,
+        })
+          .sort({
+            entryDate: 1,
+            createdAt: 1,
+          })
+          .lean(),
+      ]);
 
       if (!customer) {
         return res.status(404).json({
@@ -2103,21 +2462,10 @@ export const getCustomerLedgerHistory =
         });
       }
 
-      const entries =
-        await LedgerEntry.find({
-          pumpId,
-
-          customerId:
-            customer._id,
-        }).sort({
-          entryDate: 1,
-          createdAt: 1,
-        });
-
       const summary =
         await calculateCustomerSummary(
           pumpId,
-          customer._id
+          customerId
         );
 
       return res.status(200).json({
@@ -2135,18 +2483,17 @@ export const getCustomerLedgerHistory =
         error
       );
 
-      return res.status(
-        error?.statusCode || 500
-      ).json({
-        success: false,
-
-        message:
-          error?.message ||
+      const result =
+        handleValidationError(
+          error,
           "Unable to load customer ledger history",
+          "GET_CUSTOMER_LEDGER_HISTORY_ERROR"
+        );
 
-        code:
-          error?.code ||
-          "GET_CUSTOMER_LEDGER_HISTORY_ERROR",
+      return res.status(result.status).json({
+        success: false,
+        message: result.message,
+        code: result.code,
       });
     }
   };
@@ -2174,25 +2521,21 @@ export const getPendingCredit =
           currentBalance: {
             $gt: 0,
           },
-        }).sort({
-          currentBalance: -1,
-        });
+        })
+          .sort({
+            currentBalance: -1,
+          })
+          .lean();
 
-      const totalPending =
-        roundMoney(
-          customers.reduce(
-            (
-              total,
-              customer
-            ) =>
-              total +
-              Number(
-                customer.currentBalance ||
-                  0
-              ),
-            0
-          )
-        );
+      let totalPending = 0;
+
+      for (const customer of customers) {
+        totalPending +=
+          Number(
+            customer.currentBalance ||
+              0
+          );
+      }
 
       return res.status(200).json({
         success: true,
@@ -2200,7 +2543,10 @@ export const getPendingCredit =
         count:
           customers.length,
 
-        totalPending,
+        totalPending:
+          roundMoney(
+            totalPending
+          ),
 
         customers,
       });
@@ -2210,18 +2556,17 @@ export const getPendingCredit =
         error
       );
 
-      return res.status(
-        error?.statusCode || 500
-      ).json({
-        success: false,
-
-        message:
-          error?.message ||
+      const result =
+        handleValidationError(
+          error,
           "Unable to load pending credit",
+          "GET_PENDING_CREDIT_ERROR"
+        );
 
-        code:
-          error?.code ||
-          "GET_PENDING_CREDIT_ERROR",
+      return res.status(result.status).json({
+        success: false,
+        message: result.message,
+        code: result.code,
       });
     }
   };
@@ -2259,6 +2604,14 @@ export const getTodayCreditSales =
         });
       }
 
+      /*
+       * This endpoint only needs:
+       * - count
+       * - totalCreditSales
+       * - entries
+       *
+       * Use one query and lean documents.
+       */
       const entries =
         await LedgerEntry.find({
           pumpId,
@@ -2268,23 +2621,21 @@ export const getTodayCreditSales =
 
           entryDate:
             date,
-        });
+        })
+          .sort({
+            createdAt: 1,
+          })
+          .lean();
 
-      const totalCreditSales =
-        roundMoney(
-          entries.reduce(
-            (
-              total,
-              entry
-            ) =>
-              total +
-              Number(
-                entry.totalAmount ||
-                  0
-              ),
-            0
-          )
-        );
+      let totalCreditSales = 0;
+
+      for (const entry of entries) {
+        totalCreditSales +=
+          Number(
+            entry.totalAmount ||
+              0
+          );
+      }
 
       return res.status(200).json({
         success: true,
@@ -2294,7 +2645,10 @@ export const getTodayCreditSales =
         count:
           entries.length,
 
-        totalCreditSales,
+        totalCreditSales:
+          roundMoney(
+            totalCreditSales
+          ),
 
         entries,
       });
@@ -2304,18 +2658,17 @@ export const getTodayCreditSales =
         error
       );
 
-      return res.status(
-        error?.statusCode || 500
-      ).json({
-        success: false,
-
-        message:
-          error?.message ||
+      const result =
+        handleValidationError(
+          error,
           "Unable to load today's credit sales",
+          "TODAY_CREDIT_SALES_ERROR"
+        );
 
-        code:
-          error?.code ||
-          "TODAY_CREDIT_SALES_ERROR",
+      return res.status(result.status).json({
+        success: false,
+        message: result.message,
+        code: result.code,
       });
     }
   };

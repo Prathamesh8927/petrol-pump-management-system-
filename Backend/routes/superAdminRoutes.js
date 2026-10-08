@@ -10,8 +10,10 @@ import {
   updateClient,
   updateClientStatus,
   deleteClient,
+
   getSuperAdminSummary,
   getSuperAdminUsers,
+
   getRegistrationRequests,
   getRegistrationRequestById,
   getPendingRegistrationCount,
@@ -29,92 +31,151 @@ import {
 const router = express.Router();
 
 /*
-  All Super Admin routes require authentication
-  and Super Admin role.
+|--------------------------------------------------------------------------
+| SUPER ADMIN AUTHENTICATION
+|--------------------------------------------------------------------------
+|
+| Every endpoint in this router requires:
+|
+| 1. Valid JWT
+| 2. Super Admin authorization
+|
+|--------------------------------------------------------------------------
 */
 
 router.use(authMiddleware);
 router.use(superAdminMiddleware);
 
-/* =========================================================
-   DASHBOARD
-========================================================= */
+/*
+|--------------------------------------------------------------------------
+| DASHBOARD
+|--------------------------------------------------------------------------
+*/
 
-router.get("/summary", getSuperAdminSummary);
+// GET /api/superadmin/summary
+router.get(
+  "/summary",
+  getSuperAdminSummary
+);
 
-/* =========================================================
-   USERS
-========================================================= */
+/*
+|--------------------------------------------------------------------------
+| USERS
+|--------------------------------------------------------------------------
+*/
 
-router.get("/users", getSuperAdminUsers);
+// GET /api/superadmin/users
+router.get(
+  "/users",
+  getSuperAdminUsers
+);
 
-/* =========================================================
-   REGISTRATION REQUESTS
-========================================================= */
+/*
+|--------------------------------------------------------------------------
+| REGISTRATION REQUESTS
+|--------------------------------------------------------------------------
+*/
 
-router.get("/requests", getRegistrationRequests);
+// GET /api/superadmin/requests
+router.get(
+  "/requests",
+  getRegistrationRequests
+);
 
+// GET /api/superadmin/requests/pending-count
 router.get(
   "/requests/pending-count",
   getPendingRegistrationCount
 );
 
+// GET /api/superadmin/requests/:id
 router.get(
   "/requests/:id",
   getRegistrationRequestById
 );
 
+// PATCH /api/superadmin/requests/:id/approve
 router.patch(
   "/requests/:id/approve",
   approveRegistrationRequest
 );
 
+// PATCH /api/superadmin/requests/:id/reject
 router.patch(
   "/requests/:id/reject",
   rejectRegistrationRequest
 );
 
-/* =========================================================
-   PASSWORD RESET REQUESTS
-========================================================= */
+/*
+|--------------------------------------------------------------------------
+| PASSWORD RESET REQUESTS
+|--------------------------------------------------------------------------
+*/
 
+// GET /api/superadmin/password-requests
 router.get(
   "/password-requests",
   getPasswordResetRequests
 );
 
+// GET /api/superadmin/password-requests/pending-count
 router.get(
   "/password-requests/pending-count",
   getPendingPasswordResetCount
 );
 
+// PATCH /api/superadmin/password-requests/:id/approve
 router.patch(
   "/password-requests/:id/approve",
   approvePasswordReset
 );
 
+// PATCH /api/superadmin/password-requests/:id/reject
 router.patch(
   "/password-requests/:id/reject",
   rejectPasswordReset
 );
 
-/* =========================================================
-   CLIENTS
-========================================================= */
+/*
+|--------------------------------------------------------------------------
+| CLIENTS
+|--------------------------------------------------------------------------
+*/
 
-router.get("/clients", getClients);
+// GET /api/superadmin/clients
+router.get(
+  "/clients",
+  getClients
+);
 
-router.post("/clients", addClient);
+// POST /api/superadmin/clients
+router.post(
+  "/clients",
+  addClient
+);
 
-router.get("/clients/:id", getClientById);
+// GET /api/superadmin/clients/:id
+router.get(
+  "/clients/:id",
+  getClientById
+);
 
-router.put("/clients/:id", updateClient);
+// PUT /api/superadmin/clients/:id
+router.put(
+  "/clients/:id",
+  updateClient
+);
 
+// PATCH /api/superadmin/clients/:id/status
 router.patch(
   "/clients/:id/status",
   updateClientStatus
 );
 
-router.delete("/clients/:id", deleteClient);
+// DELETE /api/superadmin/clients/:id
+router.delete(
+  "/clients/:id",
+  deleteClient
+);
 
 export default router;

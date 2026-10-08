@@ -1,16 +1,30 @@
 import api from "./api";
 
-export const getDashboardSummary =
-  async (date) => {
-    const response =
-      await api.get(
-        "/dashboard/summary",
-        {
-          params: {
-            date,
-          },
-        }
-      );
+/* =====================================================
+   DASHBOARD SUMMARY
+===================================================== */
 
-    return response.data;
-  };
+export const getDashboardSummary = async (date) => {
+  const params = {};
+
+  if (date) {
+    params.date = date;
+  }
+
+  const response = await api.get(
+    "/dashboard/summary",
+    {
+      params,
+    }
+  );
+
+  return response.data;
+};
+
+/* =====================================================
+   DEFAULT EXPORT
+===================================================== */
+
+export default {
+  getDashboardSummary,
+};

@@ -538,10 +538,42 @@ const DailyReport = () => {
 
   const getOwnerName = (
     pump = {}
-  ) =>
-    pump?.ownerName ||
-    pump?.owner ||
-    "";
+  ) => {
+
+    if (
+      typeof pump?.ownerName ===
+        "string" &&
+      pump.ownerName.trim()
+    ) {
+      return pump.ownerName.trim();
+    }
+
+    if (
+      typeof pump?.owner ===
+        "string" &&
+      pump.owner.trim()
+    ) {
+      return pump.owner.trim();
+    }
+
+    if (
+      pump?.owner &&
+      typeof pump.owner ===
+        "object"
+    ) {
+
+      return (
+        pump.owner.name ||
+        pump.owner.fullName ||
+        pump.owner.ownerName ||
+        ""
+      );
+
+    }
+
+    return "";
+
+  };
 
 
   const getCompanyName = (
@@ -841,12 +873,6 @@ const DailyReport = () => {
         );
 
 
-      const ownerName =
-        getOwnerName(
-          pump
-        );
-
-
       const companyName =
         getCompanyName(
           pump
@@ -935,6 +961,19 @@ const DailyReport = () => {
 
       if (phone) {
 
+        doc.setFont(
+          "helvetica",
+          "normal"
+        );
+
+        doc.setFontSize(
+          7
+        );
+
+        doc.setTextColor(
+          COLORS.text
+        );
+
         doc.text(
           `PH ${phone}`,
           pageWidth - 10,
@@ -1010,39 +1049,6 @@ const DailyReport = () => {
 
 
       /* =====================================================
-         OWNER NAME
-         SAME PROFILE-BASED LOGIC
-      ===================================================== */
-
-      if (ownerName) {
-
-        doc.setFont(
-          "helvetica",
-          "bold"
-        );
-
-        doc.setFontSize(
-          8
-        );
-
-        doc.setTextColor(
-          COLORS.text
-        );
-
-        doc.text(
-          `OWNER - ${ownerName}`,
-          pageWidth / 2,
-          25,
-          {
-            align:
-              "center",
-          }
-        );
-
-      }
-
-
-      /* =====================================================
          COMPANY
       ===================================================== */
 
@@ -1055,14 +1061,16 @@ const DailyReport = () => {
         7.5
       );
 
+      doc.setTextColor(
+        COLORS.text
+      );
+
       doc.text(
         companyName
           ? `DEALER - ${companyName.toUpperCase()}`
           : "DEALER",
         pageWidth / 2,
-        ownerName
-          ? 30
-          : 25,
+        24,
         {
           align:
             "center",
@@ -1073,11 +1081,6 @@ const DailyReport = () => {
       /* =====================================================
          ADDRESS
       ===================================================== */
-
-      const addressY =
-        ownerName
-          ? 36
-          : 31;
 
       if (address) {
 
@@ -1099,7 +1102,7 @@ const DailyReport = () => {
         doc.text(
           addressLines,
           pageWidth / 2,
-          addressY,
+          30,
           {
             align:
               "center",
@@ -1112,11 +1115,6 @@ const DailyReport = () => {
       /* =====================================================
          REPORT TITLE
       ===================================================== */
-
-      const reportTitleY =
-        ownerName
-          ? 49
-          : 43;
 
       doc.setFont(
         "helvetica",
@@ -1134,7 +1132,7 @@ const DailyReport = () => {
       doc.text(
         "DAILY REPORT",
         pageWidth / 2,
-        reportTitleY,
+        43,
         {
           align:
             "center",
@@ -1146,11 +1144,6 @@ const DailyReport = () => {
          REPORT PERIOD BOX
       ===================================================== */
 
-      const reportBoxY =
-        ownerName
-          ? 54
-          : 48;
-
       doc.setFillColor(
         COLORS.sectionBar
       );
@@ -1161,7 +1154,7 @@ const DailyReport = () => {
 
       doc.rect(
         10,
-        reportBoxY,
+        48,
         pageWidth - 20,
         19,
         "FD"
@@ -1188,19 +1181,19 @@ const DailyReport = () => {
       doc.text(
         "REPORT TYPE",
         15,
-        reportBoxY + 7
+        55
       );
 
       doc.text(
         "REPORT DATE",
         75,
-        reportBoxY + 7
+        55
       );
 
       doc.text(
         "GENERATED ON",
         150,
-        reportBoxY + 7
+        55
       );
 
 
@@ -1224,13 +1217,13 @@ const DailyReport = () => {
       doc.text(
         "Daily Financial & Operational",
         15,
-        reportBoxY + 14
+        62
       );
 
       doc.text(
         getReportPeriod(),
         75,
-        reportBoxY + 14
+        62
       );
 
       doc.text(
@@ -1238,11 +1231,11 @@ const DailyReport = () => {
           new Date()
         ),
         150,
-        reportBoxY + 14
+        62
       );
 
 
-      return reportBoxY + 25;
+      return 73;
 
     };
 

@@ -63,8 +63,14 @@ const PAYMENT_METHODS = new Set([
   "upi",
   "card",
   "credit",
-  "qr",
 ]);
+
+const PAYMENT_METHOD_LABELS = {
+  cash: "Cash",
+  upi: "UPI",
+  card: "Card",
+  credit: "Credit",
+};
 
 /* =====================================================
    TODAY
@@ -87,6 +93,24 @@ const getToday = () => {
 };
 
 /* =====================================================
+   CURRENT TIME
+===================================================== */
+
+const getCurrentTime = () => {
+  const now = new Date();
+
+  const hours = String(
+    now.getHours()
+  ).padStart(2, "0");
+
+  const minutes = String(
+    now.getMinutes()
+  ).padStart(2, "0");
+
+  return `${hours}:${minutes}`;
+};
+
+/* =====================================================
    DATE VALIDATION
 ===================================================== */
 
@@ -94,6 +118,7 @@ const isValidDate = (
   value
 ) => {
   if (
+    typeof value !== "string" ||
     !/^\d{4}-\d{2}-\d{2}$/.test(
       value
     )
@@ -117,9 +142,127 @@ const isValidDate = (
 
   return (
     date.getFullYear() === year &&
-    date.getMonth() === month - 1 &&
+    date.getMonth() ===
+      month - 1 &&
     date.getDate() === day
   );
+};
+
+/* =====================================================
+   TIME VALIDATION
+===================================================== */
+
+const isValidTime = (
+  value
+) => {
+  return (
+    typeof value === "string" &&
+    /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(
+      value
+    )
+  );
+};
+
+/* =====================================================
+   ROUND MONEY
+===================================================== */
+
+const roundMoney = (
+  value
+) => {
+  const number = Number(
+    value
+  );
+
+  if (
+    !Number.isFinite(number)
+  ) {
+    return 0;
+  }
+
+  return Number(
+    number.toFixed(2)
+  );
+};
+
+/* =====================================================
+   NORMALIZE PAYMENT METHOD
+===================================================== */
+
+const normalizePaymentMethod = (
+  value
+) => {
+  return String(
+    value || ""
+  )
+    .trim()
+    .toLowerCase();
+};
+
+/* =====================================================
+   NORMALIZE PAYMENT ARRAY
+===================================================== */
+
+const normalizePayments = (
+  payments,
+  fallbackMethod = "cash",
+  fallbackAmount = 0
+) => {
+  if (
+    Array.isArray(payments) &&
+    payments.length > 0
+  ) {
+    const normalized =
+      payments
+        .map((payment) => ({
+          method:
+            normalizePaymentMethod(
+              payment?.method
+            ),
+          amount: roundMoney(
+            payment?.amount
+          ),
+        }))
+        .filter(
+          (payment) =>
+            PAYMENT_METHODS.has(
+              payment.method
+            ) &&
+            payment.amount > 0
+        );
+
+    if (
+      normalized.length > 0
+    ) {
+      return normalized;
+    }
+  }
+
+  const method =
+    normalizePaymentMethod(
+      fallbackMethod
+    );
+
+  const amount =
+    roundMoney(
+      fallbackAmount
+    );
+
+  if (
+    PAYMENT_METHODS.has(
+      method
+    ) &&
+    amount > 0
+  ) {
+    return [
+      {
+        method,
+        amount,
+      },
+    ];
+  }
+
+  return [];
 };
 
 /* =====================================================
@@ -206,7 +349,9 @@ const normalizeNozzles = (
             ? data.data.nozzles
             : [];
 
-  if (!Array.isArray(list)) {
+  if (
+    !Array.isArray(list)
+  ) {
     return [];
   }
 
@@ -413,84 +558,85 @@ const getUserDisplayName = (
    GET AUTHENTICATED USER FALLBACK
 ===================================================== */
 
-const getStoredAuthenticatedUser = () => {
-  const possibleKeys = [
-    "user",
-    "currentUser",
-    "authUser",
-    "loggedInUser",
-    "userData",
-  ];
+const getStoredAuthenticatedUser =
+  () => {
+    const possibleKeys = [
+      "user",
+      "currentUser",
+      "authUser",
+      "loggedInUser",
+      "userData",
+    ];
 
-  for (
-    const key of possibleKeys
-  ) {
-    try {
-      const localValue =
-        localStorage.getItem(
-          key
-        );
-
-      if (localValue) {
-        const parsed =
-          JSON.parse(
-            localValue
+    for (
+      const key of possibleKeys
+    ) {
+      try {
+        const localValue =
+          localStorage.getItem(
+            key
           );
 
-        if (
-          parsed &&
-          typeof parsed ===
-            "object"
-        ) {
-          return (
-            parsed?.user ||
-            parsed?.data?.user ||
-            parsed
-          );
+        if (localValue) {
+          const parsed =
+            JSON.parse(
+              localValue
+            );
+
+          if (
+            parsed &&
+            typeof parsed ===
+              "object"
+          ) {
+            return (
+              parsed?.user ||
+              parsed?.data?.user ||
+              parsed
+            );
+          }
         }
+      } catch {
+        // Continue checking.
       }
-    } catch {
-      // Continue checking.
+
+      try {
+        const sessionValue =
+          sessionStorage.getItem(
+            key
+          );
+
+        if (sessionValue) {
+          const parsed =
+            JSON.parse(
+              sessionValue
+            );
+
+          if (
+            parsed &&
+            typeof parsed ===
+              "object"
+          ) {
+            return (
+              parsed?.user ||
+              parsed?.data?.user ||
+              parsed
+            );
+          }
+        }
+      } catch {
+        // Continue checking.
+      }
     }
 
-    try {
-      const sessionValue =
-        sessionStorage.getItem(
-          key
-        );
-
-      if (sessionValue) {
-        const parsed =
-          JSON.parse(
-            sessionValue
-          );
-
-        if (
-          parsed &&
-          typeof parsed ===
-            "object"
-        ) {
-          return (
-            parsed?.user ||
-            parsed?.data?.user ||
-            parsed
-          );
-        }
-      }
-    } catch {
-      // Continue checking.
-    }
-  }
-
-  return null;
-};
+    return null;
+  };
 
 /* =====================================================
    GET READING ID
 ===================================================== */
 
 const getReadingId = (
- reading
+  reading
 ) => {
   return (
     reading?._id ||
@@ -505,7 +651,7 @@ const getReadingId = (
 ===================================================== */
 
 const getReadingNozzleId = (
- reading
+  reading
 ) => {
   return (
     reading?.nozzleId?._id ||
@@ -552,6 +698,85 @@ const getReadingDate = (
   return String(
     value
   ).slice(0, 10);
+};
+
+/* =====================================================
+   GET READING TIME
+===================================================== */
+
+const getReadingTime = (
+  reading
+) => {
+  const directTime =
+    String(
+      reading?.readingTime ||
+        ""
+    ).trim();
+
+  if (
+    isValidTime(
+      directTime
+    )
+  ) {
+    return directTime;
+  }
+
+  const createdAt =
+    reading?.createdAt;
+
+  if (!createdAt) {
+    return "";
+  }
+
+  const date =
+    new Date(
+      createdAt
+    );
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "";
+  }
+
+  const formatter =
+    new Intl.DateTimeFormat(
+      "en-GB",
+      {
+        timeZone:
+          "Asia/Kolkata",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+      }
+    );
+
+  return formatter.format(
+    date
+  );
+};
+
+/* =====================================================
+   GET READING PAYMENTS
+===================================================== */
+
+const getReadingPayments = (
+  reading
+) => {
+  const totalAmount =
+    Number(
+      reading?.totalAmount ||
+        0
+    );
+
+  return normalizePayments(
+    reading?.payments,
+    reading?.paymentMethod ||
+      "cash",
+    totalAmount
+  );
 };
 
 /* =====================================================
@@ -652,6 +877,32 @@ const AddReading = () => {
   ] = useState(
     getToday()
   );
+
+  const [
+    readingTime,
+    setReadingTime,
+  ] = useState(
+    getCurrentTime()
+  );
+
+  /* ===================================================
+     SPLIT PAYMENT
+  =================================================== */
+
+  const [
+    splitPaymentEnabled,
+    setSplitPaymentEnabled,
+  ] = useState(false);
+
+  const [
+    payments,
+    setPayments,
+  ] = useState([
+    {
+      method: "cash",
+      amount: "",
+    },
+  ]);
 
   /* ===================================================
      EDIT READING
@@ -1157,12 +1408,10 @@ const AddReading = () => {
             "";
 
           const existingPayment =
-            String(
+            normalizePaymentMethod(
               foundReading?.paymentMethod ||
                 "cash"
-            )
-              .trim()
-              .toLowerCase();
+            );
 
           const existingNote =
             foundReading?.note ||
@@ -1170,6 +1419,16 @@ const AddReading = () => {
 
           const existingDate =
             getReadingDate(
+              foundReading
+            );
+
+          const existingTime =
+            getReadingTime(
+              foundReading
+            );
+
+          const existingPayments =
+            getReadingPayments(
               foundReading
             );
 
@@ -1219,9 +1478,7 @@ const AddReading = () => {
           if (
             PAYMENT_METHODS.has(
               existingPayment
-            ) &&
-            existingPayment !==
-              "qr"
+            )
           ) {
             setPaymentMethod(
               existingPayment
@@ -1230,6 +1487,64 @@ const AddReading = () => {
             setPaymentMethod(
               "cash"
             );
+          }
+
+          if (
+            existingPayments.length >
+              1
+          ) {
+            setSplitPaymentEnabled(
+              true
+            );
+
+            setPayments(
+              existingPayments.map(
+                (paymentItem) => ({
+                  method:
+                    paymentItem.method,
+                  amount:
+                    String(
+                      paymentItem.amount
+                    ),
+                })
+              )
+            );
+          } else if (
+            existingPayments.length ===
+            1
+          ) {
+            setSplitPaymentEnabled(
+              false
+            );
+
+            setPayments([
+              {
+                method:
+                  existingPayments[0]
+                    .method,
+                amount:
+                  String(
+                    existingPayments[0]
+                      .amount
+                  ),
+              },
+            ]);
+          } else {
+            setSplitPaymentEnabled(
+              false
+            );
+
+            setPayments([
+              {
+                method:
+                  PAYMENT_METHODS.has(
+                    existingPayment
+                  )
+                    ? existingPayment
+                    : "cash",
+                amount: "",
+              },
+            ]);
           }
 
           setNote(
@@ -1246,6 +1561,20 @@ const AddReading = () => {
           ) {
             setDate(
               existingDate
+            );
+          }
+
+          if (
+            isValidTime(
+              existingTime
+            )
+          ) {
+            setReadingTime(
+              existingTime
+            );
+          } else {
+            setReadingTime(
+              getCurrentTime()
             );
           }
         } catch (error) {
@@ -1427,6 +1756,70 @@ const AddReading = () => {
       : 0;
 
   /* ===================================================
+     PAYMENT TOTAL
+  =================================================== */
+
+  const paymentTotal =
+    useMemo(() => {
+      if (
+        !splitPaymentEnabled
+      ) {
+        return 0;
+      }
+
+      return roundMoney(
+        payments.reduce(
+          (
+            total,
+            paymentItem
+          ) =>
+            total +
+            Number(
+              paymentItem?.amount ||
+                0
+            ),
+          0
+        )
+      );
+    }, [
+      payments,
+      splitPaymentEnabled,
+    ]);
+
+  /* ===================================================
+     PAYMENT REMAINING
+  =================================================== */
+
+  const paymentRemaining =
+    useMemo(() => {
+      if (
+        !splitPaymentEnabled
+      ) {
+        return 0;
+      }
+
+      return roundMoney(
+        previewAmount -
+          paymentTotal
+      );
+    }, [
+      previewAmount,
+      paymentTotal,
+      splitPaymentEnabled,
+    ]);
+
+  /* ===================================================
+     PAYMENT TOTAL VALID
+  =================================================== */
+
+  const paymentTotalMatches =
+    splitPaymentEnabled &&
+    previewAmount > 0 &&
+    Math.abs(
+      paymentRemaining
+    ) < 0.01;
+
+  /* ===================================================
      NOZZLE CHANGE
   =================================================== */
 
@@ -1443,6 +1836,21 @@ const AddReading = () => {
       setClosingReading(
         ""
       );
+
+      if (
+        !splitPaymentEnabled
+      ) {
+        setPayments([
+          {
+            method:
+              paymentMethod ===
+                "qr"
+                ? "cash"
+                : paymentMethod,
+            amount: "",
+          },
+        ]);
+      }
     };
 
   /* ===================================================
@@ -1468,6 +1876,294 @@ const AddReading = () => {
     (event) => {
       setStaffId(
         event.target.value
+      );
+    };
+
+  /* ===================================================
+     PAYMENT METHOD CHANGE
+  =================================================== */
+
+  const handlePaymentMethodChange =
+    (event) => {
+      const nextMethod =
+        normalizePaymentMethod(
+          event.target.value
+        );
+
+      setPaymentMethod(
+        nextMethod
+      );
+
+      if (
+        !splitPaymentEnabled &&
+        nextMethod !== "qr"
+      ) {
+        setPayments([
+          {
+            method:
+              nextMethod,
+            amount:
+              previewAmount > 0
+                ? String(
+                    previewAmount
+                  )
+                : "",
+          },
+        ]);
+      }
+    };
+
+  /* ===================================================
+     ENABLE SPLIT PAYMENT
+  =================================================== */
+
+  const handleSplitPaymentToggle =
+    (event) => {
+      const enabled =
+        event.target.checked;
+
+      if (
+        paymentMethod ===
+        "qr"
+      ) {
+        return;
+      }
+
+      setSplitPaymentEnabled(
+        enabled
+      );
+
+      if (enabled) {
+        const currentMethod =
+          PAYMENT_METHODS.has(
+            paymentMethod
+          )
+            ? paymentMethod
+            : "cash";
+
+        setPayments([
+          {
+            method:
+              currentMethod,
+            amount:
+              previewAmount > 0
+                ? String(
+                    previewAmount
+                  )
+                : "",
+          },
+        ]);
+      } else {
+        const firstPayment =
+          payments[0];
+
+        const nextMethod =
+          PAYMENT_METHODS.has(
+            firstPayment?.method
+          )
+            ? firstPayment.method
+            : "cash";
+
+        setPaymentMethod(
+          nextMethod
+        );
+
+        setPayments([
+          {
+            method:
+              nextMethod,
+            amount:
+              previewAmount > 0
+                ? String(
+                    previewAmount
+                  )
+                : "",
+          },
+        ]);
+      }
+    };
+
+  /* ===================================================
+     ADD PAYMENT ROW
+  =================================================== */
+
+  const addPaymentRow =
+    () => {
+      if (
+        payments.length >= 4
+      ) {
+        toast.error(
+          "Maximum 4 payment methods are allowed."
+        );
+
+        return;
+      }
+
+      const usedMethods =
+        new Set(
+          payments.map(
+            (paymentItem) =>
+              paymentItem.method
+          )
+        );
+
+      const availableMethod =
+        Array.from(
+          PAYMENT_METHODS
+        ).find(
+          (method) =>
+            !usedMethods.has(
+              method
+            )
+        );
+
+      if (
+        !availableMethod
+      ) {
+        toast.error(
+          "All payment methods are already added."
+        );
+
+        return;
+      }
+
+      setPayments(
+        (current) => [
+          ...current,
+          {
+            method:
+              availableMethod,
+            amount: "",
+          },
+        ]
+      );
+    };
+
+  /* ===================================================
+     REMOVE PAYMENT ROW
+  =================================================== */
+
+  const removePaymentRow =
+    (index) => {
+      if (
+        payments.length <= 1
+      ) {
+        toast.error(
+          "At least one payment method is required."
+        );
+
+        return;
+      }
+
+      setPayments(
+        (current) =>
+          current.filter(
+            (
+              _,
+              paymentIndex
+            ) =>
+              paymentIndex !==
+              index
+          )
+      );
+    };
+
+  /* ===================================================
+     CHANGE PAYMENT ROW METHOD
+  =================================================== */
+
+  const changePaymentRowMethod =
+    (
+      index,
+      value
+    ) => {
+      const method =
+        normalizePaymentMethod(
+          value
+        );
+
+      if (
+        !PAYMENT_METHODS.has(
+          method
+        )
+      ) {
+        return;
+      }
+
+      const duplicate =
+        payments.some(
+          (
+            paymentItem,
+            paymentIndex
+          ) =>
+            paymentIndex !==
+              index &&
+            paymentItem.method ===
+              method
+        );
+
+      if (duplicate) {
+        toast.error(
+          "This payment method is already selected."
+        );
+
+        return;
+      }
+
+      setPayments(
+        (current) =>
+          current.map(
+            (
+              paymentItem,
+              paymentIndex
+            ) =>
+              paymentIndex ===
+              index
+                ? {
+                    ...paymentItem,
+                    method,
+                  }
+                : paymentItem
+          )
+      );
+    };
+
+  /* ===================================================
+     CHANGE PAYMENT ROW AMOUNT
+  =================================================== */
+
+  const changePaymentRowAmount =
+    (
+      index,
+      value
+    ) => {
+      if (
+        value !== "" &&
+        (!/^\d*\.?\d*$/.test(
+          value
+        ) ||
+          Number(value) <
+            0)
+      ) {
+        return;
+      }
+
+      setPayments(
+        (current) =>
+          current.map(
+            (
+              paymentItem,
+              paymentIndex
+            ) =>
+              paymentIndex ===
+              index
+                ? {
+                    ...paymentItem,
+                    amount:
+                      value,
+                  }
+                : paymentItem
+          )
       );
     };
 
@@ -1691,6 +2387,18 @@ const AddReading = () => {
       }
 
       if (
+        !isValidTime(
+          readingTime
+        )
+      ) {
+        toast.error(
+          "Please enter a valid reading time."
+        );
+
+        return;
+      }
+
+      if (
         !Number.isFinite(
           opening
         ) ||
@@ -1725,13 +2433,6 @@ const AddReading = () => {
 
         return;
       }
-
-      /*
-        QR payments are only for creating
-        a new payment. Editing an existing
-        reading should use the stored payment
-        method instead.
-      */
 
       if (
         isEditMode &&
@@ -1773,6 +2474,164 @@ const AddReading = () => {
         return;
       }
 
+      /* =================================================
+         PAYMENT VALIDATION
+      ================================================= */
+
+      let finalPayments =
+        [];
+
+      if (
+        splitPaymentEnabled
+      ) {
+        if (
+          paymentMethod ===
+          "qr"
+        ) {
+          toast.error(
+            "Split payment is not available with Digital QR Payment."
+          );
+
+          return;
+        }
+
+        if (
+          payments.length ===
+          0
+        ) {
+          toast.error(
+            "Please add at least one payment method."
+          );
+
+          return;
+        }
+
+        if (
+          payments.length >
+          4
+        ) {
+          toast.error(
+            "Maximum 4 payment methods are allowed."
+          );
+
+          return;
+        }
+
+        const usedMethods =
+          new Set();
+
+        finalPayments =
+          payments.map(
+            (paymentItem) => {
+              const method =
+                normalizePaymentMethod(
+                  paymentItem?.method
+                );
+
+              const amount =
+                Number(
+                  paymentItem?.amount
+                );
+
+              if (
+                !PAYMENT_METHODS.has(
+                  method
+                )
+              ) {
+                throw new Error(
+                  "Please select a valid payment method for every payment."
+                );
+              }
+
+              if (
+                usedMethods.has(
+                  method
+                )
+              ) {
+                throw new Error(
+                  `Payment method "${PAYMENT_METHOD_LABELS[method]}" cannot be added more than once.`
+                );
+              }
+
+              usedMethods.add(
+                method
+              );
+
+              if (
+                !Number.isFinite(
+                  amount
+                ) ||
+                amount <= 0
+              ) {
+                throw new Error(
+                  "Each payment amount must be greater than zero."
+                );
+              }
+
+              return {
+                method,
+                amount:
+                  roundMoney(
+                    amount
+                  ),
+              };
+            }
+          );
+
+        const calculatedPaymentTotal =
+          roundMoney(
+            finalPayments.reduce(
+              (
+                total,
+                paymentItem
+              ) =>
+                total +
+                paymentItem.amount,
+              0
+            )
+          );
+
+        if (
+          Math.round(
+            calculatedPaymentTotal *
+              100
+          ) !==
+          Math.round(
+            previewAmount *
+              100
+          )
+        ) {
+          toast.error(
+            `Payment total ₹${calculatedPaymentTotal.toFixed(
+              2
+            )} must exactly match sale total ₹${previewAmount.toFixed(
+              2
+            )}.`
+          );
+
+          return;
+        }
+      } else {
+        if (
+          paymentMethod ===
+          "qr"
+        ) {
+          finalPayments =
+            [];
+        } else {
+          finalPayments = [
+            {
+              method:
+                paymentMethod,
+              amount:
+                roundMoney(
+                  previewAmount
+                ),
+            },
+          ];
+        }
+      }
+
       try {
         setLoading(
           true
@@ -1783,20 +2642,44 @@ const AddReading = () => {
         ================================================= */
 
         if (isEditMode) {
+          const requestBody = {
+            closingReading:
+              closing,
+
+            staffId,
+
+            readingTime,
+
+            note:
+              trimmedNote,
+          };
+
+          /*
+            When split payment is enabled,
+            explicitly send the complete breakdown.
+          */
+
+          if (
+            splitPaymentEnabled
+          ) {
+            requestBody.payments =
+              finalPayments;
+          } else {
+            /*
+              Single payment mode.
+              Explicit paymentMethod tells
+              backend to use one payment for
+              the updated sale total.
+            */
+
+            requestBody.paymentMethod =
+              paymentMethod;
+          }
+
           const response =
             await updateNozzleReading(
               editReadingId,
-              {
-                closingReading:
-                  closing,
-
-                staffId,
-
-                paymentMethod,
-
-                note:
-                  trimmedNote,
-              }
+              requestBody
             );
 
           const updatedAmount =
@@ -1854,6 +2737,8 @@ const AddReading = () => {
               readingDate:
                 date,
 
+              readingTime,
+
               note:
                 trimmedNote,
             });
@@ -1888,7 +2773,15 @@ const AddReading = () => {
             readingDate:
               date,
 
-            paymentMethod,
+            readingTime,
+
+            paymentMethod:
+              finalPayments[0]
+                ?.method ||
+              paymentMethod,
+
+            payments:
+              finalPayments,
 
             note:
               trimmedNote,
@@ -1904,6 +2797,7 @@ const AddReading = () => {
               response?.data
                 ?.sale
                 ?.totalAmount ??
+              previewAmount ??
               0
           );
 
@@ -1954,6 +2848,7 @@ const AddReading = () => {
     async () => {
       if (!payment?.id) {
         setPayment(null);
+
         return;
       }
 
@@ -1985,9 +2880,9 @@ const AddReading = () => {
       }
     };
 
-  /* ===================================================
+  /* =====================================================
      RENDER
-  =================================================== */
+  ===================================================== */
 
   return (
     <div className="page-container">
@@ -2076,8 +2971,8 @@ const AddReading = () => {
                 Nozzle, shift, date and
                 opening reading are locked.
                 Closing reading, staff,
-                payment method and note can
-                be updated.
+                reading time, payment details
+                and note can be updated.
               </p>
             </div>
           </div>
@@ -2876,7 +3771,7 @@ const AddReading = () => {
               )}
 
               {/* =================================================
-                  CLOSING / DATE
+                  CLOSING / DATE / TIME
               ================================================= */}
 
               <div className="form-row">
@@ -3007,6 +3902,50 @@ const AddReading = () => {
 
                 </div>
 
+                <div className="form-group">
+
+                  <label
+                    htmlFor="reading-time"
+                  >
+                    Reading Time *
+                  </label>
+
+                  <input
+                    id="reading-time"
+                    type="time"
+                    value={
+                      readingTime
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      setReadingTime(
+                        event.target
+                          .value
+                      )
+                    }
+                    disabled={
+                      loading
+                    }
+                    required
+                  />
+
+                  <small
+                    style={{
+                      display:
+                        "block",
+                      marginTop:
+                        "6px",
+                      opacity:
+                        0.65,
+                    }}
+                  >
+                    Time recorded for this
+                    meter reading.
+                  </small>
+
+                </div>
+
               </div>
 
               {/* =================================================
@@ -3028,16 +3967,12 @@ const AddReading = () => {
                     value={
                       paymentMethod
                     }
-                    onChange={(
-                      event
-                    ) =>
-                      setPaymentMethod(
-                        event.target
-                          .value
-                      )
+                    onChange={
+                      handlePaymentMethodChange
                     }
                     disabled={
-                      loading
+                      loading ||
+                      splitPaymentEnabled
                     }
                     required
                   >
@@ -3065,6 +4000,23 @@ const AddReading = () => {
                     </option>
 
                   </select>
+
+                  {splitPaymentEnabled && (
+                    <small
+                      style={{
+                        display:
+                          "block",
+                        marginTop:
+                          "6px",
+                        opacity:
+                          0.65,
+                      }}
+                    >
+                      Payment method is controlled
+                      below by the split-payment
+                      rows.
+                    </small>
+                  )}
 
                   {isEditMode && (
                     <small
@@ -3119,6 +4071,479 @@ const AddReading = () => {
                 </div>
 
               </div>
+
+              {/* =================================================
+                  SPLIT PAYMENT TOGGLE
+              ================================================= */}
+
+              {paymentMethod !==
+                "qr" && (
+                <div
+                  style={{
+                    marginTop:
+                      "4px",
+                    marginBottom:
+                      "16px",
+                    padding:
+                      "14px 16px",
+                    border:
+                      "1px solid #cbd5e1",
+                    borderRadius:
+                      "10px",
+                    background:
+                      "#f8fafc",
+                  }}
+                >
+
+                  <label
+                    htmlFor="split-payment"
+                    style={{
+                      display:
+                        "flex",
+                      alignItems:
+                        "center",
+                      gap:
+                        "10px",
+                      cursor:
+                        loading
+                          ? "default"
+                          : "pointer",
+                      fontWeight:
+                        "600",
+                    }}
+                  >
+
+                    <input
+                      id="split-payment"
+                      type="checkbox"
+                      checked={
+                        splitPaymentEnabled
+                      }
+                      onChange={
+                        handleSplitPaymentToggle
+                      }
+                      disabled={
+                        loading
+                      }
+                      style={{
+                        width:
+                          "18px",
+                        height:
+                          "18px",
+                      }}
+                    />
+
+                    Split Payment
+                  </label>
+
+                  <small
+                    style={{
+                      display:
+                        "block",
+                      marginTop:
+                        "6px",
+                      marginLeft:
+                        "28px",
+                      opacity:
+                        0.7,
+                    }}
+                  >
+                    Use multiple payment methods
+                    for one sale, for example
+                    Cash + UPI + Card.
+                  </small>
+
+                </div>
+              )}
+
+              {/* =================================================
+                  SPLIT PAYMENT ROWS
+              ================================================= */}
+
+              {splitPaymentEnabled && (
+                <div
+                  className="content-panel"
+                  style={{
+                    marginTop:
+                      "12px",
+                    marginBottom:
+                      "16px",
+                    border:
+                      paymentTotalMatches
+                        ? "1px solid #86efac"
+                        : "1px solid #cbd5e1",
+                    background:
+                      paymentTotalMatches
+                        ? "#f0fdf4"
+                        : "#f8fafc",
+                  }}
+                >
+
+                  <div
+                    className="content-panel-header"
+                    style={{
+                      display:
+                        "flex",
+                      alignItems:
+                        "center",
+                      justifyContent:
+                        "space-between",
+                      gap:
+                        "12px",
+                      flexWrap:
+                        "wrap",
+                    }}
+                  >
+
+                    <h3
+                      style={{
+                        margin:
+                          0,
+                      }}
+                    >
+                      Payment Breakdown
+                    </h3>
+
+                    <span
+                      style={{
+                        fontSize:
+                          "13px",
+                        fontWeight:
+                          "600",
+                      }}
+                    >
+                      Total: ₹
+                      {previewAmount.toFixed(
+                        2
+                      )}
+                    </span>
+
+                  </div>
+
+                  <div className="content-panel-body">
+
+                    {payments.map(
+                      (
+                        paymentItem,
+                        index
+                      ) => {
+
+                        const usedMethods =
+                          new Set(
+                            payments
+                              .filter(
+                                (
+                                  _,
+                                  paymentIndex
+                                ) =>
+                                  paymentIndex !==
+                                  index
+                              )
+                              .map(
+                                (
+                                  item
+                                ) =>
+                                  item.method
+                              )
+                          );
+
+                        return (
+                          <div
+                            key={
+                              `${paymentItem.method}-${index}`
+                            }
+                            style={{
+                              display:
+                                "grid",
+                              gridTemplateColumns:
+                                "minmax(130px, 1fr) minmax(130px, 1fr) auto",
+                              gap:
+                                "10px",
+                              alignItems:
+                                "end",
+                              marginBottom:
+                                "12px",
+                            }}
+                          >
+
+                            <div className="form-group">
+                              <label
+                                htmlFor={`payment-method-${index}`}
+                              >
+                                Method
+                              </label>
+
+                              <select
+                                id={`payment-method-${index}`}
+                                value={
+                                  paymentItem.method
+                                }
+                                onChange={(
+                                  event
+                                ) =>
+                                  changePaymentRowMethod(
+                                    index,
+                                    event.target
+                                      .value
+                                  )
+                                }
+                                disabled={
+                                  loading
+                                }
+                              >
+
+                                {Array.from(
+                                  PAYMENT_METHODS
+                                ).map(
+                                  (
+                                    method
+                                  ) => (
+                                    <option
+                                      key={
+                                        method
+                                      }
+                                      value={
+                                        method
+                                      }
+                                      disabled={usedMethods.has(
+                                        method
+                                      )}
+                                    >
+                                      {
+                                        PAYMENT_METHOD_LABELS[
+                                          method
+                                        ]
+                                      }
+                                    </option>
+                                  )
+                                )}
+
+                              </select>
+                            </div>
+
+                            <div className="form-group">
+                              <label
+                                htmlFor={`payment-amount-${index}`}
+                              >
+                                Amount
+                              </label>
+
+                              <input
+                                id={`payment-amount-${index}`}
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={
+                                  paymentItem.amount
+                                }
+                                onChange={(
+                                  event
+                                ) =>
+                                  changePaymentRowAmount(
+                                    index,
+                                    event.target
+                                      .value
+                                  )
+                                }
+                                disabled={
+                                  loading
+                                }
+                                placeholder="0.00"
+                              />
+                            </div>
+
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() =>
+                                removePaymentRow(
+                                  index
+                                )
+                              }
+                              disabled={
+                                loading ||
+                                payments.length <=
+                                  1
+                              }
+                              style={{
+                                minHeight:
+                                  "42px",
+                                marginBottom:
+                                  "0",
+                              }}
+                            >
+                              Remove
+                            </button>
+
+                          </div>
+                        );
+                      }
+                    )}
+
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={
+                        addPaymentRow
+                      }
+                      disabled={
+                        loading ||
+                        payments.length >=
+                          4
+                      }
+                    >
+                      + Add Payment Method
+                    </button>
+
+                    {/* PAYMENT SUMMARY */}
+
+                    <div
+                      style={{
+                        marginTop:
+                          "16px",
+                        padding:
+                          "14px",
+                        borderRadius:
+                          "8px",
+                        background:
+                          "#ffffff",
+                        border:
+                          "1px solid #e2e8f0",
+                      }}
+                    >
+
+                      <div
+                        style={{
+                          display:
+                            "flex",
+                          justifyContent:
+                            "space-between",
+                          gap:
+                            "12px",
+                          marginBottom:
+                            "6px",
+                        }}
+                      >
+                        <span>
+                          Sale Total
+                        </span>
+
+                        <strong>
+                          ₹
+                          {previewAmount.toFixed(
+                            2
+                          )}
+                        </strong>
+                      </div>
+
+                      <div
+                        style={{
+                          display:
+                            "flex",
+                          justifyContent:
+                            "space-between",
+                          gap:
+                            "12px",
+                          marginBottom:
+                            "6px",
+                        }}
+                      >
+                        <span>
+                          Payment Total
+                        </span>
+
+                        <strong>
+                          ₹
+                          {paymentTotal.toFixed(
+                            2
+                          )}
+                        </strong>
+                      </div>
+
+                      <div
+                        style={{
+                          display:
+                            "flex",
+                          justifyContent:
+                            "space-between",
+                          gap:
+                            "12px",
+                          fontWeight:
+                            "700",
+                          color:
+                            Math.abs(
+                              paymentRemaining
+                            ) <
+                            0.01
+                              ? "#15803d"
+                              : "#dc2626",
+                        }}
+                      >
+                        <span>
+                          {paymentRemaining >
+                          0
+                            ? "Remaining"
+                            : paymentRemaining <
+                                0
+                              ? "Excess"
+                              : "Remaining"}
+                        </span>
+
+                        <span>
+                          ₹
+                          {Math.abs(
+                            paymentRemaining
+                          ).toFixed(
+                            2
+                          )}
+                        </span>
+                      </div>
+
+                    </div>
+
+                    {previewAmount >
+                      0 &&
+                      !paymentTotalMatches && (
+                        <p
+                          style={{
+                            margin:
+                              "12px 0 0",
+                            color:
+                              "#dc2626",
+                            fontSize:
+                              "13px",
+                            fontWeight:
+                              "600",
+                          }}
+                        >
+                          Payment amounts must
+                          exactly match the sale
+                          total before saving.
+                        </p>
+                      )}
+
+                    {paymentTotalMatches && (
+                      <p
+                        style={{
+                          margin:
+                            "12px 0 0",
+                          color:
+                            "#15803d",
+                          fontSize:
+                            "13px",
+                          fontWeight:
+                            "600",
+                        }}
+                      >
+                        ✓ Payment breakdown
+                        matches the sale total.
+                      </p>
+                    )}
+
+                  </div>
+
+                </div>
+              )}
 
               {/* =================================================
                   SALE PREVIEW
@@ -3241,6 +4666,19 @@ const AddReading = () => {
                             "#0891b2",
                         }}
                       >
+                        Reading Time:
+                      </strong>{" "}
+                      {readingTime ||
+                        "-"}
+                    </p>
+
+                    <p>
+                      <strong
+                        style={{
+                          color:
+                            "#0891b2",
+                        }}
+                      >
                         Price per Litre:
                       </strong>{" "}
                       {Number.isFinite(
@@ -3269,6 +4707,100 @@ const AddReading = () => {
                           )}`
                         : "Backend will calculate the amount"}
                     </p>
+
+                    {splitPaymentEnabled && (
+                      <div
+                        style={{
+                          marginTop:
+                            "12px",
+                          padding:
+                            "12px",
+                          borderRadius:
+                            "8px",
+                          background:
+                            "#f8fafc",
+                          border:
+                            "1px solid #e2e8f0",
+                        }}
+                      >
+
+                        <strong>
+                          Payment Breakdown
+                        </strong>
+
+                        {payments.map(
+                          (
+                            paymentItem,
+                            index
+                          ) => (
+                            <div
+                              key={
+                                index
+                              }
+                              style={{
+                                display:
+                                  "flex",
+                                justifyContent:
+                                  "space-between",
+                                gap:
+                                  "12px",
+                                marginTop:
+                                  "6px",
+                                fontSize:
+                                  "13px",
+                              }}
+                            >
+                              <span>
+                                {PAYMENT_METHOD_LABELS[
+                                  paymentItem
+                                    .method
+                                ] ||
+                                  paymentItem.method}
+                              </span>
+
+                              <strong>
+                                ₹
+                                {Number(
+                                  paymentItem.amount ||
+                                    0
+                                ).toFixed(
+                                  2
+                                )}
+                              </strong>
+                            </div>
+                          )
+                        )}
+
+                        <div
+                          style={{
+                            display:
+                              "flex",
+                            justifyContent:
+                              "space-between",
+                            borderTop:
+                              "1px solid #e2e8f0",
+                            marginTop:
+                              "8px",
+                            paddingTop:
+                              "8px",
+                            fontWeight:
+                              "700",
+                          }}
+                        >
+                          <span>
+                            Payment Total
+                          </span>
+
+                          <span>
+                            ₹
+                            {paymentTotal.toFixed(
+                              2
+                            )}
+                          </span>
+                        </div>
+
+                      </div>
+                    )}
 
                     {isEditMode && (
                       <small>
@@ -3325,7 +4857,12 @@ const AddReading = () => {
                     nozzles.length ===
                       0 ||
                     staff.length ===
-                      0
+                      0 ||
+                    !isValidTime(
+                      readingTime
+                    ) ||
+                    (splitPaymentEnabled &&
+                      !paymentTotalMatches)
                   }
                 >
                   {loading

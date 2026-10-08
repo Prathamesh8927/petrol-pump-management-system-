@@ -19,7 +19,6 @@ import {
   getMonthlyReport,
 } from "../../services/reportService";
 
-
 import api from "../../services/api";
 
 import shivshambhoLogo from "../../assets/logo.png";
@@ -250,7 +249,7 @@ const MonthlyReport = () => {
     String(value || "")
       .trim()
       .toLowerCase()
-      .replace(/\s+/g, " " );
+      .replace(/\s+/g, " ");
 
   const getOilProviderName = (pump = {}) =>
     pump?.oilCompanyName ||
@@ -540,12 +539,12 @@ const MonthlyReport = () => {
             "/settings/pump"
           );
 
-const settings =
-  response?.data?.pump ||
-  response?.data?.settings ||
-  response?.pump ||
-  response?.settings ||
-  {};
+        const settings =
+          response?.data?.pump ||
+          response?.data?.settings ||
+          response?.pump ||
+          response?.settings ||
+          {};
 
         const logoUrl =
           getPumpLogo(
@@ -743,6 +742,9 @@ const settings =
       const companyName =
         getCompanyName(pump);
 
+      const ownerName =
+        getOwnerName(pump);
+
       const phone =
         getPumpPhone(pump);
 
@@ -773,12 +775,31 @@ const settings =
         12
       );
 
+      /*
+       * OWNER NAME
+       * Displayed above the mobile number.
+       */
+      if (ownerName) {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7);
+        doc.setTextColor(COLORS.text);
+        doc.text(
+          `${ownerName}`,
+          pageWidth - 10,
+          10,
+          { align: "right" }
+        );
+      }
+
       /* PHONE */
       if (phone) {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7);
+        doc.setTextColor(COLORS.text);
         doc.text(
           `PH ${phone}`,
           pageWidth - 10,
-          12,
+          13,
           { align: "right" }
         );
       }
@@ -888,6 +909,7 @@ const settings =
       return 73;
     };
 
+
   /* =========================================================
      PDF FOOTER
   ========================================================= */
@@ -966,6 +988,7 @@ const settings =
       );
     };
 
+
   /* =========================================================
      PDF SECTION TITLE
   ========================================================= */
@@ -1026,8 +1049,6 @@ const settings =
 
     return y + 11;
   };
-
-
 
 
   /* =========================================================
@@ -1096,11 +1117,11 @@ const settings =
             );
 
           const settings =
-  response?.data?.pump ||
-  response?.data?.settings ||
-  response?.pump ||
-  response?.settings ||
-  {};
+            response?.data?.pump ||
+            response?.data?.settings ||
+            response?.pump ||
+            response?.settings ||
+            {};
 
           const logoUrl =
             getPumpLogo(
@@ -1200,6 +1221,7 @@ const settings =
           "MONTHLY REPORT OIL PROVIDER:",
           oilProviderName
         );
+
         console.log(
           "MONTHLY REPORT OIL PROVIDER LOGO SOURCE:",
           pumpLogoUrl
@@ -1229,6 +1251,7 @@ const settings =
           "MONTHLY REPORT FOOTER LOGO SOURCE:",
           shivshambhoLogo
         );
+
         console.log(
           "MONTHLY REPORT FOOTER LOGO LOADED:",
           Boolean(shivshambhoLogoData)
@@ -1261,6 +1284,7 @@ const settings =
           doc.internal
             .pageSize
             .getWidth();
+
 
         /* ---------------------------------------------
            HEADER
@@ -1477,10 +1501,10 @@ const settings =
           doc.lastAutoTable
             .finalY + 8;
 
+
         /* =================================================
            SALES DETAILS
         ================================================= */
-
 
         currentY = ensureSectionSpace(
           doc,
@@ -1641,7 +1665,6 @@ const settings =
         /* =================================================
            EXPENSE DETAILS
         ================================================= */
-
 
         currentY = ensureSectionSpace(
           doc,
@@ -1817,7 +1840,6 @@ const settings =
            STOCK POSITION
         ================================================= */
 
-
         currentY = ensureSectionSpace(
           doc,
           currentY,
@@ -1977,7 +1999,6 @@ const settings =
         /* =================================================
            MONTHLY FINANCIAL POSITION
         ================================================= */
-
 
         currentY = ensureSectionSpace(
           doc,
@@ -2241,6 +2262,7 @@ const settings =
       generateMonthlyPDF();
     };
 
+
   /* =========================================================
      RENDER
   ========================================================= */
@@ -2356,8 +2378,6 @@ const settings =
 
           </button>
 
-
-          
 
         </div>
 

@@ -1,6 +1,22 @@
 import api from "./api";
 
 /* =====================================================
+   HELPERS
+===================================================== */
+
+const requireId = (id, label = "ID") => {
+  if (!id) {
+    throw new Error(`${label} is required.`);
+  }
+};
+
+const requireObject = (data, label) => {
+  if (!data || typeof data !== "object") {
+    throw new Error(`${label} is required.`);
+  }
+};
+
+/* =====================================================
    CUSTOMERS
 ===================================================== */
 
@@ -8,11 +24,8 @@ import api from "./api";
  * Get all ledger customers for the
  * currently authenticated pump.
  *
- * pumpId is intentionally NOT accepted
- * from the frontend.
- *
- * The backend derives the authorized
- * pump from the JWT.
+ * pumpId is NOT accepted from the frontend.
+ * Backend derives the authorized pump from JWT.
  */
 export const getLedgerCustomers = async () => {
   const response = await api.get(
@@ -28,11 +41,10 @@ export const getLedgerCustomers = async () => {
 export const addLedgerCustomer = async (
   data
 ) => {
-  if (!data || typeof data !== "object") {
-    throw new Error(
-      "Customer data is required."
-    );
-  }
+  requireObject(
+    data,
+    "Customer data"
+  );
 
   const response = await api.post(
     "/ledger/customers",
@@ -48,11 +60,10 @@ export const addLedgerCustomer = async (
 export const getCustomerLedger = async (
   id
 ) => {
-  if (!id) {
-    throw new Error(
-      "Customer ID is required."
-    );
-  }
+  requireId(
+    id,
+    "Customer ID"
+  );
 
   const response = await api.get(
     `/ledger/customers/${encodeURIComponent(
@@ -70,17 +81,15 @@ export const updateLedgerCustomer = async (
   id,
   data
 ) => {
-  if (!id) {
-    throw new Error(
-      "Customer ID is required."
-    );
-  }
+  requireId(
+    id,
+    "Customer ID"
+  );
 
-  if (!data || typeof data !== "object") {
-    throw new Error(
-      "Customer update data is required."
-    );
-  }
+  requireObject(
+    data,
+    "Customer update data"
+  );
 
   const response = await api.patch(
     `/ledger/customers/${encodeURIComponent(
@@ -95,18 +104,15 @@ export const updateLedgerCustomer = async (
 /**
  * Delete a ledger customer.
  *
- * Backend moves the customer into
- * recovery storage according to the
- * configured retention period.
+ * Backend handles recovery/retention.
  */
 export const deleteLedgerCustomer = async (
   id
 ) => {
-  if (!id) {
-    throw new Error(
-      "Customer ID is required."
-    );
-  }
+  requireId(
+    id,
+    "Customer ID"
+  );
 
   const response = await api.delete(
     `/ledger/customers/${encodeURIComponent(
@@ -118,28 +124,25 @@ export const deleteLedgerCustomer = async (
 };
 
 /* =====================================================
-   PURCHASES
+   CUSTOMER PURCHASES
 ===================================================== */
 
 /**
- * Add a fuel purchase / credit entry
- * to a customer's ledger.
+ * Add a purchase / credit entry.
  */
 export const addCustomerPurchase = async (
   customerId,
   data
 ) => {
-  if (!customerId) {
-    throw new Error(
-      "Customer ID is required."
-    );
-  }
+  requireId(
+    customerId,
+    "Customer ID"
+  );
 
-  if (!data || typeof data !== "object") {
-    throw new Error(
-      "Purchase data is required."
-    );
-  }
+  requireObject(
+    data,
+    "Purchase data"
+  );
 
   const response = await api.post(
     `/ledger/customers/${encodeURIComponent(
@@ -152,14 +155,11 @@ export const addCustomerPurchase = async (
 };
 
 /**
- * Compatibility function.
+ * Backward-compatible alias.
  *
  * Older CustomerLedger components may call:
  *
  * addCustomerLedgerEntry(customerId, data)
- *
- * Internally this uses the existing
- * purchase endpoint.
  */
 export const addCustomerLedgerEntry = async (
   customerId,
@@ -172,20 +172,15 @@ export const addCustomerLedgerEntry = async (
 };
 
 /* =====================================================
-   HISTORY
+   CUSTOMER HISTORY
 ===================================================== */
 
-/**
- * Get complete ledger history
- * for a specific customer.
- */
 export const getCustomerLedgerHistory =
   async (customerId) => {
-    if (!customerId) {
-      throw new Error(
-        "Customer ID is required."
-      );
-    }
+    requireId(
+      customerId,
+      "Customer ID"
+    );
 
     const response = await api.get(
       `/ledger/customers/${encodeURIComponent(
@@ -197,13 +192,13 @@ export const getCustomerLedgerHistory =
   };
 
 /* =====================================================
-   PAYMENTS
+   LEDGER PAYMENT
 ===================================================== */
 
 /**
  * Add a customer ledger payment.
  *
- * Frontend contract:
+ * Frontend may provide either:
  *
  * {
  *   customerId,
@@ -212,7 +207,7 @@ export const getCustomerLedgerHistory =
  *   note
  * }
  *
- * Backend contract:
+ * or:
  *
  * {
  *   customerId,
@@ -221,27 +216,23 @@ export const getCustomerLedgerHistory =
  *   note
  * }
  *
- * This service converts paymentAmount
- * to amount before sending the request.
+ * Backend receives `amount`.
  */
 export const addLedgerPayment = async (
   data
 ) => {
-  if (!data || typeof data !== "object") {
-    throw new Error(
-      "Payment data is required."
-    );
-  }
+  requireObject(
+    data,
+    "Payment data"
+  );
 
-  if (!data.customerId) {
-    throw new Error(
-      "Customer ID is required."
-    );
-  }
+  requireId(
+    data.customerId,
+    "Customer ID"
+  );
 
   const paymentAmount = Number(
-    data.paymentAmount ??
-      data.amount
+    data.paymentAmount ?? data.amount
   );
 
   if (
@@ -253,35 +244,30 @@ export const addLedgerPayment = async (
     );
   }
 
+  const payload = {
+    customerId: data.customerId,
+
+    amount: paymentAmount,
+
+    entryDate:
+      data.entryDate || undefined,
+
+    note:
+      typeof data.note === "string"
+        ? data.note.trim()
+        : "",
+  };
+
   const response = await api.post(
     "/ledger/payment",
-    {
-      customerId:
-        data.customerId,
-
-      /*
-       * IMPORTANT:
-       * Backend expects `amount`,
-       * not `paymentAmount`.
-       */
-      amount: paymentAmount,
-
-      entryDate:
-        data.entryDate,
-
-      note:
-        typeof data.note === "string"
-          ? data.note.trim()
-          : "",
-    }
+    payload
   );
 
   return response.data;
 };
 
 /**
- * Compatibility function used by
- * CustomerLedger.jsx.
+ * Backward-compatible payment function.
  *
  * Usage:
  *
@@ -293,25 +279,20 @@ export const addLedgerPayment = async (
  *     note
  *   }
  * )
- *
- * customerId is injected into the
- * request body automatically.
  */
 export const addCustomerPayment = async (
   customerId,
   data
 ) => {
-  if (!customerId) {
-    throw new Error(
-      "Customer ID is required."
-    );
-  }
+  requireId(
+    customerId,
+    "Customer ID"
+  );
 
-  if (!data || typeof data !== "object") {
-    throw new Error(
-      "Payment data is required."
-    );
-  }
+  requireObject(
+    data,
+    "Payment data"
+  );
 
   return addLedgerPayment({
     ...data,
@@ -320,12 +301,68 @@ export const addCustomerPayment = async (
 };
 
 /* =====================================================
-   PENDING CREDIT
+   ADVANCE PAYMENT
 ===================================================== */
 
 /**
- * Get all pending customer credit.
+ * Add advance payment to a customer.
+ *
+ * Example:
+ * Customer pays ₹30,000 advance.
+ *
+ * Later purchases:
+ * ₹2,000
+ * ₹3,000
+ * ₹5,000
+ *
+ * Backend handles deduction according
+ * to the ledger advance-payment logic.
  */
+export const addCustomerAdvance = async (
+  customerId,
+  data
+) => {
+  requireId(
+    customerId,
+    "Customer ID"
+  );
+
+  requireObject(
+    data,
+    "Advance payment data"
+  );
+
+  const amount = Number(
+    data.amount ??
+      data.paymentAmount
+  );
+
+  if (
+    !Number.isFinite(amount) ||
+    amount <= 0
+  ) {
+    throw new Error(
+      "Advance amount must be greater than zero."
+    );
+  }
+
+  const response = await api.post(
+    `/ledger/customers/${encodeURIComponent(
+      customerId
+    )}/advance`,
+    {
+      ...data,
+      amount,
+    }
+  );
+
+  return response.data;
+};
+
+/* =====================================================
+   PENDING CREDIT
+===================================================== */
+
 export const getPendingCredit = async () => {
   const response = await api.get(
     "/ledger/pending"
@@ -360,9 +397,6 @@ export const getTotalPendingCredit =
 
 /**
  * Get today's credit sales.
- *
- * Backend determines the current
- * authenticated pump and business date.
  */
 export const getTodayCreditSales =
   async () => {
@@ -397,6 +431,7 @@ export default {
 
   addLedgerPayment,
   addCustomerPayment,
+  addCustomerAdvance,
 
   getPendingCredit,
   getTotalPendingCredit,

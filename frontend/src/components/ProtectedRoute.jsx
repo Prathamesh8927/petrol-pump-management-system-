@@ -20,6 +20,20 @@ const ProtectedRoute = ({
 
   const location = useLocation();
 
+  const userRole = String(
+    user?.role || ""
+  ).trim().toLowerCase();
+
+  const normalizedAllowedRoles = Array.isArray(
+    allowedRoles
+  )
+    ? allowedRoles.map((role) =>
+        String(role || "")
+          .trim()
+          .toLowerCase()
+      )
+    : [];
+
   /* =====================================================
      AUTH LOADING
   ===================================================== */
@@ -52,15 +66,17 @@ const ProtectedRoute = ({
   ===================================================== */
 
   if (!user) {
+    const currentPath =
+      location.pathname +
+      location.search +
+      location.hash;
+
     return (
       <Navigate
         to="/login"
         replace
         state={{
-          from:
-            location.pathname +
-            location.search +
-            location.hash,
+          from: currentPath,
         }}
       />
     );
@@ -73,7 +89,7 @@ const ProtectedRoute = ({
      application and layout.
   ===================================================== */
 
-  if (user.role === "superadmin") {
+  if (userRole === "superadmin") {
     return (
       <Navigate
         to="/superadmin"
@@ -82,26 +98,55 @@ const ProtectedRoute = ({
     );
   }
 
-  if (!allowedRoles.includes(String(user.role || "").toLowerCase())) {
+  /* =====================================================
+     ROLE AUTHORIZATION
+  ===================================================== */
+
+  if (
+    !normalizedAllowedRoles.includes(userRole)
+  ) {
+    const employeeRoles = [
+      "staff",
+      "employee",
+    ];
+
     return (
       <Navigate
-        to={["staff", "employee"].includes(String(user.role || "").toLowerCase()) ? "/employee/payment" : "/dashboard"}
+        to={
+          employeeRoles.includes(userRole)
+            ? "/employee/payment"
+            : "/dashboard"
+        }
         replace
       />
     );
   }
 
   /* =====================================================
-     NORMAL PUMP USERS
+     PUMP VALIDATION
 
-     Every non-superadmin account must belong
-     to an active/assigned pump.
+     Every normal pump account must have
+     a pumpId.
 
-     Backend authentication remains the actual
-     security boundary.
+     Backend authentication and RBAC remain
+     the actual security boundary.
   ===================================================== */
 
   if (!user.pumpId) {
+    const handleBackToLogin = () => {
+      try {
+        sessionStorage.removeItem("token");
+        sessionStorage.removeItem("user");
+      } catch (error) {
+        console.error(
+          "Unable to clear authentication session:",
+          error
+        );
+      }
+
+      window.location.replace("/login");
+    };
+
     return (
       <div
         style={{
@@ -148,19 +193,7 @@ const ProtectedRoute = ({
 
           <button
             type="button"
-            onClick={() => {
-              sessionStorage.removeItem(
-                "token"
-              );
-
-              sessionStorage.removeItem(
-                "user"
-              );
-
-              window.location.replace(
-                "/login"
-              );
-            }}
+            onClick={handleBackToLogin}
             style={{
               marginTop: "20px",
               padding: "10px 18px",

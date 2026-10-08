@@ -1,7 +1,6 @@
 import express from "express";
 
 import authMiddleware from "../middleware/authMiddleware.js";
-
 import allowRoles from "../middleware/roleMiddleware.js";
 
 import {
@@ -10,32 +9,25 @@ import {
   reopenDay,
 } from "../controllers/dailyClosingController.js";
 
-const router =
-  express.Router();
+const router = express.Router();
 
-router.use(
-  authMiddleware
-);
+// All daily-closing operations require authentication.
+router.use(authMiddleware);
 
-router.get(
-  "/",
-  getDailyClosing
-);
+// View daily closing status/details.
+router.get("/", getDailyClosing);
 
+// Only owner and manager can close the day.
 router.post(
   "/close",
-  allowRoles(
-    "owner",
-    "manager"
-  ),
+  allowRoles("owner", "manager"),
   closeDay
 );
 
+// Only owner can reopen a closed day.
 router.patch(
   "/:id/reopen",
-  allowRoles(
-    "owner"
-  ),
+  allowRoles("owner"),
   reopenDay
 );
 

@@ -2,14 +2,19 @@ import mongoose from "mongoose";
 
 const nozzleSchema = new mongoose.Schema(
   {
+    // ==================================================
+    // PUMP
+    // ==================================================
     pumpId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Pump",
       required: true,
-      index: true,
       immutable: true,
     },
 
+    // ==================================================
+    // NOZZLE NUMBER
+    // ==================================================
     nozzleNumber: {
       type: String,
       required: true,
@@ -17,6 +22,9 @@ const nozzleSchema = new mongoose.Schema(
       maxlength: 50,
     },
 
+    // ==================================================
+    // NOZZLE NAME
+    // ==================================================
     name: {
       type: String,
       trim: true,
@@ -24,6 +32,9 @@ const nozzleSchema = new mongoose.Schema(
       maxlength: 100,
     },
 
+    // ==================================================
+    // FUEL TYPE
+    // ==================================================
     fuelType: {
       type: String,
       enum: ["petrol", "diesel"],
@@ -33,19 +44,24 @@ const nozzleSchema = new mongoose.Schema(
       immutable: true,
     },
 
+    // ==================================================
+    // CURRENT METER READING
+    // ==================================================
     currentReading: {
       type: Number,
       default: 0,
       min: 0,
     },
 
+    // ==================================================
+    // STATUS
+    // ==================================================
     status: {
       type: String,
       enum: ["active", "inactive"],
       default: "active",
       lowercase: true,
       trim: true,
-      index: true,
     },
   },
   {
@@ -59,12 +75,20 @@ const nozzleSchema = new mongoose.Schema(
 ===================================================== */
 
 /*
- * Critical business rule:
+ * 1. UNIQUE NOZZLE NUMBER PER PUMP
  *
- * A nozzle number must be unique inside
- * a particular pump.
+ * Business rule:
  *
- * Different pumps can have the same nozzle number.
+ * Pump A:
+ *   Nozzle 1
+ *   Nozzle 2
+ *
+ * Pump B:
+ *   Nozzle 1
+ *   Nozzle 2
+ *
+ * This is allowed because uniqueness is scoped
+ * to pumpId.
  */
 nozzleSchema.index(
   {
@@ -73,24 +97,50 @@ nozzleSchema.index(
   },
   {
     unique: true,
+    name: "uniq_nozzle_pump_number",
   }
 );
 
 /*
- * Optimizes active-nozzle queries for a pump.
+ * 2. ACTIVE / INACTIVE NOZZLES
+ *
+ * Supports queries such as:
+ *
+ * Nozzle.find({
+ *   pumpId,
+ *   status: "active"
+ * })
  */
-nozzleSchema.index({
-  pumpId: 1,
-  status: 1,
-});
+nozzleSchema.index(
+  {
+    pumpId: 1,
+    status: 1,
+  },
+  {
+    name: "idx_nozzle_pump_status",
+  }
+);
 
 /*
- * Useful for newest nozzle records.
+ * 3. NOZZLE MANAGEMENT / NEWEST RECORDS
+ *
+ * Supports:
+ *
+ * Nozzle.find({
+ *   pumpId
+ * }).sort({
+ *   createdAt: -1
+ * })
  */
-nozzleSchema.index({
-  pumpId: 1,
-  createdAt: -1,
-});
+nozzleSchema.index(
+  {
+    pumpId: 1,
+    createdAt: -1,
+  },
+  {
+    name: "idx_nozzle_pump_created",
+  }
+);
 
 /* =====================================================
    MODEL

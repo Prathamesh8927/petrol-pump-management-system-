@@ -1,14 +1,14 @@
 import mongoose from "mongoose";
 
-/* =====================================================
+/* =========================================================
    REGISTRATION REQUEST SCHEMA
-===================================================== */
+========================================================= */
 
 const registrationRequestSchema = new mongoose.Schema(
   {
-    /* ===============================================
+    /* =====================================================
        APPLICANT INFORMATION
-    =============================================== */
+    ===================================================== */
 
     ownerName: {
       type: String,
@@ -23,22 +23,22 @@ const registrationRequestSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
       maxlength: 254,
+
       validate: {
         validator: (value) =>
           /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value),
+
         message: "Please provide a valid email address",
       },
     },
 
     /*
-     * IMPORTANT:
-     *
      * This field contains a bcrypt HASH.
+     *
      * Plaintext passwords must NEVER be stored.
      *
-     * The registration controller is responsible
-     * for hashing the plaintext password before
-     * creating this document.
+     * The registration controller is responsible for
+     * hashing the password before creating this document.
      */
     password: {
       type: String,
@@ -55,9 +55,9 @@ const registrationRequestSchema = new mongoose.Schema(
       maxlength: 30,
     },
 
-    /* ===============================================
+    /* =====================================================
        PUMP INFORMATION
-    =============================================== */
+    ===================================================== */
 
     pumpName: {
       type: String,
@@ -116,17 +116,20 @@ const registrationRequestSchema = new mongoose.Schema(
       maxlength: 10,
     },
 
-    /* ===============================================
+    /* =====================================================
        PLAN
-    =============================================== */
+    ===================================================== */
 
     plan: {
       type: String,
       default: "standard",
       trim: true,
       lowercase: true,
-      enum: ["standard", "premium", "enterprise"],
-      index: true,
+      enum: [
+        "standard",
+        "premium",
+        "enterprise",
+      ],
     },
 
     notes: {
@@ -136,26 +139,28 @@ const registrationRequestSchema = new mongoose.Schema(
       maxlength: 1000,
     },
 
-    /* ===============================================
+    /* =====================================================
        REQUEST STATUS
-    =============================================== */
+    ===================================================== */
 
     status: {
       type: String,
-      enum: ["pending", "approved", "rejected"],
+      enum: [
+        "pending",
+        "approved",
+        "rejected",
+      ],
       default: "pending",
-      index: true,
     },
 
-    /* ===============================================
+    /* =====================================================
        APPROVAL ACTION
-    =============================================== */
+    ===================================================== */
 
     approvedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,
-      index: true,
     },
 
     approvedAt: {
@@ -163,15 +168,14 @@ const registrationRequestSchema = new mongoose.Schema(
       default: null,
     },
 
-    /* ===============================================
+    /* =====================================================
        REJECTION ACTION
-    =============================================== */
+    ===================================================== */
 
     rejectedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,
-      index: true,
     },
 
     rejectedAt: {
@@ -186,36 +190,36 @@ const registrationRequestSchema = new mongoose.Schema(
       maxlength: 1000,
     },
 
-    /* ===============================================
+    /* =====================================================
        CREATED RECORD REFERENCES
-    =============================================== */
+    ===================================================== */
 
     /*
-     * These fields intentionally use field-level indexes.
+     * These fields point to records created after an
+     * approval.
      *
-     * DO NOT create additional schema.index()
-     * declarations for these same fields.
+     * They are intentionally not unique because one
+     * registration request itself may be processed only
+     * once by application logic, while these references
+     * represent relationships rather than unique
+     * identifiers.
      */
-
     createdPumpId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Pump",
       default: null,
-      index: true,
     },
 
     createdUserId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,
-      index: true,
     },
 
     createdClientId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Client",
       default: null,
-      index: true,
     },
   },
   {
@@ -224,52 +228,113 @@ const registrationRequestSchema = new mongoose.Schema(
   }
 );
 
-/* =====================================================
-   COMPOUND / QUERY INDEXES
-===================================================== */
+/* =========================================================
+   INDEXES
+========================================================= */
 
 /*
- * Find requests by email and status.
+ * 1. EMAIL + STATUS
+ *
+ * Useful for:
+ *
+ * - checking whether an email has a pending request
+ * - finding previous requests from an applicant
  */
-registrationRequestSchema.index({
-  email: 1,
-  status: 1,
-});
+registrationRequestSchema.index(
+  {
+    email: 1,
+    status: 1,
+  },
+  {
+    name: "idx_registration_email_status",
+  }
+);
 
 /*
- * Superadmin pending/previous request listing.
+ * 2. STATUS + CREATED
+ *
+ * Main SuperAdmin request-management query.
+ *
+ * Example:
+ *
+ * pending registrations, newest first.
  */
-registrationRequestSchema.index({
-  status: 1,
-  createdAt: -1,
-});
+registrationRequestSchema.index(
+  {
+    status: 1,
+    createdAt: -1,
+  },
+  {
+    name: "idx_registration_status_created",
+  }
+);
 
 /*
- * Newest requests first.
+ * 3. CREATED
+ *
+ * Useful for displaying all registration requests
+ * chronologically regardless of status.
  */
-registrationRequestSchema.index({
-  createdAt: -1,
-});
+registrationRequestSchema.index(
+  {
+    createdAt: -1,
+  },
+  {
+    name: "idx_registration_created",
+  }
+);
 
 /*
- * IMPORTANT:
+ * 4. CREATED PUMP
  *
- * No additional indexes are created for:
- *
- * createdPumpId
- * createdUserId
- * createdClientId
- *
- * because those fields already use:
- *
- * index: true
- *
- * in their field definitions.
+ * Useful for locating the pump created from
+ * a registration request.
  */
+registrationRequestSchema.index(
+  {
+    createdPumpId: 1,
+  },
+  {
+    name: "idx_registration_created_pump",
+    sparse: true,
+  }
+);
 
-/* =====================================================
+/*
+ * 5. CREATED USER
+ *
+ * Useful for locating the User created from
+ * a registration request.
+ */
+registrationRequestSchema.index(
+  {
+    createdUserId: 1,
+  },
+  {
+    name: "idx_registration_created_user",
+    sparse: true,
+  }
+);
+
+/*
+ * 6. CREATED CLIENT
+ *
+ * Useful if the registration workflow creates
+ * a Client document.
+ */
+registrationRequestSchema.index(
+  {
+    createdClientId: 1,
+  },
+  {
+    name: "idx_registration_created_client",
+    sparse: true,
+  }
+);
+
+/* =========================================================
    MODEL
-===================================================== */
+========================================================= */
 
 const RegistrationRequest =
   mongoose.models.RegistrationRequest ||

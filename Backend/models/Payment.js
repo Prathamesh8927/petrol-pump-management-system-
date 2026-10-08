@@ -2,13 +2,20 @@ import mongoose from "mongoose";
 
 const paymentSchema = new mongoose.Schema(
   {
+    /* =====================================================
+       PUMP
+    ===================================================== */
+
     pumpId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Pump",
       required: true,
       immutable: true,
-      index: true,
     },
+
+    /* =====================================================
+       EMPLOYEE
+    ===================================================== */
 
     employeeId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -22,7 +29,6 @@ const paymentSchema = new mongoose.Schema(
       ref: "User",
       default: null,
       immutable: true,
-      index: true,
     },
 
     employeeName: {
@@ -32,12 +38,19 @@ const paymentSchema = new mongoose.Schema(
       maxlength: 150,
     },
 
+    /* =====================================================
+       TRANSACTION TYPE
+    ===================================================== */
+
     transactionType: {
       type: String,
       enum: ["nozzle", "standalone"],
       default: "nozzle",
-      index: true,
     },
+
+    /* =====================================================
+       NOZZLE / READING
+    ===================================================== */
 
     nozzleId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -78,6 +91,10 @@ const paymentSchema = new mongoose.Schema(
       min: 0,
     },
 
+    /* =====================================================
+       FUEL
+    ===================================================== */
+
     fuelType: {
       type: String,
       default: null,
@@ -97,17 +114,31 @@ const paymentSchema = new mongoose.Schema(
       min: 0,
     },
 
+    /* =====================================================
+       AMOUNT
+    ===================================================== */
+
     amount: {
       type: Number,
       required: true,
       min: 0,
     },
 
+    /*
+     * Amount in paise.
+     *
+     * Used for payment-provider APIs that require
+     * integer currency units.
+     */
     amountPaise: {
       type: Number,
       required: true,
       min: 1,
     },
+
+    /* =====================================================
+       PAYMENT PROVIDER
+    ===================================================== */
 
     paymentProvider: {
       type: String,
@@ -119,28 +150,40 @@ const paymentSchema = new mongoose.Schema(
     providerOrderId: {
       type: String,
       default: undefined,
+      trim: true,
     },
 
     providerQrCodeId: {
       type: String,
       default: undefined,
+      trim: true,
     },
 
     qrImageUrl: {
       type: String,
       default: "",
+      trim: true,
     },
 
     providerPaymentId: {
       type: String,
       default: undefined,
+      trim: true,
     },
+
+    /* =====================================================
+       PAYMENT METHOD
+    ===================================================== */
 
     method: {
       type: String,
       default: "upi",
       enum: ["upi", "card"],
     },
+
+    /* =====================================================
+       PAYMENT STATUS
+    ===================================================== */
 
     status: {
       type: String,
@@ -152,13 +195,11 @@ const paymentSchema = new mongoose.Schema(
         "expired",
         "cancelled",
       ],
-      index: true,
     },
 
     expiresAt: {
       type: Date,
       required: true,
-      index: true,
     },
 
     paidAt: {
@@ -166,31 +207,59 @@ const paymentSchema = new mongoose.Schema(
       default: null,
     },
 
+    /* =====================================================
+       SALE
+    ===================================================== */
+
     saleId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Sale",
       default: null,
     },
 
+    /* =====================================================
+       FAILURE
+    ===================================================== */
+
     failureReason: {
       type: String,
       default: "",
+      trim: true,
       maxlength: 500,
     },
+
+    /* =====================================================
+       WEBHOOK
+    ===================================================== */
 
     webhookEventIds: {
       type: [String],
       default: [],
     },
 
+    /* =====================================================
+       RESERVATION
+    ===================================================== */
+
+    /*
+     * Prevents duplicate pending payments for the same
+     * reservation.
+     */
     reservationKey: {
       type: String,
       required: true,
+      trim: true,
+      maxlength: 300,
     },
+
+    /* =====================================================
+       NOTE
+    ===================================================== */
 
     note: {
       type: String,
       default: "",
+      trim: true,
       maxlength: 500,
     },
   },
@@ -204,23 +273,54 @@ const paymentSchema = new mongoose.Schema(
    INDEXES
 ===================================================== */
 
-paymentSchema.index({
-  pumpId: 1,
-  status: 1,
-  createdAt: -1,
-});
-
-paymentSchema.index({
-  pumpId: 1,
-  createdAt: -1,
-});
-
 /*
- * Provider order IDs must be unique when present.
- * Payments without a provider order ID are allowed.
+ * 1. PUMP + STATUS + CREATED
+ *
+ * Main payment history query.
+ *
+ * Useful for:
+ *
+ * - pending payments
+ * - paid payments
+ * - failed payments
+ * - newest payments
  */
 paymentSchema.index(
-  { providerOrderId: 1 },
+  {
+    pumpId: 1,
+    status: 1,
+    createdAt: -1,
+  },
+  {
+    name: "idx_payment_pump_status_created",
+  }
+);
+
+/*
+ * 2. PUMP + CREATED
+ *
+ * Useful when listing all payments for a pump
+ * regardless of status.
+ */
+paymentSchema.index(
+  {
+    pumpId: 1,
+    createdAt: -1,
+  },
+  {
+    name: "idx_payment_pump_created",
+  }
+);
+
+/*
+ * 3. PROVIDER ORDER ID
+ *
+ * Provider order IDs must be unique when present.
+ */
+paymentSchema.index(
+  {
+    providerOrderId: 1,
+  },
   {
     unique: true,
     partialFilterExpression: {
@@ -233,11 +333,14 @@ paymentSchema.index(
 );
 
 /*
- * Provider QR IDs must be unique when present.
- * Payments without a provider QR ID are allowed.
+ * 4. PROVIDER QR CODE ID
+ *
+ * Each provider QR code belongs to one local payment.
  */
 paymentSchema.index(
-  { providerQrCodeId: 1 },
+  {
+    providerQrCodeId: 1,
+  },
   {
     unique: true,
     partialFilterExpression: {
@@ -250,15 +353,18 @@ paymentSchema.index(
 );
 
 /*
- * A provider payment ID represents an actual
- * successful/failed provider-side payment.
+ * 5. PROVIDER PAYMENT ID
  *
- * Multiple local pending payments can have no
- * providerPaymentId. Once a real provider ID exists,
- * it must be unique.
+ * Prevents the same provider payment from being
+ * processed more than once.
+ *
+ * This is particularly important for webhook
+ * idempotency.
  */
 paymentSchema.index(
-  { providerPaymentId: 1 },
+  {
+    providerPaymentId: 1,
+  },
   {
     unique: true,
     partialFilterExpression: {
@@ -271,11 +377,19 @@ paymentSchema.index(
 );
 
 /*
- * Only one pending payment is allowed for the
- * same reservation key.
+ * 6. PENDING RESERVATION
+ *
+ * Only one pending payment can exist for a
+ * reservationKey.
+ *
+ * Once the payment becomes paid/failed/expired,
+ * another payment with the same reservationKey
+ * is allowed.
  */
 paymentSchema.index(
-  { reservationKey: 1 },
+  {
+    reservationKey: 1,
+  },
   {
     unique: true,
     partialFilterExpression: {
@@ -286,11 +400,20 @@ paymentSchema.index(
 );
 
 /*
- * Automatically clean up old payment documents
- * after their expiry period.
+ * 7. PAYMENT CLEANUP
+ *
+ * MongoDB removes documents after expiresAt + 24 hours.
+ *
+ * Important:
+ * this is cleanup, not exact payment expiration.
+ *
+ * Your payment controller should still explicitly
+ * mark expired payments as "expired".
  */
 paymentSchema.index(
-  { expiresAt: 1 },
+  {
+    expiresAt: 1,
+  },
   {
     expireAfterSeconds: 86400,
     name: "payment_expiry_cleanup",

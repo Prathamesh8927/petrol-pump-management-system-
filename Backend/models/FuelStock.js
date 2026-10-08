@@ -2,14 +2,19 @@ import mongoose from "mongoose";
 
 const fuelStockSchema = new mongoose.Schema(
   {
+    // ==================================================
+    // PUMP
+    // ==================================================
     pumpId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Pump",
       required: true,
-      index: true,
       immutable: true,
     },
 
+    // ==================================================
+    // FUEL TYPE
+    // ==================================================
     fuelType: {
       type: String,
       enum: ["petrol", "diesel"],
@@ -19,18 +24,27 @@ const fuelStockSchema = new mongoose.Schema(
       immutable: true,
     },
 
+    // ==================================================
+    // CURRENT STOCK
+    // ==================================================
     currentStock: {
       type: Number,
       default: 0,
       min: 0,
     },
 
+    // ==================================================
+    // TOTAL PURCHASED
+    // ==================================================
     totalPurchased: {
       type: Number,
       default: 0,
       min: 0,
     },
 
+    // ==================================================
+    // TOTAL SOLD
+    // ==================================================
     totalSold: {
       type: Number,
       default: 0,
@@ -48,14 +62,25 @@ const fuelStockSchema = new mongoose.Schema(
 ===================================================== */
 
 /*
- * Critical uniqueness rule:
+ * CRITICAL
  *
- * One pump can have only:
- *   - one petrol stock record
- *   - one diesel stock record
+ * Only one stock document per:
  *
- * This also protects against duplicate stock
- * records when multiple requests happen concurrently.
+ * pump + fuelType
+ *
+ * Example:
+ *
+ * Pump A + petrol
+ * Pump A + diesel
+ *
+ * This also makes:
+ *
+ * FuelStock.findOne({
+ *   pumpId,
+ *   fuelType
+ * })
+ *
+ * very fast.
  */
 fuelStockSchema.index(
   {
@@ -64,16 +89,9 @@ fuelStockSchema.index(
   },
   {
     unique: true,
+    name: "uniq_fuel_stock_pump_type",
   }
 );
-
-/*
- * Useful for pump-level stock queries.
- */
-fuelStockSchema.index({
-  pumpId: 1,
-  updatedAt: -1,
-});
 
 /* =====================================================
    MODEL
@@ -81,6 +99,9 @@ fuelStockSchema.index({
 
 const FuelStock =
   mongoose.models.FuelStock ||
-  mongoose.model("FuelStock", fuelStockSchema);
+  mongoose.model(
+    "FuelStock",
+    fuelStockSchema
+  );
 
 export default FuelStock;

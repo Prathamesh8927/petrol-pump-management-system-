@@ -1,10 +1,18 @@
 import api from "./api";
 
-/* =====================================
-   EXPENSE
-===================================== */
+/* =====================================================
+   EXPENSES
+===================================================== */
 
-export const addExpense = async (data) => {
+export const addExpense = async (
+  data
+) => {
+  if (!data || typeof data !== "object") {
+    throw new Error(
+      "Expense data is required."
+    );
+  }
+
   const response = await api.post(
     "/expenses",
     data
@@ -26,7 +34,9 @@ export const getExpenses = async (
   return response.data;
 };
 
-export const deleteExpense = async (id) => {
+export const deleteExpense = async (
+  id
+) => {
   if (!id) {
     throw new Error(
       "Expense ID is required."
@@ -34,32 +44,15 @@ export const deleteExpense = async (id) => {
   }
 
   const response = await api.delete(
-    `/expenses/${id}`
+    `/expenses/${encodeURIComponent(id)}`
   );
 
   return response.data;
 };
 
-/* =====================================
+/* =====================================================
    EMPLOYEES
-===================================== */
-
-/*
- * Employee response includes:
- *
- * name
- * phone
- * designation
- * salary
- * joiningDate
- * status
- * note
- *
- * Shift details:
- * shiftName
- * shiftStartTime
- * shiftEndTime
- */
+===================================================== */
 
 export const getEmployees = async () => {
   const response = await api.get(
@@ -69,27 +62,15 @@ export const getEmployees = async () => {
   return response.data;
 };
 
-/*
- * Add employee.
- *
- * Example data:
- *
- * {
- *   name: "Rahul",
- *   phone: "9876543210",
- *   designation: "Nozzle Operator",
- *   salary: 18000,
- *   joiningDate: "2026-09-30",
- *   note: "",
- *
- *   shiftName: "Morning",
- *   shiftStartTime: "06:00",
- *   shiftEndTime: "14:00"
- * }
- */
 export const addEmployee = async (
   data
 ) => {
+  if (!data || typeof data !== "object") {
+    throw new Error(
+      "Employee data is required."
+    );
+  }
+
   const response = await api.post(
     "/expenses/employees",
     data
@@ -98,15 +79,6 @@ export const addEmployee = async (
   return response.data;
 };
 
-/*
- * Update employee.
- *
- * Shift fields can also be updated:
- *
- * shiftName
- * shiftStartTime
- * shiftEndTime
- */
 export const updateEmployee = async (
   id,
   data
@@ -117,8 +89,16 @@ export const updateEmployee = async (
     );
   }
 
+  if (!data || typeof data !== "object") {
+    throw new Error(
+      "Employee update data is required."
+    );
+  }
+
   const response = await api.patch(
-    `/expenses/employees/${id}`,
+    `/expenses/employees/${encodeURIComponent(
+      id
+    )}`,
     data
   );
 
@@ -135,15 +115,17 @@ export const deleteEmployee = async (
   }
 
   const response = await api.delete(
-    `/expenses/employees/${id}`
+    `/expenses/employees/${encodeURIComponent(
+      id
+    )}`
   );
 
   return response.data;
 };
 
-/* =====================================
+/* =====================================================
    PAY EMPLOYEE SALARY
-===================================== */
+===================================================== */
 
 export const paySalary = async (
   id,
@@ -155,10 +137,35 @@ export const paySalary = async (
     );
   }
 
+  if (!data || typeof data !== "object") {
+    throw new Error(
+      "Salary payment data is required."
+    );
+  }
+
   const response = await api.post(
-    `/expenses/employees/${id}/pay-salary`,
+    `/expenses/employees/${encodeURIComponent(
+      id
+    )}/pay-salary`,
     data
   );
 
   return response.data;
+};
+
+/* =====================================================
+   DEFAULT EXPORT
+===================================================== */
+
+export default {
+  addExpense,
+  getExpenses,
+  deleteExpense,
+
+  getEmployees,
+  addEmployee,
+  updateEmployee,
+  deleteEmployee,
+
+  paySalary,
 };

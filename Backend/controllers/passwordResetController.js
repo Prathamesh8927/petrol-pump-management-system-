@@ -28,60 +28,74 @@ const RESET_TOKEN_EXPIRY_MS =
 const MIN_RESET_PASSWORD_LENGTH = 12;
 const MAX_RESET_PASSWORD_LENGTH = 128;
 
+const DEFAULT_PAGE = 1;
+const DEFAULT_LIMIT = 20;
+const MAX_LIMIT = 100;
+
+const GENERIC_RESET_MESSAGE =
+  "If the email is registered, a password reset request has been created.";
+
 /* =========================================================
    HELPERS
 ========================================================= */
 
-const normalizeEmail = (email = "") => {
-  return String(email).trim().toLowerCase();
-};
+const normalizeEmail = (email = "") =>
+  String(email).trim().toLowerCase();
 
-const isValidObjectId = (id) => {
-  return mongoose.Types.ObjectId.isValid(id);
-};
+const isValidObjectId = (id) =>
+  mongoose.Types.ObjectId.isValid(id);
 
-const escapeRegex = (value = "") => {
-  return String(value).replace(
+const escapeRegex = (value = "") =>
+  String(value).replace(
     /[.*+?^${}()|[\]\\]/g,
     "\\$&"
   );
-};
 
-const getUserIdFromRequest = (req) => {
-  return req.user?._id || req.user?.id || null;
-};
+const getUserIdFromRequest = (req) =>
+  req.user?._id ||
+  req.user?.id ||
+  req.user?.userId ||
+  null;
 
-const generateResetToken = () => {
-  return crypto
-    .randomBytes(RESET_TOKEN_BYTES)
-    .toString("hex");
-};
+const generateResetToken = () =>
+  crypto.randomBytes(RESET_TOKEN_BYTES).toString("hex");
 
-const hashResetToken = (token) => {
-  return crypto
+const hashResetToken = (token) =>
+  crypto
     .createHash("sha256")
     .update(String(token))
     .digest("hex");
-};
 
-const getResetTokenExpiry = () => {
-  return new Date(
-    Date.now() + RESET_TOKEN_EXPIRY_MS
-  );
-};
+const getResetTokenExpiry = () =>
+  new Date(Date.now() + RESET_TOKEN_EXPIRY_MS);
 
-const isValidResetToken = (token) => {
-  return (
-    typeof token === "string" &&
-    /^[a-fA-F0-9]{64}$/.test(token)
-  );
-};
+const isValidResetToken = (token) =>
+  typeof token === "string" &&
+  /^[a-fA-F0-9]{64}$/.test(token);
 
-const isExpired = (date) => {
-  return (
-    !date ||
-    new Date(date).getTime() <= Date.now()
+const isExpired = (date) =>
+  !date ||
+  new Date(date).getTime() <= Date.now();
+
+const getPagination = (page, limit) => {
+  const parsedPage = Math.max(
+    1,
+    Number.parseInt(page, 10) || DEFAULT_PAGE
   );
+
+  const parsedLimit = Math.min(
+    MAX_LIMIT,
+    Math.max(
+      1,
+      Number.parseInt(limit, 10) || DEFAULT_LIMIT
+    )
+  );
+
+  return {
+    page: parsedPage,
+    limit: parsedLimit,
+    skip: (parsedPage - 1) * parsedLimit,
+  };
 };
 
 const getSafeErrorMessage = (error) => {
@@ -90,6 +104,34 @@ const getSafeErrorMessage = (error) => {
   }
 
   return "An unexpected server error occurred.";
+};
+
+const getResetErrorResponse = (error) => {
+  const statusCode =
+    Number.isInteger(error?.statusCode)
+      ? error.statusCode
+      : 500;
+
+  const messages = {
+    400:
+      "This password reset token is invalid, expired, or has already been used.",
+
+    403:
+      "This account is disabled.",
+
+    404:
+      "Password reset account not found.",
+
+    409:
+      "Password reset could not be completed.",
+  };
+
+  return {
+    statusCode,
+    message:
+      messages[statusCode] ||
+      "Unable to reset password.",
+  };
 };
 
 /* =========================================================
@@ -120,22 +162,18 @@ export const createPasswordResetRequest = async (
       .lean();
 
     /*
-     * Do not reveal whether an email exists.
+     * Do not reveal whether the email exists.
      */
 
     if (!user) {
       return res.status(200).json({
         success: true,
-        message:
-          "If the email is registered, a password reset request has been created.",
+        message: GENERIC_RESET_MESSAGE,
       });
     }
 
     /*
      * Super Admin does not use client password recovery.
-     *
-     * Keep the response generic so the role of an account
-     * cannot be discovered through this endpoint.
      */
 
     if (
@@ -145,27 +183,23 @@ export const createPasswordResetRequest = async (
     ) {
       return res.status(200).json({
         success: true,
-        message:
-          "If the email is registered, a password reset request has been created.",
+        message: GENERIC_RESET_MESSAGE,
       });
     }
 
     /*
-     * Keep the response generic for disabled accounts.
-     *
-     * This prevents account-state enumeration.
+     * Disabled accounts also receive a generic response.
      */
 
     if (!user.active) {
       return res.status(200).json({
         success: true,
-        message:
-          "If the email is registered, a password reset request has been created.",
+        message: GENERIC_RESET_MESSAGE,
       });
     }
 
     /*
-     * Prevent multiple pending requests.
+     * Check for an existing pending request.
      */
 
     const existingPending =
@@ -182,16 +216,13 @@ export const createPasswordResetRequest = async (
         success: true,
         message:
           "A password reset request is already waiting for approval.",
-        requestId:
-          existingPending._id,
-        status:
-          existingPending.status,
+        requestId: existingPending._id,
+        status: existingPending.status,
       });
     }
 
     /*
-     * Check whether the user already has an active
-     * approved reset request.
+     * Check for an existing approved request.
      */
 
     const existingApproved =
@@ -205,34 +236,32 @@ export const createPasswordResetRequest = async (
         )
         .lean();
 
-    if (
-      existingApproved &&
-      !isExpired(
-        existingApproved.resetTokenExpiresAt
-      )
-    ) {
-      return res.status(200).json({
-        success: true,
-        message:
-          "Your previous password reset request has already been approved.",
-        requestId:
-          existingApproved._id,
-        status:
-          existingApproved.status,
-      });
-    }
+    if (existingApproved) {
+      /*
+       * Existing approved token is still usable.
+       */
+      if (
+        !isExpired(
+          existingApproved.resetTokenExpiresAt
+        )
+      ) {
+        return res.status(200).json({
+          success: true,
+          message:
+            "Your previous password reset request has already been approved.",
+          requestId:
+            existingApproved._id,
+          status:
+            existingApproved.status,
+        });
+      }
 
-    /*
-     * If an old approved request has expired,
-     * invalidate it so a new request can be created.
-     */
+      /*
+       * Approved token expired.
+       * Mark the request completed so a new request
+       * can be created.
+       */
 
-    if (
-      existingApproved &&
-      isExpired(
-        existingApproved.resetTokenExpiresAt
-      )
-    ) {
       await PasswordResetRequest.updateOne(
         {
           _id: existingApproved._id,
@@ -252,10 +281,10 @@ export const createPasswordResetRequest = async (
     }
 
     /*
-     * Create a new pending request.
+     * Create the new pending request.
      *
-     * The database index remains the final protection
-     * against duplicate token hashes.
+     * The database indexes remain the final protection
+     * against concurrent duplicates.
      */
 
     const request =
@@ -269,10 +298,8 @@ export const createPasswordResetRequest = async (
       success: true,
       message:
         "Password reset request sent to Super Admin for approval.",
-      requestId:
-        request._id,
-      status:
-        request.status,
+      requestId: request._id,
+      status: request.status,
     });
   } catch (error) {
     console.error(
@@ -280,7 +307,12 @@ export const createPasswordResetRequest = async (
       error
     );
 
-    return res.status(500).json({
+    const status =
+      error?.code === 11000
+        ? 409
+        : 500;
+
+    return res.status(status).json({
       success: false,
       message:
         getSafeErrorMessage(error),
@@ -313,11 +345,6 @@ export const getPasswordResetStatus = async (
     const tokenHash =
       hashResetToken(token);
 
-    /*
-     * resetTokenHash is select:false in the model,
-     * but querying by it explicitly is allowed.
-     */
-
     const request =
       await PasswordResetRequest.findOne({
         resetTokenHash: tokenHash,
@@ -349,11 +376,6 @@ export const getPasswordResetStatus = async (
           "RESET_TOKEN_EXPIRED",
       });
     }
-
-    /*
-     * Public token-status endpoint should expose
-     * only information required by the reset UI.
-     */
 
     return res.status(200).json({
       success: true,
@@ -405,7 +427,7 @@ export const resetPassword = async (
     );
 
     /* -----------------------------------------------
-       TOKEN VALIDATION
+       TOKEN
     ------------------------------------------------ */
 
     if (!isValidResetToken(token)) {
@@ -472,8 +494,10 @@ export const resetPassword = async (
     }
 
     /*
-     * Hash before the transaction so bcrypt work does not
-     * unnecessarily hold a MongoDB transaction open.
+     * Hash before starting the transaction.
+     *
+     * This keeps bcrypt CPU work outside MongoDB's
+     * transaction.
      */
 
     const hashedPassword =
@@ -490,8 +514,8 @@ export const resetPassword = async (
     await session.withTransaction(
       async () => {
         /*
-         * Only an APPROVED request with the exact
-         * corresponding token hash can be completed.
+         * Only an approved request with this exact
+         * token hash can reset the password.
          */
 
         const request =
@@ -501,9 +525,10 @@ export const resetPassword = async (
           }).session(session);
 
         if (!request) {
-          const error = new Error(
-            "RESET_TOKEN_INVALID"
-          );
+          const error =
+            new Error(
+              "RESET_TOKEN_INVALID"
+            );
 
           error.statusCode = 400;
 
@@ -511,7 +536,7 @@ export const resetPassword = async (
         }
 
         /*
-         * Token must have an expiry.
+         * Validate expiry inside the transaction.
          */
 
         if (
@@ -520,9 +545,10 @@ export const resetPassword = async (
             request.resetTokenExpiresAt
           )
         ) {
-          const error = new Error(
-            "RESET_TOKEN_EXPIRED"
-          );
+          const error =
+            new Error(
+              "RESET_TOKEN_EXPIRED"
+            );
 
           error.statusCode = 400;
 
@@ -530,18 +556,23 @@ export const resetPassword = async (
         }
 
         /*
-         * Load the actual user inside the transaction.
+         * Load the actual user.
          */
 
         const user =
           await User.findById(
             request.userId
-          ).session(session);
+          )
+            .select(
+              "_id active tokenVersion"
+            )
+            .session(session);
 
         if (!user) {
-          const error = new Error(
-            "PASSWORD_RESET_USER_NOT_FOUND"
-          );
+          const error =
+            new Error(
+              "PASSWORD_RESET_USER_NOT_FOUND"
+            );
 
           error.statusCode = 404;
 
@@ -549,9 +580,10 @@ export const resetPassword = async (
         }
 
         if (!user.active) {
-          const error = new Error(
-            "PASSWORD_RESET_ACCOUNT_DISABLED"
-          );
+          const error =
+            new Error(
+              "PASSWORD_RESET_ACCOUNT_DISABLED"
+            );
 
           error.statusCode = 403;
 
@@ -559,31 +591,15 @@ export const resetPassword = async (
         }
 
         /*
-         * IMPORTANT SECURITY CHANGE
+         * Password reset security:
          *
-         * Password reset must invalidate every existing
-         * JWT issued before the password change.
+         * 1. Replace password.
+         * 2. Increment tokenVersion.
+         * 3. Update passwordChangedAt.
          *
-         * Therefore:
-         *
-         * password
-         * tokenVersion + 1
-         * passwordChangedAt
-         *
-         * are updated atomically.
-         *
-         * The password has already been bcrypt-hashed,
-         * so updateOne() is intentionally used instead
-         * of save(), preventing a second bcrypt hash.
+         * Existing JWTs become invalid after the
+         * tokenVersion check in authMiddleware.
          */
-
-        const currentTokenVersion =
-          Number.isInteger(
-            Number(user.tokenVersion)
-          ) &&
-          Number(user.tokenVersion) >= 0
-            ? Number(user.tokenVersion)
-            : 0;
 
         const userUpdate =
           await User.updateOne(
@@ -595,9 +611,11 @@ export const resetPassword = async (
               $set: {
                 password:
                   hashedPassword,
+
                 passwordChangedAt:
                   new Date(),
               },
+
               $inc: {
                 tokenVersion: 1,
               },
@@ -610,9 +628,10 @@ export const resetPassword = async (
         if (
           userUpdate.modifiedCount !== 1
         ) {
-          const error = new Error(
-            "PASSWORD_UPDATE_FAILED"
-          );
+          const error =
+            new Error(
+              "PASSWORD_UPDATE_FAILED"
+            );
 
           error.statusCode = 409;
 
@@ -620,28 +639,15 @@ export const resetPassword = async (
         }
 
         /*
-         * IMPORTANT:
+         * Invalidate the reset token immediately.
          *
-         * currentTokenVersion is intentionally read
-         * before the update so the resulting version
-         * is:
-         *
-         * current + 1
-         *
-         * The actual database increment is performed
-         * atomically by MongoDB.
+         * Because resetTokenHash is removed,
+         * this token cannot be reused.
          */
 
-        void currentTokenVersion;
+        request.status =
+          "completed";
 
-        /*
-         * Immediately invalidate the reset credential.
-         *
-         * The hash is removed from MongoDB, so the same
-         * token cannot be used again.
-         */
-
-        request.status = "completed";
         request.completedAt =
           new Date();
 
@@ -678,28 +684,14 @@ export const resetPassword = async (
       error
     );
 
-    const statusCode =
-      error?.statusCode || 500;
-
-    const messages = {
-      400:
-        "This password reset token is invalid, expired, or has already been used.",
-
-      403:
-        "This account is disabled.",
-
-      404:
-        "Password reset account not found.",
-
-      409:
-        "Password reset could not be completed.",
-    };
+    const {
+      statusCode,
+      message,
+    } = getResetErrorResponse(error);
 
     return res.status(statusCode).json({
       success: false,
-      message:
-        messages[statusCode] ||
-        "Unable to reset password.",
+      message,
     });
   } finally {
     await session.endSession();
@@ -717,11 +709,15 @@ export const getPasswordResetRequests =
       const {
         status,
         search,
-        page = 1,
-        limit = 20,
+        page = DEFAULT_PAGE,
+        limit = DEFAULT_LIMIT,
       } = req.query;
 
       const filter = {};
+
+      /* -----------------------------------------------
+         STATUS FILTER
+      ------------------------------------------------ */
 
       const normalizedStatus =
         String(status || "")
@@ -740,43 +736,53 @@ export const getPasswordResetRequests =
           normalizedStatus;
       }
 
-      if (
-        search &&
-        String(search).trim()
-      ) {
-        const searchText =
-          escapeRegex(
-            String(search).trim()
-          );
+      /* -----------------------------------------------
+         SEARCH
+      ------------------------------------------------ */
 
+      const normalizedSearch =
+        String(search || "").trim();
+
+      if (normalizedSearch) {
         filter.email = {
-          $regex: searchText,
+          $regex:
+            escapeRegex(
+              normalizedSearch
+            ),
           $options: "i",
         };
       }
 
-      const parsedPage = Math.max(
-        1,
-        Number.parseInt(page, 10) || 1
-      );
+      /* -----------------------------------------------
+         PAGINATION
+      ------------------------------------------------ */
 
-      const parsedLimit = Math.min(
-        100,
-        Math.max(
-          1,
-          Number.parseInt(limit, 10) || 20
-        )
-      );
+      const pagination =
+        getPagination(
+          page,
+          limit
+        );
 
-      const skip =
-        (parsedPage - 1) *
-        parsedLimit;
+      const {
+        skip,
+        page: parsedPage,
+        limit: parsedLimit,
+      } = pagination;
+
+      /* -----------------------------------------------
+         DATABASE
+      ------------------------------------------------ */
 
       const [
         requests,
         total,
       ] = await Promise.all([
-        PasswordResetRequest.find(filter)
+        PasswordResetRequest.find(
+          filter
+        )
+          .select(
+            "-resetTokenHash -resetTokenExpiresAt"
+          )
           .populate(
             "userId",
             "name email role active pumpId"
@@ -789,7 +795,9 @@ export const getPasswordResetRequests =
             "rejectedBy",
             "name email"
           )
-          .sort({ createdAt: -1 })
+          .sort({
+            createdAt: -1,
+          })
           .skip(skip)
           .limit(parsedLimit)
           .lean(),
@@ -799,34 +807,27 @@ export const getPasswordResetRequests =
         ),
       ]);
 
-      /*
-       * Never return the reset-token hash or its
-       * expiration credential to the admin listing.
-       */
-
-      const sanitizedRequests =
-        requests.map((request) => {
-          const {
-            resetTokenHash,
-            resetTokenExpiresAt,
-            ...safeRequest
-          } = request;
-
-          return safeRequest;
-        });
-
       return res.status(200).json({
         success: true,
+
         count:
-          sanitizedRequests.length,
+          requests.length,
+
         total,
-        page: parsedPage,
-        limit: parsedLimit,
-        totalPages: Math.ceil(
-          total / parsedLimit
-        ),
-        requests:
-          sanitizedRequests,
+
+        page:
+          parsedPage,
+
+        limit:
+          parsedLimit,
+
+        totalPages:
+          Math.ceil(
+            total /
+              parsedLimit
+          ),
+
+        requests,
       });
     } catch (error) {
       console.error(
@@ -911,6 +912,10 @@ export const approvePasswordReset =
 
       await session.withTransaction(
         async () => {
+          /*
+           * Atomically target only pending requests.
+           */
+
           const request =
             await PasswordResetRequest.findOne({
               _id: id,
@@ -927,56 +932,71 @@ export const approvePasswordReset =
                 .lean();
 
             if (!existing) {
-              const error = new Error(
-                "REQUEST_NOT_FOUND"
-              );
+              const error =
+                new Error(
+                  "REQUEST_NOT_FOUND"
+                );
 
-              error.statusCode = 404;
+              error.statusCode =
+                404;
 
               throw error;
             }
 
-            const error = new Error(
-              "REQUEST_ALREADY_PROCESSED"
-            );
+            const error =
+              new Error(
+                "REQUEST_ALREADY_PROCESSED"
+              );
 
-            error.statusCode = 400;
+            error.statusCode =
+              400;
+
             error.currentStatus =
               existing.status;
 
             throw error;
           }
 
+          /*
+           * Verify target user.
+           */
+
           const user =
             await User.findById(
               request.userId
             )
-              .select("_id active")
-              .session(session);
+              .select(
+                "_id active"
+              )
+              .session(session)
+              .lean();
 
           if (!user) {
-            const error = new Error(
-              "USER_NOT_FOUND"
-            );
+            const error =
+              new Error(
+                "USER_NOT_FOUND"
+              );
 
-            error.statusCode = 404;
+            error.statusCode =
+              404;
 
             throw error;
           }
 
           if (!user.active) {
-            const error = new Error(
-              "USER_DISABLED"
-            );
+            const error =
+              new Error(
+                "USER_DISABLED"
+              );
 
-            error.statusCode = 400;
+            error.statusCode =
+              400;
 
             throw error;
           }
 
           /*
-           * Generate a cryptographically secure,
-           * 256-bit random token.
+           * Generate 256-bit secure token.
            */
 
           const resetToken =
@@ -1019,27 +1039,35 @@ export const approvePasswordReset =
           });
 
           /*
-           * Keep the current response contract for
-           * backward compatibility with your existing
-           * Super Admin frontend.
+           * Keep existing frontend response contract.
            *
-           * Later, when email/SMS/secure notification
-           * delivery is implemented, the raw token should
-           * be delivered through that channel instead.
+           * The raw token is returned because your current
+           * frontend expects it.
+           *
+           * In production, once email/SMS/secure notification
+           * delivery is implemented, the raw token should be
+           * delivered only through that secure channel.
            */
 
           approvalResult = {
-            id: request._id,
+            id:
+              request._id,
+
             status:
               request.status,
+
             userId:
               request.userId,
+
             email:
               request.email,
+
             approvedAt:
               request.approvedAt,
+
             expiresAt:
               resetTokenExpiresAt,
+
             resetToken,
           };
         }
@@ -1047,8 +1075,10 @@ export const approvePasswordReset =
 
       return res.status(200).json({
         success: true,
+
         message:
           "Password reset request approved.",
+
         request:
           approvalResult,
       });
@@ -1059,7 +1089,8 @@ export const approvePasswordReset =
       );
 
       if (
-        error?.statusCode === 404
+        error?.statusCode ===
+        404
       ) {
         return res.status(404).json({
           success: false,
@@ -1069,7 +1100,8 @@ export const approvePasswordReset =
       }
 
       if (
-        error?.statusCode === 400
+        error?.statusCode ===
+        400
       ) {
         return res.status(400).json({
           success: false,
@@ -1077,6 +1109,16 @@ export const approvePasswordReset =
             error.currentStatus
               ? `Request is already ${error.currentStatus}.`
               : "This user account is disabled.",
+        });
+      }
+
+      if (
+        error?.code === 11000
+      ) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "Unable to generate a unique password reset token.",
         });
       }
 
@@ -1104,11 +1146,12 @@ export const rejectPasswordReset =
       const { id } =
         req.params;
 
-      const reason = String(
-        req.body?.reason ||
-          req.body?.rejectionReason ||
-          ""
-      ).trim();
+      const reason =
+        String(
+          req.body?.reason ||
+            req.body?.rejectionReason ||
+            ""
+        ).trim();
 
       if (!isValidObjectId(id)) {
         return res.status(400).json({
@@ -1118,7 +1161,10 @@ export const rejectPasswordReset =
         });
       }
 
-      if (reason.length > 1000) {
+      if (
+        reason.length >
+        1000
+      ) {
         return res.status(400).json({
           success: false,
           message:
@@ -1158,20 +1204,24 @@ export const rejectPasswordReset =
                 .lean();
 
             if (!existing) {
-              const error = new Error(
-                "REQUEST_NOT_FOUND"
-              );
+              const error =
+                new Error(
+                  "REQUEST_NOT_FOUND"
+                );
 
-              error.statusCode = 404;
+              error.statusCode =
+                404;
 
               throw error;
             }
 
-            const error = new Error(
-              "REQUEST_ALREADY_PROCESSED"
-            );
+            const error =
+              new Error(
+                "REQUEST_ALREADY_PROCESSED"
+              );
 
-            error.statusCode = 400;
+            error.statusCode =
+              400;
 
             error.currentStatus =
               existing.status;
@@ -1198,8 +1248,7 @@ export const rejectPasswordReset =
             null;
 
           /*
-           * Rejected requests must never retain
-           * a usable reset credential.
+           * Never keep a usable token on a rejected request.
            */
 
           request.resetTokenHash =
@@ -1213,11 +1262,15 @@ export const rejectPasswordReset =
           });
 
           rejectedRequest = {
-            id: request._id,
+            id:
+              request._id,
+
             status:
               request.status,
+
             rejectionReason:
               request.rejectionReason,
+
             rejectedAt:
               request.rejectedAt,
           };
@@ -1226,8 +1279,10 @@ export const rejectPasswordReset =
 
       return res.status(200).json({
         success: true,
+
         message:
           "Password reset request rejected.",
+
         request:
           rejectedRequest,
       });
@@ -1238,7 +1293,8 @@ export const rejectPasswordReset =
       );
 
       if (
-        error?.statusCode === 404
+        error?.statusCode ===
+        404
       ) {
         return res.status(404).json({
           success: false,
@@ -1248,7 +1304,8 @@ export const rejectPasswordReset =
       }
 
       if (
-        error?.statusCode === 400
+        error?.statusCode ===
+        400
       ) {
         return res.status(400).json({
           success: false,

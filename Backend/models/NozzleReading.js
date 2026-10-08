@@ -119,10 +119,11 @@ const nozzleReadingSchema =
       /* =====================================
          DATE
          
-         IMPORTANT:
-         Keep this as String because the
-         application uses local Indian
-         calendar dates in YYYY-MM-DD.
+         Format:
+         YYYY-MM-DD
+
+         Example:
+         2026-10-08
       ===================================== */
 
       readingDate: {
@@ -133,7 +134,43 @@ const nozzleReadingSchema =
       },
 
       /* =====================================
-         PAYMENT
+         TIME
+
+         Format:
+         HH:mm
+
+         Example:
+         14:35
+      ===================================== */
+
+      readingTime: {
+        type: String,
+        trim: true,
+        match:
+          /^(?:[01]\d|2[0-3]):[0-5]\d$/,
+        default: null,
+      },
+
+      /* =====================================
+         PRIMARY PAYMENT METHOD
+
+         Kept for backward compatibility.
+
+         Single payment:
+
+         paymentMethod: "cash"
+
+         Split payment:
+
+         paymentMethod: "upi"
+
+         payments:
+         [
+           { method: "upi", amount: 20000 },
+           { method: "card", amount: 15000 },
+           { method: "cash", amount: 10000 },
+           { method: "credit", amount: 5000 }
+         ]
       ===================================== */
 
       paymentMethod: {
@@ -147,6 +184,70 @@ const nozzleReadingSchema =
           "card",
           "credit",
         ],
+      },
+
+      /* =====================================
+         SPLIT / MULTIPLE PAYMENTS
+
+         One nozzle reading = one transaction.
+
+         Example:
+
+         totalAmount = 50000
+
+         payments:
+         [
+           {
+             method: "upi",
+             amount: 20000
+           },
+           {
+             method: "card",
+             amount: 15000
+           },
+           {
+             method: "cash",
+             amount: 10000
+           },
+           {
+             method: "credit",
+             amount: 5000
+           }
+         ]
+
+         Total:
+         20000 + 15000 + 10000 + 5000
+         = 50000
+
+         The controller validates that the
+         payment total exactly matches totalAmount.
+      ===================================== */
+
+      payments: {
+        type: [
+          {
+            method: {
+              type: String,
+              required: true,
+              trim: true,
+              lowercase: true,
+              enum: [
+                "cash",
+                "upi",
+                "card",
+                "credit",
+              ],
+            },
+
+            amount: {
+              type: Number,
+              required: true,
+              min: 0,
+            },
+          },
+        ],
+
+        default: [],
       },
 
       /* =====================================
@@ -171,12 +272,13 @@ const nozzleReadingSchema =
         index: true,
       },
     },
+
     {
       timestamps: true,
 
       /*
        * Prevent accidental storage of unknown
-       * fields coming from the frontend.
+       * fields coming from frontend.
        */
       strict: true,
     }
@@ -186,22 +288,10 @@ const nozzleReadingSchema =
    INDEXES
 ===================================================== */
 
-/*
- * MAIN HISTORY QUERY
- *
- * Controller query:
- *
- * NozzleReading.find({
- *   pumpId
- * })
- * .sort({
- *   readingDate: -1,
- *   createdAt: -1
- * })
- *
- * This is the most important index for
- * Reading History.
- */
+/* =====================================
+   MAIN HISTORY QUERY
+===================================== */
+
 nozzleReadingSchema.index(
   {
     pumpId: 1,
@@ -214,9 +304,10 @@ nozzleReadingSchema.index(
   }
 );
 
-/*
- * FILTER BY NOZZLE
- */
+/* =====================================
+   FILTER BY NOZZLE
+===================================== */
+
 nozzleReadingSchema.index(
   {
     pumpId: 1,
@@ -230,9 +321,10 @@ nozzleReadingSchema.index(
   }
 );
 
-/*
- * FILTER BY STAFF
- */
+/* =====================================
+   FILTER BY STAFF
+===================================== */
+
 nozzleReadingSchema.index(
   {
     pumpId: 1,
@@ -246,9 +338,10 @@ nozzleReadingSchema.index(
   }
 );
 
-/*
- * FILTER BY SHIFT
- */
+/* =====================================
+   FILTER BY SHIFT
+===================================== */
+
 nozzleReadingSchema.index(
   {
     pumpId: 1,
@@ -262,9 +355,10 @@ nozzleReadingSchema.index(
   }
 );
 
-/*
- * FILTER BY PAYMENT
- */
+/* =====================================
+   FILTER BY PRIMARY PAYMENT
+===================================== */
+
 nozzleReadingSchema.index(
   {
     pumpId: 1,
@@ -278,12 +372,20 @@ nozzleReadingSchema.index(
   }
 );
 
-/*
- * VERY IMPORTANT:
- *
- * Prevent duplicate final shift readings
- * for the same nozzle, pump, date and shift.
- */
+/* =====================================
+   UNIQUE READING
+
+   Prevent duplicate reading for:
+
+   pump
+   +
+   nozzle
+   +
+   date
+   +
+   shift
+===================================== */
+
 nozzleReadingSchema.index(
   {
     pumpId: 1,
@@ -298,13 +400,10 @@ nozzleReadingSchema.index(
   }
 );
 
-/*
- * Date-specific queries.
- *
- * Useful when the frontend requests:
- *
- * ?date=2026-09-25
- */
+/* =====================================
+   DATE QUERY
+===================================== */
+
 nozzleReadingSchema.index(
   {
     pumpId: 1,

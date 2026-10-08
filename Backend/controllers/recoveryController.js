@@ -1,4 +1,3 @@
-
 import mongoose from "mongoose";
 
 import DeletedRecord from "../models/DeletedRecord.js";
@@ -23,16 +22,55 @@ Responsibilities:
 - Restore deleted records
 - Restore LedgerCustomer correctly
 - Restore grouped records
-- Delete recovery records forever
+- Permanently delete recovery records
 - Strict pumpId isolation
 - Safe MongoDB transactions
-
-IMPORTANT:
-
-The service exports used here MUST match
-recoveryService.js exactly.
+- Reduced duplicate restore logic
 =====================================================
 */
+
+/*
+=====================================================
+CONSTANTS
+=====================================================
+*/
+
+const DEFAULT_PAGE = 1;
+const DEFAULT_LIMIT = 25;
+const MAX_LIMIT = 100;
+
+const SUPERADMIN_ROLES = new Set([
+  "superadmin",
+  "super_admin",
+]);
+
+const ALLOWED_RESTORE_MODELS = new Set([
+  "Client",
+  "Pump",
+  "User",
+  "LedgerCustomer",
+  "Expense",
+  "Employee",
+  "Nozzle",
+  "FuelStock",
+]);
+
+const PROTECTED_RESTORE_FIELDS = new Set([
+  "_id",
+  "pumpId",
+  "__v",
+  "createdAt",
+  "updatedAt",
+]);
+
+const LEDGER_CUSTOMER_RESTORE_FIELDS = [
+  "name",
+  "phone",
+  "vehicleNumber",
+  "address",
+  "currentBalance",
+  "note",
+];
 
 /*
 =====================================================
@@ -87,6 +125,28 @@ const isValidObjectId = (value) => {
   );
 };
 
+const toObjectId = (value) => {
+  if (!isValidObjectId(value)) {
+    return null;
+  }
+
+  return new mongoose.Types.ObjectId(value);
+};
+
+const toPlainObject = (value) => {
+  if (!value) {
+    return value;
+  }
+
+  if (
+    typeof value.toObject === "function"
+  ) {
+    return value.toObject();
+  }
+
+  return value;
+};
+
 /*
 =====================================================
 AUTHENTICATED USER
@@ -106,16 +166,17 @@ const getAuthenticatedUserId = (req) => {
     );
   }
 
-  if (!isValidObjectId(userId)) {
+  const objectId =
+    toObjectId(userId);
+
+  if (!objectId) {
     throw createControllerError(
       "Authenticated user ID is invalid.",
       401
     );
   }
 
-  return new mongoose.Types.ObjectId(
-    userId
-  );
+  return objectId;
 };
 
 /*
@@ -155,8 +216,7 @@ const getAuthorizedPumpId = (req) => {
    * Superadmin must explicitly provide pumpId.
    */
   if (
-    role === "superadmin" ||
-    role === "super_admin"
+    SUPERADMIN_ROLES.has(role)
   ) {
     if (!requestedPumpId) {
       throw createControllerError(
@@ -165,18 +225,23 @@ const getAuthorizedPumpId = (req) => {
       );
     }
 
-    if (!isValidObjectId(requestedPumpId)) {
+    const pumpId =
+      toObjectId(requestedPumpId);
+
+    if (!pumpId) {
       throw createControllerError(
         "Invalid pumpId.",
         400
       );
     }
 
-    return new mongoose.Types.ObjectId(
-      requestedPumpId
-    );
+    return pumpId;
   }
 
+  /*
+   * Normal users can ONLY access
+   * their own pump.
+   */
   if (!userPumpId) {
     throw createControllerError(
       "Your account is not associated with a pump.",
@@ -184,35 +249,24 @@ const getAuthorizedPumpId = (req) => {
     );
   }
 
-  if (!isValidObjectId(userPumpId)) {
+  const pumpId =
+    toObjectId(userPumpId);
+
+  if (!pumpId) {
     throw createControllerError(
       "Your pump ID is invalid.",
       403
     );
   }
 
-  return new mongoose.Types.ObjectId(
-    userPumpId
-  );
+  return pumpId;
 };
 
 /*
 =====================================================
-SUPPORTED MODELS
+MODEL HELPERS
 =====================================================
 */
-
-const ALLOWED_RESTORE_MODELS =
-  new Set([
-    "Client",
-    "Pump",
-    "User",
-    "LedgerCustomer",
-    "Expense",
-    "Employee",
-    "Nozzle",
-    "FuelStock",
-  ]);
 
 const isAllowedRestoreModel = (
   modelName
@@ -221,12 +275,6 @@ const isAllowedRestoreModel = (
     normalizeString(modelName)
   );
 };
-
-/*
-=====================================================
-MODEL NAME CHECK
-=====================================================
-*/
 
 const isLedgerCustomerModel = (
   modelName
@@ -237,24 +285,39 @@ const isLedgerCustomerModel = (
   );
 };
 
+const getRegisteredModel = (
+  modelName
+) => {
+  const normalizedModel =
+    normalizeString(modelName);
+
+  if (
+    !isAllowedRestoreModel(
+      normalizedModel
+    )
+  ) {
+    throw createControllerError(
+      `Restoration of ${normalizedModel} records is not supported.`,
+      400
+    );
+  }
+
+  const Model =
+    mongoose.models[normalizedModel];
+
+  if (!Model) {
+    throw createControllerError(
+      `Mongoose model ${normalizedModel} is not registered.`,
+      500
+    );
+  }
+
+  return Model;
+};
+
 /*
 =====================================================
 OBJECT NAME
-=====================================================
-
-Creates the human-readable name displayed
-inside the Recovery page.
-
-Examples:
-
-LedgerCustomer -> ABC Traders
-Employee       -> Rahul Patil
-Expense        -> Diesel Transport
-Nozzle         -> Nozzle 1
-FuelStock      -> Petrol
-Client         -> XYZ Client
-Pump           -> Shivshambho Pump
-User           -> admin@example.com
 =====================================================
 */
 
@@ -298,9 +361,8 @@ const getObjectName = (
   ];
 
   for (const field of directFields) {
-    const value = normalizeString(
-      data[field]
-    );
+    const value =
+      normalizeString(data[field]);
 
     if (value) {
       return value;
@@ -310,15 +372,10 @@ const getObjectName = (
   /*
    * Ledger Customer.
    */
-  if (modelName === "LedgerCustomer") {
-    const name = normalizeString(
-      data.name
-    );
-
-    if (name) {
-      return name;
-    }
-
+  if (
+    modelName ===
+    "LedgerCustomer"
+  ) {
     const vehicleNumber =
       normalizeString(
         data.vehicleNumber
@@ -328,9 +385,8 @@ const getObjectName = (
       return `Customer - ${vehicleNumber}`;
     }
 
-    const phone = normalizeString(
-      data.phone
-    );
+    const phone =
+      normalizeString(data.phone);
 
     if (phone) {
       return `Customer - ${phone}`;
@@ -456,9 +512,8 @@ const getObjectName = (
   /*
    * Email fallback.
    */
-  const email = normalizeString(
-    data.email
-  );
+  const email =
+    normalizeString(data.email);
 
   if (email) {
     return email;
@@ -467,9 +522,8 @@ const getObjectName = (
   /*
    * Phone fallback.
    */
-  const phone = normalizeString(
-    data.phone
-  );
+  const phone =
+    normalizeString(data.phone);
 
   if (phone) {
     return phone;
@@ -488,7 +542,7 @@ const getObjectName = (
   }
 
   /*
-   * Original MongoDB ID fallback.
+   * MongoDB ID fallback.
    */
   if (data._id) {
     return String(data._id);
@@ -503,7 +557,7 @@ const getObjectName = (
 
 /*
 =====================================================
-FORMAT SINGLE RECORD
+FORMAT DELETED RECORD
 =====================================================
 */
 
@@ -530,14 +584,8 @@ const formatDeletedRecord = (
   return {
     ...record,
 
-    /*
-     * Main frontend field.
-     */
     objectName,
 
-    /*
-     * Compatibility fields.
-     */
     displayName:
       objectName,
 
@@ -550,22 +598,17 @@ const formatDeletedRecord = (
   };
 };
 
-/*
-=====================================================
-FORMAT RECORD LIST
-=====================================================
-*/
+const formatDeletedRecords = (
+  records
+) => {
+  if (!Array.isArray(records)) {
+    return [];
+  }
 
-const formatDeletedRecords =
-  (records) => {
-    if (!Array.isArray(records)) {
-      return [];
-    }
-
-    return records.map(
-      formatDeletedRecord
-    );
-  };
+  return records.map(
+    formatDeletedRecord
+  );
+};
 
 /*
 =====================================================
@@ -615,23 +658,325 @@ const prepareRestoreData = (
   };
 
   /*
-   * Restore using the original ID.
+   * Always restore original ID.
    */
   restoreData._id =
     deletedRecord.originalId;
 
   /*
-   * Restore into the original pump.
+   * Always restore into authorized pump.
    */
   restoreData.pumpId =
     deletedRecord.pumpId;
 
   /*
-   * Remove Mongoose version field.
+   * Never restore Mongoose version.
    */
   delete restoreData.__v;
 
   return restoreData;
+};
+
+/*
+=====================================================
+START SESSION
+=====================================================
+*/
+
+const withTransaction = async (
+  callback
+) => {
+  const session =
+    await mongoose.startSession();
+
+  try {
+    let result;
+
+    await session.withTransaction(
+      async () => {
+        result =
+          await callback(session);
+      }
+    );
+
+    return result;
+  } finally {
+    await session.endSession();
+  }
+};
+
+/*
+=====================================================
+RESTORE LEDGER CUSTOMER
+=====================================================
+*/
+
+const restoreLedgerCustomer = async ({
+  deletedRecord,
+  pumpId,
+  session,
+}) => {
+  const restoreData =
+    prepareRestoreData(
+      deletedRecord
+    );
+
+  /*
+   * IMPORTANT:
+   * Never allow deleted recovery data
+   * to restore a different pump.
+   */
+  restoreData.pumpId =
+    new mongoose.Types.ObjectId(
+      pumpId
+    );
+
+  const existingCustomer =
+    await LedgerCustomer.findOne({
+      _id: restoreData._id,
+      pumpId,
+    }).session(session);
+
+  if (existingCustomer) {
+    /*
+     * Reactivate existing soft-deleted
+     * customer and restore important fields.
+     */
+    existingCustomer.status =
+      "active";
+
+    for (const field of
+      LEDGER_CUSTOMER_RESTORE_FIELDS) {
+      if (
+        restoreData[field] !==
+        undefined
+      ) {
+        existingCustomer[field] =
+          restoreData[field];
+      }
+    }
+
+    return existingCustomer.save({
+      session,
+    });
+  }
+
+  /*
+   * Original customer was physically
+   * deleted, recreate it.
+   */
+  restoreData.status =
+    "active";
+
+  const [createdCustomer] =
+    await LedgerCustomer.create(
+      [restoreData],
+      {
+        session,
+      }
+    );
+
+  return createdCustomer;
+};
+
+/*
+=====================================================
+RESTORE GENERIC DOCUMENT
+=====================================================
+*/
+
+const restoreGenericDocument = async ({
+  deletedRecord,
+  pumpId,
+  session,
+}) => {
+  const modelName =
+    normalizeString(
+      deletedRecord.originalModel
+    );
+
+  const Model =
+    getRegisteredModel(
+      modelName
+    );
+
+  const restoreData =
+    prepareRestoreData(
+      deletedRecord
+    );
+
+  /*
+   * Force authorized pump.
+   */
+  restoreData.pumpId =
+    new mongoose.Types.ObjectId(
+      pumpId
+    );
+
+  const existingDocument =
+    await Model.findOne({
+      _id: restoreData._id,
+      pumpId,
+    }).session(session);
+
+  let restoredDocument;
+
+  if (existingDocument) {
+    /*
+     * Existing soft-deleted document.
+     */
+    if (
+      Object.prototype.hasOwnProperty.call(
+        existingDocument.toObject(),
+        "status"
+      )
+    ) {
+      existingDocument.status =
+        "active";
+    }
+
+    for (const [
+      key,
+      value,
+    ] of Object.entries(
+      restoreData
+    )) {
+      if (
+        PROTECTED_RESTORE_FIELDS.has(
+          key
+        )
+      ) {
+        continue;
+      }
+
+      if (value !== undefined) {
+        existingDocument[key] =
+          value;
+      }
+    }
+
+    restoredDocument =
+      await existingDocument.save({
+        session,
+      });
+  } else {
+    /*
+     * Original document no longer exists.
+     * Recreate it.
+     */
+    if (
+      Object.prototype.hasOwnProperty.call(
+        restoreData,
+        "status"
+      )
+    ) {
+      restoreData.status =
+        "active";
+    }
+
+    const [createdDocument] =
+      await Model.create(
+        [restoreData],
+        {
+          session,
+        }
+      );
+
+    restoredDocument =
+      createdDocument;
+  }
+
+  return restoredDocument;
+};
+
+/*
+=====================================================
+DELETE RECOVERY RECORD INSIDE TRANSACTION
+=====================================================
+*/
+
+const deleteRecoveryRecord = async ({
+  recoveryId,
+  pumpId,
+  session,
+}) => {
+  const deleteResult =
+    await DeletedRecord.deleteOne(
+      {
+        _id: recoveryId,
+        pumpId,
+      },
+      {
+        session,
+      }
+    );
+
+  if (
+    deleteResult.deletedCount !==
+    1
+  ) {
+    throw createControllerError(
+      "Recovery record changed before restoration completed.",
+      409
+    );
+  }
+
+  return true;
+};
+
+/*
+=====================================================
+RESTORE ONE RECORD
+=====================================================
+*/
+
+const restoreOneRecord = async ({
+  deletedRecord,
+  pumpId,
+}) => {
+  const modelName =
+    normalizeString(
+      deletedRecord.originalModel
+    );
+
+  return withTransaction(
+    async (session) => {
+      let restoredDocument;
+
+      if (
+        isLedgerCustomerModel(
+          modelName
+        )
+      ) {
+        restoredDocument =
+          await restoreLedgerCustomer({
+            deletedRecord,
+            pumpId,
+            session,
+          });
+      } else {
+        restoredDocument =
+          await restoreGenericDocument({
+            deletedRecord,
+            pumpId,
+            session,
+          });
+      }
+
+      /*
+       * Delete recovery entry ONLY after
+       * restoration succeeded.
+       */
+      await deleteRecoveryRecord({
+        recoveryId:
+          deletedRecord._id,
+        pumpId,
+        session,
+      });
+
+      return restoredDocument;
+    }
+  );
 };
 
 /*
@@ -646,19 +991,38 @@ export const getDeletedData =
       const pumpId =
         getAuthorizedPumpId(req);
 
+      /*
+       * Normalize pagination before passing
+       * it to the service.
+       */
+      const page = Math.max(
+        Number(req.query?.page) ||
+          DEFAULT_PAGE,
+        1
+      );
+
+      const limit = Math.min(
+        Math.max(
+          Number(req.query?.limit) ||
+            DEFAULT_LIMIT,
+          1
+        ),
+        MAX_LIMIT
+      );
+
       const result =
         await getDeletedRecords({
           pumpId,
 
           originalCollection:
-            req.query
-              ?.originalCollection,
+            normalizeString(
+              req.query
+                ?.originalCollection
+            ) || undefined,
 
-          page:
-            req.query?.page,
+          page,
 
-          limit:
-            req.query?.limit,
+          limit,
         });
 
       return res.status(200).json({
@@ -671,8 +1035,8 @@ export const getDeletedData =
 
         pagination:
           result?.pagination || {
-            page: 1,
-            limit: 25,
+            page,
+            limit,
             total: 0,
             totalPages: 0,
           },
@@ -680,11 +1044,16 @@ export const getDeletedData =
     } catch (error) {
       console.error(
         "GET DELETED DATA ERROR:",
-        error
+        {
+          message:
+            getErrorMessage(error),
+          statusCode:
+            error?.statusCode,
+        }
       );
 
       return res.status(
-        error.statusCode || 500
+        error?.statusCode || 500
       ).json({
         success: false,
         message:
@@ -703,7 +1072,7 @@ export const getDeletedDataById =
   async (req, res) => {
     try {
       const pumpId =
-        getAuthorizedPumpId(req);
+        getAuthorizedPumpId();
 
       const deletedRecordId =
         req.params?.id;
@@ -732,119 +1101,38 @@ export const getDeletedDataById =
         );
       }
 
+      const plainRecord =
+        toPlainObject(
+          deletedRecord
+        );
+
       return res.status(200).json({
         success: true,
 
         data:
           formatDeletedRecord(
-            deletedRecord.toObject
-              ? deletedRecord.toObject()
-              : deletedRecord
+            plainRecord
           ),
       });
     } catch (error) {
       console.error(
         "GET DELETED RECORD ERROR:",
-        error
+        {
+          message:
+            getErrorMessage(error),
+          statusCode:
+            error?.statusCode,
+        }
       );
 
       return res.status(
-        error.statusCode || 500
+        error?.statusCode || 500
       ).json({
         success: false,
         message:
           getErrorMessage(error),
       });
     }
-  };
-
-/*
-=====================================================
-RESTORE LEDGER CUSTOMER
-=====================================================
-*/
-
-const restoreLedgerCustomer =
-  async ({
-    deletedRecord,
-    pumpId,
-    session,
-  }) => {
-    const restoreData =
-      prepareRestoreData(
-        deletedRecord
-      );
-
-    let restoredCustomer;
-
-    /*
-     * Check whether the soft-deleted
-     * LedgerCustomer still exists.
-     */
-    const existingCustomer =
-      await LedgerCustomer.findOne({
-        _id:
-          restoreData._id,
-
-        pumpId,
-      }).session(session);
-
-    if (existingCustomer) {
-      /*
-       * Reactivate existing customer.
-       */
-      existingCustomer.status =
-        "active";
-
-      const fieldsToRestore = [
-        "name",
-        "phone",
-        "vehicleNumber",
-        "address",
-        "currentBalance",
-        "note",
-      ];
-
-      for (const field of fieldsToRestore) {
-        if (
-          restoreData[field] !==
-          undefined
-        ) {
-          existingCustomer[field] =
-            restoreData[field];
-        }
-      }
-
-      restoredCustomer =
-        await existingCustomer.save({
-          session,
-        });
-    } else {
-      /*
-       * If the original customer was
-       * physically removed, recreate it.
-       */
-      restoreData.pumpId =
-        new mongoose.Types.ObjectId(
-          pumpId
-        );
-
-      restoreData.status =
-        "active";
-
-      const created =
-        await LedgerCustomer.create(
-          [restoreData],
-          {
-            session,
-          }
-        );
-
-      restoredCustomer =
-        created[0];
-    }
-
-    return restoredCustomer;
   };
 
 /*
@@ -873,12 +1161,6 @@ export const restoreDeletedData =
         );
       }
 
-      /*
-       * IMPORTANT:
-       * Use the actual service export:
-       *
-       * findDeletedRecord()
-       */
       const deletedRecord =
         await findDeletedRecord({
           deletedRecordId,
@@ -892,259 +1174,39 @@ export const restoreDeletedData =
         );
       }
 
-      const deletedModel =
+      const modelName =
         normalizeString(
           deletedRecord.originalModel
         );
 
       /*
-       * LedgerCustomer requires special
-       * soft-delete restoration.
+       * Restore using centralized logic.
        */
-      if (
-        isLedgerCustomerModel(
-          deletedModel
-        )
-      ) {
-        const session =
-          await mongoose.startSession();
-
-        let restoredCustomer;
-
-        try {
-          await session.withTransaction(
-            async () => {
-              restoredCustomer =
-                await restoreLedgerCustomer({
-                  deletedRecord,
-                  pumpId,
-                  session,
-                });
-
-              const deleteResult =
-                await DeletedRecord.deleteOne(
-                  {
-                    _id:
-                      deletedRecord._id,
-
-                    pumpId,
-                  },
-                  {
-                    session,
-                  }
-                );
-
-              if (
-                deleteResult.deletedCount !==
-                1
-              ) {
-                throw createControllerError(
-                  "Recovery record changed before restoration completed.",
-                  409
-                );
-              }
-            }
-          );
-        } finally {
-          await session.endSession();
-        }
-
-        const restoredObject =
-          restoredCustomer?.toObject
-            ? restoredCustomer.toObject()
-            : restoredCustomer;
-
-        return res.status(200).json({
-          success: true,
-
-          message:
-            "Ledger customer restored successfully.",
-
-          objectName:
-            getObjectName(
-              restoredObject,
-              "LedgerCustomer",
-              deletedRecord.originalId
-            ),
-
-          data:
-            restoredObject,
+      const restoredDocument =
+        await restoreOneRecord({
+          deletedRecord,
+          pumpId,
         });
-      }
-
-      /*
-       * Generic model restoration.
-       */
-      const restoreData =
-        prepareRestoreData(
-          deletedRecord
-        );
-
-      if (
-        !mongoose.models[
-          deletedModel
-        ]
-      ) {
-        throw createControllerError(
-          `Mongoose model ${deletedModel} is not registered.`,
-          500
-        );
-      }
-
-      const Model =
-        mongoose.models[
-          deletedModel
-        ];
-
-      const session =
-        await mongoose.startSession();
-
-      let restoredDocument;
-
-      try {
-        await session.withTransaction(
-          async () => {
-            /*
-             * Check whether document already exists.
-             */
-            const existingDocument =
-              await Model.findOne({
-                _id:
-                  restoreData._id,
-
-                pumpId,
-              }).session(session);
-
-            if (existingDocument) {
-              /*
-               * Restore existing soft-deleted
-               * document.
-               */
-              if (
-                Object.prototype.hasOwnProperty.call(
-                  existingDocument.toObject(),
-                  "status"
-                )
-              ) {
-                existingDocument.status =
-                  "active";
-              }
-
-              const protectedFields =
-                new Set([
-                  "_id",
-                  "pumpId",
-                  "__v",
-                  "createdAt",
-                  "updatedAt",
-                ]);
-
-              for (const [
-                key,
-                value,
-              ] of Object.entries(
-                restoreData
-              )) {
-                if (
-                  protectedFields.has(
-                    key
-                  )
-                ) {
-                  continue;
-                }
-
-                if (
-                  value !== undefined
-                ) {
-                  existingDocument[
-                    key
-                  ] = value;
-                }
-              }
-
-              restoredDocument =
-                await existingDocument.save({
-                  session,
-                });
-            } else {
-              /*
-               * Original document no longer
-               * exists, so recreate it.
-               */
-              restoreData.pumpId =
-                new mongoose.Types.ObjectId(
-                  pumpId
-                );
-
-              if (
-                Object.prototype.hasOwnProperty.call(
-                  restoreData,
-                  "status"
-                )
-              ) {
-                restoreData.status =
-                  "active";
-              }
-
-              const created =
-                await Model.create(
-                  [restoreData],
-                  {
-                    session,
-                  }
-                );
-
-              restoredDocument =
-                created[0];
-            }
-
-            /*
-             * Remove recovery record only after
-             * successful restoration.
-             */
-            const deleteResult =
-              await DeletedRecord.deleteOne(
-                {
-                  _id:
-                    deletedRecord._id,
-
-                  pumpId,
-                },
-                {
-                  session,
-                }
-              );
-
-            if (
-              deleteResult.deletedCount !==
-              1
-            ) {
-              throw createControllerError(
-                "Recovery record changed before restoration completed.",
-                409
-              );
-            }
-          }
-        );
-      } finally {
-        await session.endSession();
-      }
 
       const restoredObject =
-        restoredDocument?.toObject
-          ? restoredDocument.toObject()
-          : restoredDocument;
+        toPlainObject(
+          restoredDocument
+        );
 
       return res.status(200).json({
         success: true,
 
         message:
-          `${deletedModel} restored successfully.`,
+          isLedgerCustomerModel(
+            modelName
+          )
+            ? "Ledger customer restored successfully."
+            : `${modelName} restored successfully.`,
 
         objectName:
           getObjectName(
             restoredObject,
-            deletedModel,
+            modelName,
             deletedRecord.originalId
           ),
 
@@ -1154,11 +1216,18 @@ export const restoreDeletedData =
     } catch (error) {
       console.error(
         "RESTORE DELETED DATA ERROR:",
-        error
+        {
+          message:
+            getErrorMessage(error),
+          statusCode:
+            error?.statusCode,
+          code:
+            error?.code,
+        }
       );
 
       return res.status(
-        error.statusCode || 500
+        error?.statusCode || 500
       ).json({
         success: false,
         message:
@@ -1191,12 +1260,6 @@ export const restoreDeletedGroup =
         );
       }
 
-      /*
-       * IMPORTANT:
-       * Use the actual service export:
-       *
-       * getDeletedRecordGroup()
-       */
       const records =
         await getDeletedRecordGroup({
           deletionGroupId:
@@ -1216,37 +1279,23 @@ export const restoreDeletedGroup =
       }
 
       /*
-       * If group contains only one record,
-       * restore it normally.
+       * Single record:
+       * use the normal restore response.
        */
       if (records.length === 1) {
         const record =
           records[0];
 
-        req.params.id =
-          String(record._id);
+        const restoredDocument =
+          await restoreOneRecord({
+            deletedRecord:
+              record,
+            pumpId,
+          });
 
-        return restoreDeletedData(
-          req,
-          res
-        );
-      }
-
-      /*
-       * Restore grouped records one by one.
-       *
-       * Each record is protected by its own
-       * transaction.
-       */
-      const restored = [];
-
-      for (const record of records) {
-        const recordId =
-          String(record._id);
-
-        const restoreData =
-          prepareRestoreData(
-            record
+        const restoredObject =
+          toPlainObject(
+            restoredDocument
           );
 
         const modelName =
@@ -1254,227 +1303,56 @@ export const restoreDeletedGroup =
             record.originalModel
           );
 
-        /*
-         * LedgerCustomer can participate in
-         * a group, so use the same special
-         * restoration logic.
-         */
-        if (
-          isLedgerCustomerModel(
-            modelName
-          )
-        ) {
-          const session =
-            await mongoose.startSession();
+        return res.status(200).json({
+          success: true,
 
-          let restoredCustomer;
+          message:
+            isLedgerCustomerModel(
+              modelName
+            )
+              ? "Ledger customer restored successfully."
+              : `${modelName} restored successfully.`,
 
-          try {
-            await session.withTransaction(
-              async () => {
-                restoredCustomer =
-                  await restoreLedgerCustomer({
-                    deletedRecord:
-                      record,
-
-                    pumpId,
-
-                    session,
-                  });
-
-                const deleteResult =
-                  await DeletedRecord.deleteOne(
-                    {
-                      _id:
-                        record._id,
-
-                      pumpId,
-                    },
-                    {
-                      session,
-                    }
-                  );
-
-                if (
-                  deleteResult.deletedCount !==
-                  1
-                ) {
-                  throw createControllerError(
-                    "Recovery record changed during group restoration.",
-                    409
-                  );
-                }
-              }
-            );
-          } finally {
-            await session.endSession();
-          }
-
-          const restoredObject =
-            restoredCustomer?.toObject
-              ? restoredCustomer.toObject()
-              : restoredCustomer;
-
-          restored.push({
-            model:
-              modelName,
-
-            objectName:
-              getObjectName(
-                restoredObject,
-                modelName,
-                record.originalId
-              ),
-
-            data:
+          objectName:
+            getObjectName(
               restoredObject,
+              modelName,
+              record.originalId
+            ),
+
+          data:
+            restoredObject,
+        });
+      }
+
+      /*
+       * Restore multiple records.
+       *
+       * Each record receives its own transaction.
+       *
+       * This keeps failures isolated and prevents
+       * one bad record from corrupting another restore.
+       */
+      const restored = [];
+
+      for (const record of records) {
+        const modelName =
+          normalizeString(
+            record.originalModel
+          );
+
+        const restoredDocument =
+          await restoreOneRecord({
+            deletedRecord:
+              record,
+
+            pumpId,
           });
 
-          continue;
-        }
-
-        /*
-         * Generic model.
-         */
-        if (
-          !mongoose.models[
-            modelName
-          ]
-        ) {
-          throw createControllerError(
-            `Mongoose model ${modelName} is not registered.`,
-            500
-          );
-        }
-
-        const Model =
-          mongoose.models[
-            modelName
-          ];
-
-        const session =
-          await mongoose.startSession();
-
-        let restoredDocument;
-
-        try {
-          await session.withTransaction(
-            async () => {
-              const existingDocument =
-                await Model.findOne({
-                  _id:
-                    restoreData._id,
-
-                  pumpId,
-                }).session(session);
-
-              if (existingDocument) {
-                if (
-                  Object.prototype.hasOwnProperty.call(
-                    existingDocument.toObject(),
-                    "status"
-                  )
-                ) {
-                  existingDocument.status =
-                    "active";
-                }
-
-                const protectedFields =
-                  new Set([
-                    "_id",
-                    "pumpId",
-                    "__v",
-                    "createdAt",
-                    "updatedAt",
-                  ]);
-
-                for (const [
-                  key,
-                  value,
-                ] of Object.entries(
-                  restoreData
-                )) {
-                  if (
-                    protectedFields.has(
-                      key
-                    )
-                  ) {
-                    continue;
-                  }
-
-                  if (
-                    value !== undefined
-                  ) {
-                    existingDocument[
-                      key
-                    ] = value;
-                  }
-                }
-
-                restoredDocument =
-                  await existingDocument.save({
-                    session,
-                  });
-              } else {
-                restoreData.pumpId =
-                  new mongoose.Types.ObjectId(
-                    pumpId
-                  );
-
-                if (
-                  Object.prototype.hasOwnProperty.call(
-                    restoreData,
-                    "status"
-                  )
-                ) {
-                  restoreData.status =
-                    "active";
-                }
-
-                const created =
-                  await Model.create(
-                    [restoreData],
-                    {
-                      session,
-                    }
-                  );
-
-                restoredDocument =
-                  created[0];
-              }
-
-              const deleteResult =
-                await DeletedRecord.deleteOne(
-                  {
-                    _id:
-                      record._id,
-
-                    pumpId,
-                  },
-                  {
-                    session,
-                  }
-                );
-
-              if (
-                deleteResult.deletedCount !==
-                1
-              ) {
-                throw createControllerError(
-                  "Recovery record changed during group restoration.",
-                  409
-                );
-              }
-            }
-          );
-        } finally {
-          await session.endSession();
-        }
-
         const restoredObject =
-          restoredDocument?.toObject
-            ? restoredDocument.toObject()
-            : restoredDocument;
+          toPlainObject(
+            restoredDocument
+          );
 
         restored.push({
           model:
@@ -1507,11 +1385,18 @@ export const restoreDeletedGroup =
     } catch (error) {
       console.error(
         "RESTORE DELETED GROUP ERROR:",
-        error
+        {
+          message:
+            getErrorMessage(error),
+          statusCode:
+            error?.statusCode,
+          code:
+            error?.code,
+        }
       );
 
       return res.status(
-        error.statusCode || 500
+        error?.statusCode || 500
       ).json({
         success: false,
         message:
@@ -1522,7 +1407,7 @@ export const restoreDeletedGroup =
 
 /*
 =====================================================
-DELETE FOREVER
+PERMANENT DELETE
 =====================================================
 */
 
@@ -1547,8 +1432,8 @@ export const permanentlyDeleteDeletedData =
       }
 
       /*
-       * Find record first so we can return
-       * the object name in the response.
+       * Fetch first so we can return
+       * the deleted object's name.
        */
       const deletedRecord =
         await findDeletedRecord({
@@ -1563,24 +1448,18 @@ export const permanentlyDeleteDeletedData =
         );
       }
 
-      const recordObject =
-        deletedRecord.toObject
-          ? deletedRecord.toObject()
-          : deletedRecord;
+      const plainRecord =
+        toPlainObject(
+          deletedRecord
+        );
 
       const objectName =
         getObjectName(
-          recordObject.data,
-          recordObject.originalModel,
-          recordObject.originalId
+          plainRecord.data,
+          plainRecord.originalModel,
+          plainRecord.originalId
         );
 
-      /*
-       * IMPORTANT:
-       * Use the actual service export:
-       *
-       * permanentlyDeleteRecord()
-       */
       const deletedResult =
         await permanentlyDeleteRecord({
           deletedRecordId,
@@ -1607,11 +1486,16 @@ export const permanentlyDeleteDeletedData =
     } catch (error) {
       console.error(
         "PERMANENT DELETE RECOVERY ERROR:",
-        error
+        {
+          message:
+            getErrorMessage(error),
+          statusCode:
+            error?.statusCode,
+        }
       );
 
       return res.status(
-        error.statusCode || 500
+        error?.statusCode || 500
       ).json({
         success: false,
         message:
@@ -1633,4 +1517,3 @@ export default {
   restoreDeletedGroup,
   permanentlyDeleteDeletedData,
 };
-

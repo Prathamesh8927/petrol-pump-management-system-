@@ -2,14 +2,19 @@ import mongoose from "mongoose";
 
 const expenseSchema = new mongoose.Schema(
   {
+    // ==================================================
+    // PUMP
+    // ==================================================
     pumpId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Pump",
       required: true,
-      index: true,
       immutable: true,
     },
 
+    // ==================================================
+    // TITLE
+    // ==================================================
     title: {
       type: String,
       required: true,
@@ -17,6 +22,9 @@ const expenseSchema = new mongoose.Schema(
       maxlength: 200,
     },
 
+    // ==================================================
+    // CATEGORY
+    // ==================================================
     category: {
       type: String,
       enum: [
@@ -34,12 +42,18 @@ const expenseSchema = new mongoose.Schema(
       trim: true,
     },
 
+    // ==================================================
+    // AMOUNT
+    // ==================================================
     amount: {
       type: Number,
       required: true,
       min: 0,
     },
 
+    // ==================================================
+    // PAYMENT METHOD
+    // ==================================================
     paymentMethod: {
       type: String,
       enum: [
@@ -53,23 +67,32 @@ const expenseSchema = new mongoose.Schema(
       trim: true,
     },
 
+    // ==================================================
+    // EXPENSE DATE
+    // ==================================================
     /*
-     * Stored as YYYY-MM-DD.
+     * Stored as:
+     *
+     * YYYY-MM-DD
      */
     expenseDate: {
       type: String,
       required: true,
-      index: true,
       match: /^\d{4}-\d{2}-\d{2}$/,
     },
 
+    // ==================================================
+    // EMPLOYEE
+    // ==================================================
     employeeId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Employee",
       default: null,
-      index: true,
     },
 
+    // ==================================================
+    // NOTE
+    // ==================================================
     note: {
       type: String,
       trim: true,
@@ -77,11 +100,13 @@ const expenseSchema = new mongoose.Schema(
       maxlength: 1000,
     },
 
+    // ==================================================
+    // CREATED BY
+    // ==================================================
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-      index: true,
     },
   },
   {
@@ -95,39 +120,68 @@ const expenseSchema = new mongoose.Schema(
 ===================================================== */
 
 /*
- * Main expense history / dashboard query.
+ * Main expense history.
+ *
+ * Used by:
+ *
+ * Expense.find({
+ *   pumpId,
+ *   expenseDate: ...
+ * })
+ *
+ * Also supports date-range queries.
  */
-expenseSchema.index({
-  pumpId: 1,
-  expenseDate: -1,
-});
+expenseSchema.index(
+  {
+    pumpId: 1,
+    expenseDate: -1,
+  },
+  {
+    name: "idx_expense_pump_date",
+  }
+);
 
 /*
- * Useful when filtering expenses by category.
+ * Category reports.
  */
-expenseSchema.index({
-  pumpId: 1,
-  category: 1,
-  expenseDate: -1,
-});
+expenseSchema.index(
+  {
+    pumpId: 1,
+    category: 1,
+    expenseDate: -1,
+  },
+  {
+    name: "idx_expense_category_date",
+  }
+);
 
 /*
- * Useful for employee-related expense history.
+ * Employee expense history.
  */
-expenseSchema.index({
-  pumpId: 1,
-  employeeId: 1,
-  expenseDate: -1,
-});
+expenseSchema.index(
+  {
+    pumpId: 1,
+    employeeId: 1,
+    expenseDate: -1,
+  },
+  {
+    name: "idx_expense_employee_date",
+  }
+);
 
 /*
- * Useful for audit/user filtering.
+ * User-created expense history / audit.
  */
-expenseSchema.index({
-  pumpId: 1,
-  createdBy: 1,
-  createdAt: -1,
-});
+expenseSchema.index(
+  {
+    pumpId: 1,
+    createdBy: 1,
+    createdAt: -1,
+  },
+  {
+    name: "idx_expense_creator_created",
+  }
+);
 
 /* =====================================================
    MODEL
@@ -135,6 +189,9 @@ expenseSchema.index({
 
 const Expense =
   mongoose.models.Expense ||
-  mongoose.model("Expense", expenseSchema);
+  mongoose.model(
+    "Expense",
+    expenseSchema
+  );
 
 export default Expense;

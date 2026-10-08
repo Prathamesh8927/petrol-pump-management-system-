@@ -2,25 +2,25 @@ import mongoose from "mongoose";
 
 const auditLogSchema = new mongoose.Schema(
   {
-    // --------------------------------------------------
+    // ==================================================
     // PUMP ISOLATION
-    // --------------------------------------------------
+    // ==================================================
+
     pumpId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Pump",
       required: true,
-      index: true,
       immutable: true,
     },
 
-    // --------------------------------------------------
+    // ==================================================
     // USER
-    // --------------------------------------------------
+    // ==================================================
+
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,
-      index: true,
       immutable: true,
     },
 
@@ -31,43 +31,56 @@ const auditLogSchema = new mongoose.Schema(
       maxlength: 100,
     },
 
-    // --------------------------------------------------
+    // ==================================================
     // ACTION
-    // --------------------------------------------------
+    // ==================================================
+
     action: {
       type: String,
       required: true,
       trim: true,
       lowercase: true,
       maxlength: 100,
-      index: true,
+      immutable: true,
     },
 
-    // --------------------------------------------------
+    // ==================================================
     // MODULE
-    // --------------------------------------------------
+    // ==================================================
+
     module: {
       type: String,
       required: true,
       trim: true,
       lowercase: true,
       maxlength: 100,
-      index: true,
+      immutable: true,
     },
 
-    // --------------------------------------------------
+    // ==================================================
     // RECORD
-    // --------------------------------------------------
+    // ==================================================
+
+    /*
+     * ID of the affected document.
+     *
+     * Examples:
+     *
+     * Sale._id
+     * Expense._id
+     * Employee._id
+     * DailyClosing._id
+     */
     recordId: {
       type: mongoose.Schema.Types.ObjectId,
       default: null,
       immutable: true,
-      index: true,
     },
 
-    // --------------------------------------------------
+    // ==================================================
     // DESCRIPTION
-    // --------------------------------------------------
+    // ==================================================
+
     description: {
       type: String,
       default: "",
@@ -75,16 +88,22 @@ const auditLogSchema = new mongoose.Schema(
       maxlength: 2000,
     },
 
-    // --------------------------------------------------
+    // ==================================================
     // DATA SNAPSHOTS
-    // --------------------------------------------------
+    // ==================================================
+
     /*
-     * Stored as Mixed because different modules
-     * can have different document structures.
+     * Mixed is intentional because different modules
+     * have different document structures.
      *
-     * IMPORTANT:
-     * Passwords, JWTs, tokens and other secrets
-     * must never be stored here.
+     * NEVER store:
+     *
+     * - passwords
+     * - JWT tokens
+     * - refresh tokens
+     * - API secrets
+     * - payment secrets
+     * - bank credentials
      */
     oldData: {
       type: mongoose.Schema.Types.Mixed,
@@ -96,9 +115,10 @@ const auditLogSchema = new mongoose.Schema(
       default: null,
     },
 
-    // --------------------------------------------------
+    // ==================================================
     // REQUEST INFORMATION
-    // --------------------------------------------------
+    // ==================================================
+
     ipAddress: {
       type: String,
       default: "",
@@ -117,48 +137,98 @@ const auditLogSchema = new mongoose.Schema(
 ===================================================== */
 
 /*
- * Main audit history query.
+ * 1. MAIN AUDIT HISTORY
+ *
+ * Most common query:
+ *
+ * AuditLog.find({
+ *   pumpId
+ * }).sort({
+ *   createdAt: -1
+ * })
  */
-auditLogSchema.index({
-  pumpId: 1,
-  createdAt: -1,
-});
+auditLogSchema.index(
+  {
+    pumpId: 1,
+    createdAt: -1,
+  },
+  {
+    name: "idx_audit_pump_created",
+  }
+);
 
 /*
- * User-specific audit history.
+ * 2. USER AUDIT HISTORY
+ *
+ * Example:
+ *
+ * "Show everything performed by this employee."
  */
-auditLogSchema.index({
-  pumpId: 1,
-  userId: 1,
-  createdAt: -1,
-});
+auditLogSchema.index(
+  {
+    pumpId: 1,
+    userId: 1,
+    createdAt: -1,
+  },
+  {
+    name: "idx_audit_pump_user_created",
+  }
+);
 
 /*
- * Module-specific audit history.
+ * 3. MODULE AUDIT HISTORY
+ *
+ * Example:
+ *
+ * "Show all changes made in the Sales module."
  */
-auditLogSchema.index({
-  pumpId: 1,
-  module: 1,
-  createdAt: -1,
-});
+auditLogSchema.index(
+  {
+    pumpId: 1,
+    module: 1,
+    createdAt: -1,
+  },
+  {
+    name: "idx_audit_pump_module_created",
+  }
+);
 
 /*
- * Action-specific filtering.
+ * 4. ACTION AUDIT HISTORY
+ *
+ * Example:
+ *
+ * "Show all delete actions."
  */
-auditLogSchema.index({
-  pumpId: 1,
-  action: 1,
-  createdAt: -1,
-});
+auditLogSchema.index(
+  {
+    pumpId: 1,
+    action: 1,
+    createdAt: -1,
+  },
+  {
+    name: "idx_audit_pump_action_created",
+  }
+);
 
 /*
- * Record-specific audit history.
+ * 5. RECORD HISTORY
+ *
+ * Example:
+ *
+ * "Show the complete audit history of this
+ * particular Sale / Expense / Employee / Closing."
  */
-auditLogSchema.index({
-  pumpId: 1,
-  recordId: 1,
-  createdAt: -1,
-});
+auditLogSchema.index(
+  {
+    pumpId: 1,
+    recordId: 1,
+    createdAt: -1,
+  },
+  {
+    name: "idx_audit_pump_record_created",
+  }
+);
 
 /* =====================================================
    MODEL

@@ -1,4 +1,3 @@
-
 import axios from "axios";
 
 /* =====================================================
@@ -18,22 +17,22 @@ if (!configuredApiUrl) {
  * Remove trailing slashes.
  *
  * Supported:
- *   VITE_API_URL=http://localhost:8080
- *   VITE_API_URL=http://localhost:8080/
- *   VITE_API_URL=https://your-backend.onrender.com
- *   VITE_API_URL=https://your-backend.onrender.com/api
+ *
+ * VITE_API_URL=http://localhost:8080
+ * VITE_API_URL=http://localhost:8080/
+ * VITE_API_URL=https://your-backend.onrender.com
+ * VITE_API_URL=https://your-backend.onrender.com/api
  */
 const normalizedApiUrl =
   configuredApiUrl.replace(/\/+$/, "");
 
 /*
- * Automatically add /api when it is not
- * already included in VITE_API_URL.
+ * Automatically add /api when it is
+ * not already included.
  */
-const BASE_URL =
-  /\/api$/i.test(normalizedApiUrl)
-    ? normalizedApiUrl
-    : `${normalizedApiUrl}/api`;
+const BASE_URL = /\/api$/i.test(normalizedApiUrl)
+  ? normalizedApiUrl
+  : `${normalizedApiUrl}/api`;
 
 /* =====================================================
    AXIOS INSTANCE
@@ -50,18 +49,14 @@ const api = axios.create({
 });
 
 /* =====================================================
-   GET AUTH TOKEN
+   AUTH TOKEN
 ===================================================== */
 
 const getAuthToken = () => {
   try {
-    const token =
-      sessionStorage.getItem("token");
+    const token = sessionStorage.getItem("token");
 
-    if (
-      token &&
-      token.trim()
-    ) {
+    if (typeof token === "string" && token.trim()) {
       return token.trim();
     }
 
@@ -82,46 +77,34 @@ const getAuthToken = () => {
 
 api.interceptors.request.use(
   (config) => {
-    const token =
-      getAuthToken();
+    const token = getAuthToken();
 
+    /*
+     * AxiosHeaders is normally available here,
+     * but this also keeps compatibility with plain
+     * header objects.
+     */
     if (!config.headers) {
       config.headers = {};
     }
 
-    /*
-     * Attach JWT automatically.
-     */
     if (token) {
-      config.headers.Authorization =
-        `Bearer ${token}`;
+      config.headers.Authorization = `Bearer ${token}`;
     }
 
-    /*
-     * Development logging.
-     */
+    /* -----------------------------------------------
+       Development logging only
+    ------------------------------------------------ */
+
     if (import.meta.env.DEV) {
-      console.log(
-        "[API REQUEST]",
-        {
-          method:
-            config.method?.toUpperCase(),
-
-          url:
-            `${config.baseURL || ""}${
-              config.url || ""
-            }`,
-
-          hasToken:
-            Boolean(token),
-
-          hasAuthorizationHeader:
-            Boolean(
-              config.headers
-                .Authorization
-            ),
-        }
-      );
+      console.log("[API REQUEST]", {
+        method: config.method?.toUpperCase(),
+        url: `${config.baseURL || ""}${config.url || ""}`,
+        hasToken: Boolean(token),
+        hasAuthorizationHeader: Boolean(
+          config.headers?.Authorization
+        ),
+      });
     }
 
     return config;
@@ -154,42 +137,41 @@ api.interceptors.response.use(
   },
 
   (error) => {
-    const status =
-      error.response?.status;
+    const status = error.response?.status;
 
-    console.error(
-      "[API ERROR]",
-      {
+    const errorMessage =
+      error.response?.data?.message ||
+      error.response?.data?.error ||
+      error.message ||
+      "Something went wrong.";
+
+    if (import.meta.env.DEV) {
+      console.error("[API ERROR]", {
         status,
-
-        url:
-          error.config?.url,
-
+        url: error.config?.url,
         method:
           error.config?.method?.toUpperCase(),
-
-        message:
-          error.response?.data
-            ?.message ||
-          error.message,
-
-        code:
-          error.response?.data
-            ?.code,
-      }
-    );
+        message: errorMessage,
+        code: error.response?.data?.code,
+      });
+    }
 
     /*
      * Clear invalid authentication.
+     *
+     * Do not redirect here because routing belongs
+     * to AuthContext / ProtectedRoute.
      */
     if (status === 401) {
-      sessionStorage.removeItem(
-        "token"
-      );
-
-      sessionStorage.removeItem(
-        "user"
-      );
+      try {
+        sessionStorage.removeItem("token");
+        sessionStorage.removeItem("user");
+      } catch (storageError) {
+        console.error(
+          "Unable to clear authentication:",
+          storageError
+        );
+      }
     }
 
     return Promise.reject(error);

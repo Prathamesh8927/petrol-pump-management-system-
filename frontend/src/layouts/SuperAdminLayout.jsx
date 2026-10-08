@@ -25,14 +25,21 @@ import {
 import api from "../services/api";
 
 const SuperAdminLayout = () => {
-  const navigate =
-    useNavigate();
+  const navigate = useNavigate();
 
-  const [pendingCount, setPendingCount] =
-    useState(0);
+  const [
+    pendingCount,
+    setPendingCount,
+  ] = useState(0);
 
-  const [loadingCount, setLoadingCount] =
-    useState(false);
+  const [
+    loadingCount,
+    setLoadingCount,
+  ] = useState(false);
+
+  /* =====================================
+     LOAD PENDING REQUEST COUNT
+  ===================================== */
 
   const loadPendingCount =
     useCallback(async () => {
@@ -44,32 +51,45 @@ const SuperAdminLayout = () => {
             "/superadmin/requests/pending-count"
           );
 
+        const count = Number(
+          response.data?.count || 0
+        );
+
         setPendingCount(
-          Number(
-            response.data?.count || 0
-          )
+          Number.isFinite(count)
+            ? Math.max(0, count)
+            : 0
         );
       } catch (error) {
-        console.error(
-          "PENDING COUNT ERROR:",
-          error
-        );
+        if (import.meta.env.DEV) {
+          console.error(
+            "PENDING COUNT ERROR:",
+            error.response?.data
+              ?.message ||
+              error.message ||
+              error
+          );
+        }
       } finally {
         setLoadingCount(false);
       }
     }, []);
 
+  /* =====================================
+     INITIAL LOAD + AUTO REFRESH
+  ===================================== */
+
   useEffect(() => {
     loadPendingCount();
 
-    const interval =
-      setInterval(
-        loadPendingCount,
-        30000
-      );
+    const interval = setInterval(
+      loadPendingCount,
+      30000
+    );
 
-    return () =>
+    return () => {
       clearInterval(interval);
+    };
   }, [loadPendingCount]);
 
   /* =====================================
@@ -77,18 +97,58 @@ const SuperAdminLayout = () => {
   ===================================== */
 
   const logout = () => {
-    localStorage.removeItem(
-      "token"
-    );
+    try {
+      /*
+       * AuthContext uses sessionStorage.
+       * Clear both storage locations so any
+       * legacy localStorage authentication
+       * cannot remain.
+       */
+      sessionStorage.removeItem(
+        "token"
+      );
 
-    localStorage.removeItem(
-      "user"
-    );
+      sessionStorage.removeItem(
+        "user"
+      );
+
+      sessionStorage.removeItem(
+        "passwordResetRequestId"
+      );
+
+      sessionStorage.removeItem(
+        "shivshambho_active_payment"
+      );
+
+      sessionStorage.removeItem(
+        "activePayment"
+      );
+
+      /*
+       * Clear legacy localStorage values too.
+       */
+      localStorage.removeItem(
+        "token"
+      );
+
+      localStorage.removeItem(
+        "user"
+      );
+    } catch (error) {
+      console.error(
+        "SUPER ADMIN LOGOUT ERROR:",
+        error
+      );
+    }
 
     navigate("/login", {
       replace: true,
     });
 
+    /*
+     * Force a clean application state.
+     * This also resets AuthContext immediately.
+     */
     window.location.reload();
   };
 
@@ -148,7 +208,10 @@ const SuperAdminLayout = () => {
             NAVIGATION
         ================================= */}
 
-        <nav className="super-admin-nav">
+        <nav
+          className="super-admin-nav"
+          aria-label="Super admin navigation"
+        >
 
           {/* DASHBOARD */}
 
@@ -160,7 +223,9 @@ const SuperAdminLayout = () => {
               size={19}
             />
 
-            Dashboard
+            <span>
+              Dashboard
+            </span>
           </NavLink>
 
           {/* REGISTRATION REQUESTS */}
@@ -177,7 +242,10 @@ const SuperAdminLayout = () => {
             </span>
 
             {pendingCount > 0 && (
-              <span className="super-admin-request-badge">
+              <span
+                className="super-admin-request-badge"
+                aria-label={`${pendingCount} pending requests`}
+              >
                 {pendingCount > 99
                   ? "99+"
                   : pendingCount}
@@ -208,7 +276,9 @@ const SuperAdminLayout = () => {
               size={19}
             />
 
-            Clients
+            <span>
+              Clients
+            </span>
           </NavLink>
 
           {/* USERS */}
@@ -220,7 +290,9 @@ const SuperAdminLayout = () => {
               size={19}
             />
 
-            Users
+            <span>
+              Users
+            </span>
           </NavLink>
 
         </nav>
@@ -238,7 +310,9 @@ const SuperAdminLayout = () => {
             size={18}
           />
 
-          Logout
+          <span>
+            Logout
+          </span>
         </button>
 
       </aside>
@@ -273,6 +347,7 @@ const SuperAdminLayout = () => {
               loadingCount
             }
             title="Refresh requests"
+            aria-label="Refresh pending requests"
           >
             <RefreshCw
               size={17}
@@ -289,9 +364,7 @@ const SuperAdminLayout = () => {
         {/* PAGE CONTENT */}
 
         <div className="super-admin-content">
-
           <Outlet />
-
         </div>
 
       </main>

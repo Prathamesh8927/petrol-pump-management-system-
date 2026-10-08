@@ -2,87 +2,69 @@ import mongoose from "mongoose";
 
 const ledgerEntrySchema = new mongoose.Schema(
   {
-    // --------------------------------------------------
+    // ==================================================
     // PUMP ISOLATION
-    // --------------------------------------------------
+    // ==================================================
     pumpId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Pump",
       required: true,
-      index: true,
       immutable: true,
     },
 
-    // --------------------------------------------------
+    // ==================================================
     // CUSTOMER
-    // --------------------------------------------------
+    // ==================================================
     customerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "LedgerCustomer",
       required: true,
-      index: true,
       immutable: true,
     },
 
-    // --------------------------------------------------
+    // ==================================================
     // ENTRY TYPE
-    // --------------------------------------------------
+    // ==================================================
     entryType: {
       type: String,
-
       enum: [
         "purchase",
         "payment",
         "advance",
       ],
-
       required: true,
       lowercase: true,
       trim: true,
-      index: true,
       immutable: true,
     },
 
-    // --------------------------------------------------
+    // ==================================================
     // FUEL TYPE
-    // --------------------------------------------------
+    // ==================================================
     fuelType: {
       type: String,
-      enum: ["petrol", "diesel", null],
+      enum: [
+        "petrol",
+        "diesel",
+        null,
+      ],
       default: null,
       lowercase: true,
       trim: true,
     },
 
-    // --------------------------------------------------
-    // PURCHASE FUEL RATE
-    // --------------------------------------------------
-    /*
-     * Selling rate per litre at the time
-     * of the customer purchase.
-     *
-     * Used by ledger/PDF to calculate:
-     *
-     * Quantity = Purchase Amount / Rate
-     *
-     * Example:
-     *
-     * Amount = ₹5000
-     * Rate   = ₹103.50
-     *
-     * Quantity = 5000 / 103.50
-     *
-     * Default is 0 for old/legacy entries.
-     */
+    // ==================================================
+    // PURCHASE RATE
+    // ==================================================
     rate: {
       type: Number,
       default: 0,
       min: 0,
     },
 
-    // --------------------------------------------------
-    // PURCHASE AMOUNTS
-    // --------------------------------------------------
+    // ==================================================
+    // PURCHASE AMOUNT
+    // ==================================================
     totalAmount: {
       type: Number,
       default: 0,
@@ -101,23 +83,32 @@ const ledgerEntrySchema = new mongoose.Schema(
       min: 0,
     },
 
-    // --------------------------------------------------
+    // ==================================================
     // PAYMENT ENTRY
-    // --------------------------------------------------
+    // ==================================================
     paymentAmount: {
       type: Number,
       default: 0,
       min: 0,
     },
 
-    // --------------------------------------------------
+    // ==================================================
     // ADVANCE PAYMENT
-    // --------------------------------------------------
+    // ==================================================
     /*
-     * Amount received as advance.
+     * Example:
      *
-     * Used mainly when:
-     * entryType === "advance"
+     * Customer pays ₹30,000 advance.
+     *
+     * advanceAmount = 30000
+     *
+     * Later:
+     * ₹2,000 purchase
+     * ₹3,000 purchase
+     * ₹5,000 purchase
+     *
+     * advanceAppliedAmount tracks
+     * the amount consumed by purchases.
      */
     advanceAmount: {
       type: Number,
@@ -125,49 +116,31 @@ const ledgerEntrySchema = new mongoose.Schema(
       min: 0,
     },
 
-    /*
-     * Amount of customer's existing advance
-     * consumed by a purchase.
-     */
     advanceAppliedAmount: {
       type: Number,
       default: 0,
       min: 0,
     },
 
-    /*
-     * Remaining advance balance immediately
-     * after this transaction.
-     */
     advanceBalance: {
       type: Number,
       default: 0,
       min: 0,
     },
 
-    // --------------------------------------------------
-    // ENTRY DATE
-    // --------------------------------------------------
-    /*
-     * Business date.
-     *
-     * Kept as String for compatibility with
-     * the existing frontend/controller.
-     *
-     * Format:
-     * YYYY-MM-DD
-     */
+    // ==================================================
+    // BUSINESS DATE
+    // ==================================================
     entryDate: {
       type: String,
       required: true,
       trim: true,
       match: /^\d{4}-\d{2}-\d{2}$/,
-      index: true,
     },
 
-    // --------------------------------------------------
+    // ==================================================
     // NOTE
-    // --------------------------------------------------
+    // ==================================================
     note: {
       type: String,
       default: "",
@@ -175,14 +148,13 @@ const ledgerEntrySchema = new mongoose.Schema(
       maxlength: 1000,
     },
 
-    // --------------------------------------------------
+    // ==================================================
     // CREATED BY
-    // --------------------------------------------------
+    // ==================================================
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,
-      index: true,
     },
   },
   {
@@ -191,58 +163,147 @@ const ledgerEntrySchema = new mongoose.Schema(
   }
 );
 
-// ======================================================
-// INDEXES
-// ======================================================
+/* =====================================================
+   INDEXES
+===================================================== */
 
 /*
- * Customer ledger history.
+ * 1. CUSTOMER LEDGER HISTORY
+ *
+ * Main index for:
+ *
+ * - customer ledger page
+ * - customer transaction history
+ * - chronological transactions
+ * - date range queries
+ *
+ * Example:
+ *
+ * LedgerEntry.find({
+ *   pumpId,
+ *   customerId
+ * }).sort({
+ *   entryDate: -1,
+ *   createdAt: -1
+ * })
  */
-ledgerEntrySchema.index({
-  pumpId: 1,
-  customerId: 1,
-  entryDate: -1,
-});
+ledgerEntrySchema.index(
+  {
+    pumpId: 1,
+    customerId: 1,
+    entryDate: -1,
+    createdAt: -1,
+  },
+  {
+    name: "idx_ledger_customer_date",
+  }
+);
 
 /*
- * Customer purchase/payment/advance filtering.
+ * 2. CUSTOMER + ENTRY TYPE
+ *
+ * Supports:
+ *
+ * - purchase history
+ * - payment history
+ * - advance history
+ *
+ * Example:
+ *
+ * {
+ *   pumpId,
+ *   customerId,
+ *   entryType: "payment"
+ * }
  */
-ledgerEntrySchema.index({
-  pumpId: 1,
-  customerId: 1,
-  entryType: 1,
-  entryDate: -1,
-});
+ledgerEntrySchema.index(
+  {
+    pumpId: 1,
+    customerId: 1,
+    entryType: 1,
+    entryDate: -1,
+  },
+  {
+    name: "idx_ledger_customer_type_date",
+  }
+);
 
 /*
- * Pump-wide ledger reports.
+ * 3. PUMP + DATE
+ *
+ * Main reporting index.
+ *
+ * Supports:
+ *
+ * - daily report
+ * - weekly report
+ * - monthly report
+ * - custom report
+ *
+ * Example:
+ *
+ * {
+ *   pumpId,
+ *   entryDate: {
+ *     $gte: "2026-10-01",
+ *     $lte: "2026-10-08"
+ *   }
+ * }
  */
-ledgerEntrySchema.index({
-  pumpId: 1,
-  entryDate: -1,
-});
+ledgerEntrySchema.index(
+  {
+    pumpId: 1,
+    entryDate: -1,
+    createdAt: -1,
+  },
+  {
+    name: "idx_ledger_pump_date",
+  }
+);
 
 /*
- * Audit queries by staff/user.
+ * 4. PUMP + ENTRY TYPE + DATE
+ *
+ * Supports reports such as:
+ *
+ * - all purchases
+ * - all payments
+ * - all advances
  */
-ledgerEntrySchema.index({
-  pumpId: 1,
-  createdBy: 1,
-  createdAt: -1,
-});
+ledgerEntrySchema.index(
+  {
+    pumpId: 1,
+    entryType: 1,
+    entryDate: -1,
+  },
+  {
+    name: "idx_ledger_type_date",
+  }
+);
 
 /*
- * Useful for payment/purchase/advance reporting.
+ * 5. CREATED BY
+ *
+ * Useful for:
+ *
+ * - audit/history
+ * - employee/user activity
+ * - transaction creator filtering
  */
-ledgerEntrySchema.index({
-  pumpId: 1,
-  entryType: 1,
-  entryDate: -1,
-});
+ledgerEntrySchema.index(
+  {
+    pumpId: 1,
+    createdBy: 1,
+    createdAt: -1,
+  },
+  {
+    name: "idx_ledger_creator_created",
+  }
+);
 
-// ======================================================
-// MODEL
-// ======================================================
+/* =====================================================
+   MODEL
+===================================================== */
 
 const LedgerEntry =
   mongoose.models.LedgerEntry ||

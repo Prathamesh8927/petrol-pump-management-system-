@@ -7,43 +7,46 @@ import {
 } from "../controllers/authController.js";
 
 import authMiddleware from "../middleware/authMiddleware.js";
-
 import loginRateLimiter from "../middleware/loginRateLimiter.js";
 
 const router = express.Router();
 
-/* =====================================================
-   LOGIN
-===================================================== */
-
+/*
+|--------------------------------------------------------------------------
+| POST /login
+|--------------------------------------------------------------------------
+| Public login endpoint.
+| Rate limiter protects against brute-force attempts.
+*/
 router.post(
   "/login",
   loginRateLimiter,
   login
 );
 
-/* =====================================================
-   PUBLIC REGISTRATION
-===================================================== */
-
+/*
+|--------------------------------------------------------------------------
+| POST /register
+|--------------------------------------------------------------------------
+| Public registration endpoint.
+| The same rate limiter prevents registration abuse.
+*/
 router.post(
   "/register",
   loginRateLimiter,
   register
 );
 
-/* =====================================================
-   CURRENT USER
-===================================================== */
-
+/*
+|--------------------------------------------------------------------------
+| GET /me
+|--------------------------------------------------------------------------
+| Returns the currently authenticated user.
+*/
 router.get(
   "/me",
   authMiddleware,
   getMe
 );
-
-/* =====================================================
-   EXPORT
-===================================================== */
 
 export default router;

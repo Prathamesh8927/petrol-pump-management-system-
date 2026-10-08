@@ -1,9 +1,25 @@
 import mongoose from "mongoose";
 
 import Sale from "../models/Sale.js";
+import NozzleReading from "../models/NozzleReading.js";
 import FuelStock from "../models/FuelStock.js";
 import LedgerCustomer from "../models/LedgerCustomer.js";
 import Expense from "../models/Expense.js";
+
+/* =====================================================
+   CONSTANTS
+===================================================== */
+
+const PAYMENT_METHODS = [
+  "cash",
+  "upi",
+  "card",
+  "credit",
+];
+
+const BUSINESS_TIMEZONE = "Asia/Kolkata";
+
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 /* =====================================================
    HELPERS
@@ -14,10 +30,21 @@ const getPumpId = (req) =>
   req.user?.pumpId ||
   null;
 
+/* =====================================================
+   TODAY DATE
+===================================================== */
+
 const todayString = () =>
-  new Date().toLocaleDateString(
-    "en-CA"
-  );
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: BUSINESS_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+/* =====================================================
+   NUMBER HELPERS
+===================================================== */
 
 const toNumber = (value) => {
   const number = Number(value);
@@ -32,373 +59,534 @@ const roundMoney = (value) =>
     toNumber(value).toFixed(2)
   );
 
-const normalizeObjectId = (
-  value
-) => {
+/* =====================================================
+   OBJECT ID
+===================================================== */
+
+const normalizeObjectId = (value) => {
   if (!value) {
     return null;
   }
 
   if (
-    value instanceof
-    mongoose.Types.ObjectId
+    value instanceof mongoose.Types.ObjectId
   ) {
     return value;
   }
 
+  const stringValue = String(value);
+
   if (
-    mongoose.Types.ObjectId.isValid(
-      String(value)
+    !mongoose.Types.ObjectId.isValid(
+      stringValue
     )
   ) {
-    return new mongoose.Types.ObjectId(
-      String(value)
-    );
+    return null;
   }
 
-  return null;
+  return new mongoose.Types.ObjectId(
+    stringValue
+  );
 };
 
-const isValidDateString = (
-  value
-) =>
-  /^\d{4}-\d{2}-\d{2}$/.test(
-    String(value)
+/* =====================================================
+   DATE VALIDATION
+===================================================== */
+
+const isValidDateString = (value) =>
+  DATE_REGEX.test(
+    String(value || "")
   );
 
 /* =====================================================
-   LEDGER COLLECTION CACHE
-
-   Avoid listCollections() on every
-   dashboard request.
+   DATE RANGE
 ===================================================== */
 
-let cachedLedgerCollectionName =
-  null;
+const getDateRange = (date) => ({
+  startDate: new Date(
+    `${date}T00:00:00.000Z`
+  ),
 
-let ledgerCollectionChecked =
-  false;
-
-/*
-  Useful when the application starts before
-  the ledger collection exists.
-
-  If needed, the cache can be reset after
-  collection creation.
-*/
-const resetLedgerCollectionCache =
-  () => {
-    cachedLedgerCollectionName =
-      null;
-
-    ledgerCollectionChecked =
-      false;
-  };
+  endDate: new Date(
+    `${date}T23:59:59.999Z`
+  ),
+});
 
 /* =====================================================
-   FIND LEDGER ENTRY COLLECTION
+   FUEL NORMALIZATION
 ===================================================== */
 
-const getLedgerEntryCollection =
-  async () => {
-    const db =
-      mongoose.connection.db;
+const normalizeFuelType = (value) => {
+  const fuel = String(
+    value || ""
+  )
+    .trim()
+    .toLowerCase();
 
-    if (!db) {
-      return null;
-    }
+  if (
+    fuel === "diesel" ||
+    fuel === "disel"
+  ) {
+    return "diesel";
+  }
 
-    if (
-      ledgerCollectionChecked
-    ) {
-      return cachedLedgerCollectionName
-        ? db.collection(
-            cachedLedgerCollectionName
-          )
-        : null;
-    }
+  if (fuel === "petrol") {
+    return "petrol";
+  }
 
-    try {
-      const collections =
-        await db
-          .listCollections(
-            {},
-            {
-              nameOnly: true,
-            }
-          )
-          .toArray();
+  return fuel;
+};
 
-      const names =
-        collections.map(
-          (item) =>
-            item.name
+/* =====================================================
+   PAYMENT NORMALIZATION
+===================================================== */
+
+const normalizePaymentMethod = (value) =>
+  String(
+    value || ""
+  )
+    .trim()
+    .toLowerCase();
+
+/* =====================================================
+   PAYMENT BREAKDOWN
+===================================================== */
+
+/*
+ * Supports:
+ *
+ * 1. New split-payment records
+ *    payments: [
+ *      { method: "cash", amount: 1000 },
+ *      { method: "upi", amount: 500 }
+ *    ]
+ *
+ * 2. Old single-payment records
+ *    paymentMethod: "cash"
+ */
+const getPaymentBreakdown = (
+  transaction
+) => {
+  const breakdown = {};
+
+  /* =====================================
+     SPLIT PAYMENTS
+  ===================================== */
+
+  if (
+    Array.isArray(
+      transaction?.payments
+    ) &&
+    transaction.payments.length > 0
+  ) {
+    for (const payment of transaction.payments) {
+      const method =
+        normalizePaymentMethod(
+          payment?.method
         );
 
-      const preferredNames = [
-        "ledgerentries",
-        "ledger_entries",
-        "ledgertransactions",
-        "ledger_transactions",
-      ];
+      const amount = Number(
+        payment?.amount || 0
+      );
 
-      const exactName =
-        preferredNames.find(
-          (name) =>
-            names.includes(name)
-        );
-
-      if (exactName) {
-        cachedLedgerCollectionName =
-          exactName;
-
-        ledgerCollectionChecked =
-          true;
-
-        return db.collection(
-          exactName
-        );
+      if (
+        PAYMENT_METHODS.includes(
+          method
+        ) &&
+        Number.isFinite(amount) &&
+        amount > 0
+      ) {
+        breakdown[method] =
+          (breakdown[method] || 0) +
+          amount;
       }
+    }
 
-      const fallbackName =
-        names.find(
-          (name) => {
+    /*
+     * Only use split payments when at least
+     * one valid payment exists.
+     */
+    if (
+      Object.keys(breakdown).length > 0
+    ) {
+      return breakdown;
+    }
+  }
+
+  /* =====================================
+     OLD SINGLE PAYMENT
+  ===================================== */
+
+  const method =
+    normalizePaymentMethod(
+      transaction?.paymentMethod
+    );
+
+  const total = Number(
+    transaction?.totalAmount || 0
+  );
+
+  if (
+    PAYMENT_METHODS.includes(method) &&
+    Number.isFinite(total) &&
+    total > 0
+  ) {
+    breakdown[method] = total;
+  }
+
+  return breakdown;
+};
+
+/* =====================================================
+   LEDGER COLLECTION CACHE
+===================================================== */
+
+/*
+ * The application historically supported multiple
+ * possible ledger collection names.
+ *
+ * Collection discovery is therefore kept for backward
+ * compatibility, but it happens only once per process.
+ */
+
+let cachedLedgerCollectionName = null;
+
+let ledgerCollectionChecked = false;
+
+let ledgerCollectionPromise = null;
+
+/* =====================================================
+   RESET LEDGER CACHE
+===================================================== */
+
+const resetLedgerCollectionCache = () => {
+  cachedLedgerCollectionName = null;
+
+  ledgerCollectionChecked = false;
+
+  ledgerCollectionPromise = null;
+};
+
+/* =====================================================
+   FIND LEDGER COLLECTION
+===================================================== */
+
+const getLedgerEntryCollection = async () => {
+  const db = mongoose.connection.db;
+
+  if (!db) {
+    return null;
+  }
+
+  /* =====================================
+     CACHED RESULT
+  ===================================== */
+
+  if (ledgerCollectionChecked) {
+    return cachedLedgerCollectionName
+      ? db.collection(
+          cachedLedgerCollectionName
+        )
+      : null;
+  }
+
+  /*
+   * Prevent multiple simultaneous dashboard
+   * requests from calling listCollections()
+   * at the same time.
+   */
+  if (ledgerCollectionPromise) {
+    return ledgerCollectionPromise;
+  }
+
+  ledgerCollectionPromise =
+    (async () => {
+      try {
+        const collections =
+          await db
+            .listCollections(
+              {},
+              {
+                nameOnly: true,
+              }
+            )
+            .toArray();
+
+        const names =
+          collections.map(
+            (item) => item.name
+          );
+
+        /* ===============================
+           PREFERRED COLLECTION NAMES
+        =============================== */
+
+        const preferredNames = [
+          "ledgerentries",
+          "ledger_entries",
+          "ledgertransactions",
+          "ledger_transactions",
+        ];
+
+        const exactName =
+          preferredNames.find(
+            (name) =>
+              names.includes(name)
+          );
+
+        if (exactName) {
+          cachedLedgerCollectionName =
+            exactName;
+
+          ledgerCollectionChecked =
+            true;
+
+          return db.collection(
+            exactName
+          );
+        }
+
+        /* ===============================
+           FALLBACK DISCOVERY
+        =============================== */
+
+        const fallbackName =
+          names.find((name) => {
             const lower =
-              String(
-                name
-              ).toLowerCase();
+              String(name).toLowerCase();
 
             return (
-              lower.includes(
-                "ledger"
-              ) &&
+              lower.includes("ledger") &&
               (
-                lower.includes(
-                  "entry"
-                ) ||
-                lower.includes(
-                  "transaction"
-                )
+                lower.includes("entry") ||
+                lower.includes("transaction")
               )
             );
-          }
+          });
+
+        ledgerCollectionChecked = true;
+
+        if (!fallbackName) {
+          cachedLedgerCollectionName =
+            null;
+
+          return null;
+        }
+
+        cachedLedgerCollectionName =
+          fallbackName;
+
+        return db.collection(
+          fallbackName
+        );
+      } catch (error) {
+        console.error(
+          "LEDGER COLLECTION DISCOVERY ERROR:",
+          error.message
         );
 
-      ledgerCollectionChecked =
-        true;
-
-      if (!fallbackName) {
-        cachedLedgerCollectionName =
-          null;
+        resetLedgerCollectionCache();
 
         return null;
+      } finally {
+        /*
+         * Only keep the result through the
+         * cached collection-name mechanism.
+         */
+        ledgerCollectionPromise = null;
       }
+    })();
 
-      cachedLedgerCollectionName =
-        fallbackName;
-
-      return db.collection(
-        fallbackName
-      );
-    } catch (error) {
-      console.error(
-        "LEDGER COLLECTION DISCOVERY ERROR:",
-        error
-      );
-
-      /*
-        Do not permanently cache a discovery
-        failure. A later request can retry.
-      */
-      resetLedgerCollectionCache();
-
-      return null;
-    }
-  };
+  return ledgerCollectionPromise;
+};
 
 /* =====================================================
    GET TODAY'S LEDGER CREDIT
-
-   Credit =
-   pendingAmount
-
-   OR
-
-   totalAmount - paidAmount
-
-   SECURITY:
-   pumpId + customerId are both required.
 ===================================================== */
 
-const getTodayLedgerCredit =
-  async ({
-    pumpId,
-    date,
-    customers,
-  }) => {
-    try {
-      if (
-        !customers ||
-        customers.length === 0
-      ) {
-        return 0;
-      }
+/*
+ * Previous implementation:
+ *
+ * - loaded all matching ledger entries
+ * - transferred them to Node.js
+ * - calculated pending credit in JavaScript
+ *
+ * Optimized implementation:
+ *
+ * - MongoDB performs the filtering
+ * - MongoDB performs the SUM
+ * - Node receives only one small result
+ *
+ * This significantly reduces memory usage and
+ * response processing for pumps with large ledgers.
+ */
+const getTodayLedgerCredit = async ({
+  pumpId,
+  date,
+}) => {
+  try {
+    const normalizedPumpId =
+      normalizeObjectId(pumpId);
 
-      const normalizedPumpId =
-        normalizeObjectId(
-          pumpId
-        );
-
-      if (!normalizedPumpId) {
-        console.error(
-          "DASHBOARD LEDGER CREDIT: Invalid pumpId"
-        );
-
-        return 0;
-      }
-
-      const collection =
-        await getLedgerEntryCollection();
-
-      if (!collection) {
-        return 0;
-      }
-
-      const customerIds =
-        customers
-          .map(
-            (customer) =>
-              normalizeObjectId(
-                customer._id
-              )
-          )
-          .filter(Boolean);
-
-      if (
-        customerIds.length === 0
-      ) {
-        return 0;
-      }
-
-      const startDate =
-        new Date(
-          `${date}T00:00:00.000Z`
-        );
-
-      const endDate =
-        new Date(
-          `${date}T23:59:59.999Z`
-        );
-
-      /*
-        IMPORTANT:
-
-        Never allow a customer from another
-        pump to contribute to this dashboard.
-
-        Both conditions are mandatory:
-
-        pumpId = current pump
-        customerId = current pump's customer
-      */
-
-      const entries =
-        await collection
-          .find({
-            pumpId:
-              normalizedPumpId,
-
-            customerId: {
-              $in: customerIds,
-            },
-
-            entryType:
-              "purchase",
-
-            $or: [
-              {
-                entryDate:
-                  date,
-              },
-
-              {
-                date:
-                  date,
-              },
-
-              {
-                createdAt: {
-                  $gte:
-                    startDate,
-
-                  $lte:
-                    endDate,
-                },
-              },
-            ],
-          })
-          .toArray();
-
-      const credit =
-        entries.reduce(
-          (
-            total,
-            entry
-          ) => {
-            if (
-              entry.pendingAmount !==
-                undefined &&
-              entry.pendingAmount !==
-                null
-            ) {
-              return (
-                total +
-                Math.max(
-                  toNumber(
-                    entry.pendingAmount
-                  ),
-                  0
-                )
-              );
-            }
-
-            const totalAmount =
-              toNumber(
-                entry.totalAmount
-              );
-
-            const paidAmount =
-              toNumber(
-                entry.paidAmount
-              );
-
-            return (
-              total +
-              Math.max(
-                totalAmount -
-                  paidAmount,
-                0
-              )
-            );
-          },
-          0
-        );
-
-      return credit;
-    } catch (error) {
-      console.error(
-        "DASHBOARD LEDGER CREDIT ERROR:",
-        error
-      );
-
-      /*
-        Dashboard should still load even if
-        an optional legacy ledger collection
-        cannot be read.
-      */
+    if (!normalizedPumpId) {
       return 0;
     }
-  };
+
+    const collection =
+      await getLedgerEntryCollection();
+
+    if (!collection) {
+      return 0;
+    }
+
+    const {
+      startDate,
+      endDate,
+    } = getDateRange(date);
+
+    const result =
+      await collection
+        .aggregate([
+          {
+            $match: {
+              pumpId:
+                normalizedPumpId,
+
+              entryType:
+                "purchase",
+
+              $or: [
+                {
+                  entryDate:
+                    date,
+                },
+
+                {
+                  date:
+                    date,
+                },
+
+                {
+                  createdAt: {
+                    $gte:
+                      startDate,
+
+                    $lte:
+                      endDate,
+                  },
+                },
+              ],
+            },
+          },
+
+          {
+            $project: {
+              pendingValue: {
+                $cond: [
+                  {
+                    $ne: [
+                      {
+                        $type:
+                          "$pendingAmount",
+                      },
+                      "missing",
+                    ],
+                  },
+
+                  {
+                    $max: [
+                      {
+                        $convert: {
+                          input:
+                            "$pendingAmount",
+
+                          to: "double",
+
+                          onError: 0,
+
+                          onNull: 0,
+                        },
+                      },
+
+                      0,
+                    ],
+                  },
+
+                  {
+                    $max: [
+                      {
+                        $subtract: [
+                          {
+                            $convert: {
+                              input:
+                                "$totalAmount",
+
+                              to: "double",
+
+                              onError: 0,
+
+                              onNull: 0,
+                            },
+                          },
+
+                          {
+                            $convert: {
+                              input:
+                                "$paidAmount",
+
+                              to: "double",
+
+                              onError: 0,
+
+                              onNull: 0,
+                            },
+                          },
+                        ],
+                      },
+
+                      0,
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+
+          {
+            $group: {
+              _id: null,
+
+              total: {
+                $sum:
+                  "$pendingValue",
+              },
+            },
+          },
+        ])
+        .toArray();
+
+    if (
+      !result ||
+      result.length === 0
+    ) {
+      return 0;
+    }
+
+    return Math.max(
+      toNumber(
+        result[0].total
+      ),
+      0
+    );
+  } catch (error) {
+    console.error(
+      "DASHBOARD LEDGER CREDIT ERROR:",
+      error.message
+    );
+
+    return 0;
+  }
+};
 
 /* =====================================================
    GET DASHBOARD SUMMARY
@@ -419,7 +607,6 @@ export const getDashboardSummary =
       if (!pumpId) {
         return res.status(403).json({
           success: false,
-
           message:
             "Pump information not found",
         });
@@ -430,42 +617,149 @@ export const getDashboardSummary =
       ===================================== */
 
       const requestedDate =
-        req.query?.date;
+        String(
+          req.query?.date || ""
+        ).trim();
 
       const date =
         requestedDate ||
         todayString();
 
       if (
-        !isValidDateString(
-          date
-        )
+        !isValidDateString(date)
       ) {
         return res.status(400).json({
           success: false,
-
           message:
             "Invalid date format. Use YYYY-MM-DD.",
         });
       }
 
-      /* =====================================
-         SALES
+      const {
+        startDate,
+        endDate,
+      } = getDateRange(date);
 
-         Strictly scoped by pumpId + date.
+      /* =====================================
+         PARALLEL DATABASE QUERIES
       ===================================== */
 
-      const sales =
-        await Sale.find({
-          pumpId,
+      /*
+       * Ledger collection discovery also starts
+       * immediately instead of waiting for the
+       * other queries.
+       */
+      const ledgerCollectionPromise =
+        getLedgerEntryCollection();
 
-          saleDate:
-            date,
+      const [
+        nozzleReadings,
+        manualSales,
+        stocks,
+        customers,
+        expenses,
+        ledgerCollection,
+      ] = await Promise.all([
+        /* ===================================
+           NOZZLE READINGS
+        =================================== */
+
+        NozzleReading.find({
+          pumpId,
+          readingDate: date,
         })
           .select(
-            "totalAmount quantity paymentMethod fuelType"
+            "totalAmount litresSold paymentMethod payments fuelType"
           )
-          .lean();
+          .lean(),
+
+        /* ===================================
+           MANUAL / PAYMENT SALES
+        =================================== */
+
+        Sale.find({
+          pumpId,
+          saleDate: date,
+
+          source: {
+            $in: [
+              "manual",
+              "payment",
+            ],
+          },
+        })
+          .select(
+            "totalAmount quantity paymentMethod payments fuelType"
+          )
+          .lean(),
+
+        /* ===================================
+           FUEL STOCK
+        =================================== */
+
+        FuelStock.find({
+          pumpId,
+        })
+          .select(
+            "fuelType currentStock"
+          )
+          .lean(),
+
+        /* ===================================
+           ACTIVE LEDGER CUSTOMERS
+        =================================== */
+
+        LedgerCustomer.find({
+          pumpId,
+          status: "active",
+        })
+          .select(
+            "_id currentBalance"
+          )
+          .lean(),
+
+        /* ===================================
+           EXPENSES
+        =================================== */
+
+        Expense.find({
+          pumpId,
+
+          $or: [
+            {
+              expenseDate: date,
+            },
+
+            {
+              date: date,
+            },
+
+            {
+              createdAt: {
+                $gte:
+                  startDate,
+
+                $lte:
+                  endDate,
+              },
+            },
+          ],
+        })
+          .select(
+            "amount expenseDate date createdAt"
+          )
+          .lean(),
+
+        /* ===================================
+           LEDGER COLLECTION DISCOVERY
+        =================================== */
+
+        ledgerCollectionPromise,
+      ]);
+
+      /* =====================================
+         SALES SUMMARY
+      ===================================== */
 
       let todaySales = 0;
 
@@ -481,8 +775,84 @@ export const getDashboardSummary =
 
       let dieselSold = 0;
 
+      let saleCount = 0;
+
+      /* =====================================
+         PROCESS NOZZLE READINGS
+      ===================================== */
+
       for (
-        const sale of sales
+        const reading of nozzleReadings
+      ) {
+        const amount =
+          toNumber(
+            reading.totalAmount
+          );
+
+        const quantity =
+          toNumber(
+            reading.litresSold
+          );
+
+        todaySales += amount;
+
+        saleCount += 1;
+
+        /* ===============================
+           FUEL
+        =============================== */
+
+        const fuelType =
+          normalizeFuelType(
+            reading.fuelType
+          );
+
+        if (
+          fuelType === "petrol"
+        ) {
+          petrolSold += quantity;
+        } else if (
+          fuelType === "diesel"
+        ) {
+          dieselSold += quantity;
+        }
+
+        /* ===============================
+           PAYMENTS
+        =============================== */
+
+        const breakdown =
+          getPaymentBreakdown(
+            reading
+          );
+
+        cashSales +=
+          toNumber(
+            breakdown.cash
+          );
+
+        upiSales +=
+          toNumber(
+            breakdown.upi
+          );
+
+        cardSales +=
+          toNumber(
+            breakdown.card
+          );
+
+        directCreditSales +=
+          toNumber(
+            breakdown.credit
+          );
+      }
+
+      /* =====================================
+         PROCESS MANUAL/PAYMENT SALES
+      ===================================== */
+
+      for (
+        const sale of manualSales
       ) {
         const amount =
           toNumber(
@@ -494,115 +864,92 @@ export const getDashboardSummary =
             sale.quantity
           );
 
-        todaySales +=
-          amount;
+        todaySales += amount;
 
-        /* PAYMENT */
+        saleCount += 1;
 
-        if (
-          sale.paymentMethod ===
-          "cash"
-        ) {
-          cashSales +=
-            amount;
-        }
-
-        if (
-          sale.paymentMethod ===
-          "upi"
-        ) {
-          upiSales +=
-            amount;
-        }
-
-        if (
-          sale.paymentMethod ===
-          "card"
-        ) {
-          cardSales +=
-            amount;
-        }
-
-        if (
-          sale.paymentMethod ===
-          "credit"
-        ) {
-          directCreditSales +=
-            amount;
-        }
-
-        /* FUEL */
+        /* ===============================
+           FUEL
+        =============================== */
 
         const fuelType =
-          String(
-            sale.fuelType || ""
-          )
-            .trim()
-            .toLowerCase();
+          normalizeFuelType(
+            sale.fuelType
+          );
 
         if (
-          fuelType ===
-          "petrol"
+          fuelType === "petrol"
         ) {
-          petrolSold +=
-            quantity;
+          petrolSold += quantity;
+        } else if (
+          fuelType === "diesel"
+        ) {
+          dieselSold += quantity;
         }
 
-        if (
-          fuelType ===
-          "diesel"
-        ) {
-          dieselSold +=
-            quantity;
-        }
+        /* ===============================
+           PAYMENTS
+        =============================== */
+
+        const breakdown =
+          getPaymentBreakdown(
+            sale
+          );
+
+        cashSales +=
+          toNumber(
+            breakdown.cash
+          );
+
+        upiSales +=
+          toNumber(
+            breakdown.upi
+          );
+
+        cardSales +=
+          toNumber(
+            breakdown.card
+          );
+
+        directCreditSales +=
+          toNumber(
+            breakdown.credit
+          );
       }
 
       /* =====================================
-         STOCK
+         STOCK SUMMARY
       ===================================== */
 
-      const stocks =
-        await FuelStock.find({
-          pumpId,
-        })
-          .select(
-            "fuelType currentStock"
-          )
-          .lean();
+      let petrolStock = 0;
 
-      const petrolStockDocument =
-        stocks.find(
-          (item) =>
-            String(
-              item.fuelType
-            )
-              .trim()
-              .toLowerCase() ===
-            "petrol"
-        );
+      let dieselStock = 0;
 
-      const dieselStockDocument =
-        stocks.find(
-          (item) =>
-            String(
-              item.fuelType
-            )
-              .trim()
-              .toLowerCase() ===
-            "diesel"
-        );
+      for (
+        const stock of stocks
+      ) {
+        const fuelType =
+          normalizeFuelType(
+            stock.fuelType
+          );
 
-      const petrolStock =
-        toNumber(
-          petrolStockDocument
-            ?.currentStock
-        );
+        const currentStock =
+          toNumber(
+            stock.currentStock
+          );
 
-      const dieselStock =
-        toNumber(
-          dieselStockDocument
-            ?.currentStock
-        );
+        if (
+          fuelType === "petrol"
+        ) {
+          petrolStock +=
+            currentStock;
+        } else if (
+          fuelType === "diesel"
+        ) {
+          dieselStock +=
+            currentStock;
+        }
+      }
 
       const totalFuelStock =
         petrolStock +
@@ -613,155 +960,89 @@ export const getDashboardSummary =
         dieselSold;
 
       /* =====================================
-         LEDGER CUSTOMER BALANCES
+         PENDING CUSTOMER CREDIT
       ===================================== */
 
-      let customers = [];
-
-      let pendingCredit = 0;
-
-      try {
-        customers =
-          await LedgerCustomer.find(
-            {
-              pumpId,
-
-              status:
-                "active",
-            }
-          )
-            .select(
-              "_id currentBalance"
-            )
-            .lean();
-
-        pendingCredit =
-          customers.reduce(
-            (
-              total,
-              customer
-            ) =>
-              total +
-              Math.max(
-                toNumber(
-                  customer.currentBalance
-                ),
-                0
+      const pendingCredit =
+        customers.reduce(
+          (
+            total,
+            customer
+          ) =>
+            total +
+            Math.max(
+              toNumber(
+                customer.currentBalance
               ),
-            0
-          );
-      } catch (error) {
-        console.error(
-          "LEDGER SUMMARY ERROR:",
-          error
+              0
+            ),
+          0
         );
-      }
 
       /* =====================================
          TODAY'S LEDGER CREDIT
       ===================================== */
 
-      const ledgerCreditSales =
-        await getTodayLedgerCredit({
-          pumpId,
-
-          date,
-
-          customers,
-        });
-
       /*
-        Final credit sales:
+       * If the collection doesn't exist,
+       * getTodayLedgerCredit() safely returns 0.
+       *
+       * The collection itself has already been
+       * discovered above.
+       */
+      let ledgerCreditSales = 0;
 
-        Direct credit sales
-        +
-        Today's unpaid ledger purchases
-      */
+      if (ledgerCollection) {
+        ledgerCreditSales =
+          await getTodayLedgerCredit({
+            pumpId,
+            date,
+          });
+      }
+
+      /* =====================================
+         TOTAL CREDIT
+      ===================================== */
 
       const creditSales =
         directCreditSales +
         ledgerCreditSales;
 
       /* =====================================
-         EXPENSES
-
-         IMPORTANT:
-         Filter at MongoDB level instead
-         of loading every historical expense.
+         EXPENSE SUMMARY
       ===================================== */
 
-      let totalExpenses = 0;
-
-      try {
-        const expenses =
-          await Expense.find({
-            pumpId,
-
-            $or: [
-              {
-                expenseDate:
-                  date,
-              },
-
-              {
-                date:
-                  date,
-              },
-
-              {
-                createdAt: {
-                  $gte:
-                    new Date(
-                      `${date}T00:00:00.000Z`
-                    ),
-
-                  $lte:
-                    new Date(
-                      `${date}T23:59:59.999Z`
-                    ),
-                },
-              },
-            ],
-          })
-            .select(
-              "amount expenseDate date createdAt"
-            )
-            .lean();
-
-        totalExpenses =
-          expenses.reduce(
-            (
-              total,
-              expense
-            ) =>
-              total +
-              Math.max(
-                toNumber(
-                  expense.amount
-                ),
-                0
+      const totalExpenses =
+        expenses.reduce(
+          (
+            total,
+            expense
+          ) =>
+            total +
+            Math.max(
+              toNumber(
+                expense.amount
               ),
-            0
-          );
-      } catch (error) {
-        console.error(
-          "EXPENSE SUMMARY ERROR:",
-          error
+              0
+            ),
+          0
         );
-      }
 
       /* =====================================
          NET COLLECTION
-
-         Credit is not collected money.
-
-         Therefore:
-
-         cash
-         + UPI
-         + card
-         - expenses
       ===================================== */
+
+      /*
+       * Credit sales are not considered
+       * collected money.
+       *
+       * Therefore:
+       *
+       * cash
+       * + UPI
+       * + card
+       * - expenses
+       */
 
       const netCollection =
         cashSales +
@@ -844,15 +1125,18 @@ export const getDashboardSummary =
             netCollection
           ),
 
-        saleCount:
-          sales.length,
+        saleCount,
       };
 
       /* =====================================
          RESPONSE
-
-         Existing frontend aliases preserved.
       ===================================== */
+
+      /*
+       * All existing aliases are preserved so
+       * the current frontend does not need to
+       * be changed.
+       */
 
       return res.status(200).json({
         success: true,

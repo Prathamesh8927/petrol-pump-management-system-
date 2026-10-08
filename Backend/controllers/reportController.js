@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 
 import Sale from "../models/Sale.js";
+import NozzleReading from "../models/NozzleReading.js";
 import Expense from "../models/Expense.js";
 import FuelPurchase from "../models/FuelPurchase.js";
 import FuelStock from "../models/FuelStock.js";
@@ -17,16 +18,17 @@ const BUSINESS_TIMEZONE =
   process.env.BUSINESS_TIMEZONE ||
   "Asia/Kolkata";
 
-/*
- * Prevent accidentally generating extremely large
- * reports which could consume unnecessary memory.
- *
- * 366 days allows a full leap year.
- */
 const MAX_REPORT_DAYS = 366;
 
+const PAYMENT_METHODS = [
+  "cash",
+  "upi",
+  "card",
+  "credit",
+];
+
 /* =====================================================
-   HELPERS
+   DATE HELPERS
 ===================================================== */
 
 /**
@@ -40,8 +42,11 @@ const isValidDateString = (value) => {
     return false;
   }
 
-  const [year, month, day] =
-    value.split("-").map(Number);
+  const [
+    year,
+    month,
+    day,
+  ] = value.split("-").map(Number);
 
   const date = new Date(
     Date.UTC(
@@ -97,6 +102,12 @@ const formatDate = (date) => {
 };
 
 /**
+ * Get today's business date.
+ */
+const getTodayDate = () =>
+  formatDate(new Date());
+
+/**
  * Add days to YYYY-MM-DD.
  */
 const addDays = (
@@ -137,8 +148,7 @@ const addDays = (
 };
 
 /**
- * Calculate number of calendar days
- * between two YYYY-MM-DD values.
+ * Calculate calendar-day difference.
  */
 const getDateDifferenceInDays = (
   from,
@@ -182,69 +192,7 @@ const getDateDifferenceInDays = (
 };
 
 /**
- * Safely sum numeric field.
- */
-const sumField = (
-  items,
-  field
-) => {
-  if (!Array.isArray(items)) {
-    return 0;
-  }
-
-  return items.reduce(
-    (total, item) => {
-      const value = Number(
-        item?.[field]
-      );
-
-      return (
-        total +
-        (Number.isFinite(value)
-          ? value
-          : 0)
-      );
-    },
-    0
-  );
-};
-
-/**
- * Get authenticated user's pumpId.
- */
-const getPumpId = (req) => {
-  const pumpId =
-    req.user?.pumpId?._id ||
-    req.user?.pumpId ||
-    req.user?.pumpID ||
-    req.user?.pump?.pumpId ||
-    null;
-
-  if (
-    !pumpId ||
-    !mongoose.Types.ObjectId.isValid(
-      String(pumpId)
-    )
-  ) {
-    return null;
-  }
-
-  return new mongoose.Types.ObjectId(
-    String(pumpId)
-  );
-};
-
-/**
- * Get today's business date.
- */
-const getTodayDate = () => {
-  return formatDate(
-    new Date()
-  );
-};
-
-/**
- * Validate date range.
+ * Validate complete report range.
  */
 const getDateRange = (
   from,
@@ -280,8 +228,56 @@ const getDateRange = (
   );
 };
 
+/* =====================================================
+   GENERAL HELPERS
+===================================================== */
+
 /**
- * Convert to ObjectId safely.
+ * Safely convert number.
+ */
+const toNumber = (value) => {
+  const number = Number(value);
+
+  return Number.isFinite(number)
+    ? number
+    : 0;
+};
+
+/**
+ * Round money/quantity.
+ */
+const roundNumber = (value) =>
+  Number(
+    toNumber(value).toFixed(2)
+  );
+
+/**
+ * Get authenticated user's pumpId.
+ */
+const getPumpId = (req) => {
+  const pumpId =
+    req.user?.pumpId?._id ||
+    req.user?.pumpId ||
+    req.user?.pumpID ||
+    req.user?.pump?.pumpId ||
+    null;
+
+  if (
+    !pumpId ||
+    !mongoose.Types.ObjectId.isValid(
+      String(pumpId)
+    )
+  ) {
+    return null;
+  }
+
+  return new mongoose.Types.ObjectId(
+    String(pumpId)
+  );
+};
+
+/**
+ * Convert ObjectId safely.
  */
 const toObjectId = (
   value
@@ -298,6 +294,137 @@ const toObjectId = (
   return new mongoose.Types.ObjectId(
     String(value)
   );
+};
+
+/**
+ * Normalize fuel type.
+ */
+const normalizeFuelType = (
+  value
+) => {
+  const fuel = String(
+    value || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  if (
+    fuel === "diesel" ||
+    fuel === "disel"
+  ) {
+    return "diesel";
+  }
+
+  if (fuel === "petrol") {
+    return "petrol";
+  }
+
+  return fuel;
+};
+
+/**
+ * Normalize payment method.
+ */
+const normalizePaymentMethod = (
+  value
+) =>
+  String(
+    value || ""
+  )
+    .trim()
+    .toLowerCase();
+
+/* =====================================================
+   PAYMENT HELPERS
+===================================================== */
+
+/**
+ * Get payment breakdown.
+ *
+ * Supports both:
+ *
+ * Old:
+ * paymentMethod: "cash"
+ *
+ * New:
+ * payments: [
+ *   { method: "cash", amount: 1000 },
+ *   { method: "upi", amount: 500 }
+ * ]
+ */
+const getPaymentBreakdown = (
+  transaction
+) => {
+  const breakdown = {
+    cash: 0,
+    upi: 0,
+    card: 0,
+    credit: 0,
+  };
+
+  if (
+    Array.isArray(
+      transaction?.payments
+    ) &&
+    transaction.payments.length > 0
+  ) {
+    for (
+      const payment of transaction.payments
+    ) {
+      const method =
+        normalizePaymentMethod(
+          payment?.method
+        );
+
+      const amount =
+        toNumber(
+          payment?.amount
+        );
+
+      if (
+        PAYMENT_METHODS.includes(
+          method
+        ) &&
+        amount > 0
+      ) {
+        breakdown[method] += amount;
+      }
+    }
+
+    const hasSplitPayment =
+      Object.values(
+        breakdown
+      ).some(
+        (amount) =>
+          amount > 0
+      );
+
+    if (hasSplitPayment) {
+      return breakdown;
+    }
+  }
+
+  const method =
+    normalizePaymentMethod(
+      transaction?.paymentMethod
+    );
+
+  const totalAmount =
+    toNumber(
+      transaction?.totalAmount
+    );
+
+  if (
+    PAYMENT_METHODS.includes(
+      method
+    ) &&
+    totalAmount > 0
+  ) {
+    breakdown[method] =
+      totalAmount;
+  }
+
+  return breakdown;
 };
 
 /* =====================================================
@@ -335,20 +462,22 @@ const buildReport = async (
     );
   }
 
-  /* ===================================================
-     QUERY FILTERS
-  =================================================== */
-
+  /*
+   * Because all business dates are stored as
+   * YYYY-MM-DD strings, lexicographical
+   * range queries work correctly.
+   */
   const dateFilter = {
     $gte: from,
     $lte: to,
   };
 
   /* ===================================================
-     FETCH REPORT DATA IN PARALLEL
+     FETCH EVERYTHING IN PARALLEL
   =================================================== */
 
   const [
+    nozzleReadings,
     sales,
     expenses,
     fuelPurchases,
@@ -357,19 +486,76 @@ const buildReport = async (
     pendingCustomers,
   ] = await Promise.all([
     /* -------------------------------------------------
-       SALES
+       NOZZLE SALES
     ------------------------------------------------- */
 
+    NozzleReading.find({
+      pumpId:
+        normalizedPumpId,
+
+      readingDate:
+        dateFilter,
+    })
+      .select(
+        [
+          "nozzleId",
+          "shiftName",
+          "staffId",
+          "staffName",
+          "fuelType",
+          "openingReading",
+          "closingReading",
+          "litresSold",
+          "pricePerLitre",
+          "totalAmount",
+          "readingDate",
+          "readingTime",
+          "paymentMethod",
+          "payments",
+          "note",
+          "createdBy",
+          "createdAt",
+        ].join(" ")
+      )
+      .populate(
+        "nozzleId",
+        "nozzleNumber name fuelType"
+      )
+      .sort({
+        readingDate: -1,
+        readingTime: -1,
+        createdAt: -1,
+      })
+      .lean(),
+
+    /* -------------------------------------------------
+       MANUAL / PAYMENT SALES
+    ------------------------------------------------- */
+
+    /*
+     * IMPORTANT:
+     *
+     * NozzleReading is the source for nozzle sales.
+     *
+     * Therefore only manual/payment Sale documents
+     * are included here to prevent double counting.
+     */
     Sale.find({
       pumpId:
         normalizedPumpId,
 
       saleDate:
         dateFilter,
+
+      source: {
+        $in: [
+          "manual",
+          "payment",
+        ],
+      },
     })
       .select(
         [
-          "pumpId",
           "nozzleId",
           "readingId",
           "fuelType",
@@ -377,11 +563,14 @@ const buildReport = async (
           "pricePerLitre",
           "totalAmount",
           "paymentMethod",
+          "payments",
           "saleDate",
           "source",
           "note",
           "createdBy",
           "createdAt",
+          "providerPaymentId",
+          "paymentProvider",
         ].join(" ")
       )
       .populate(
@@ -407,7 +596,6 @@ const buildReport = async (
     })
       .select(
         [
-          "pumpId",
           "title",
           "category",
           "amount",
@@ -442,13 +630,13 @@ const buildReport = async (
     })
       .select(
         [
-          "pumpId",
           "fuelType",
           "quantity",
-          "pricePerLitre",
+          "purchasePrice",
           "totalAmount",
           "purchaseDate",
-          "supplier",
+          "supplierName",
+          "invoiceNumber",
           "note",
           "createdBy",
           "createdAt",
@@ -473,14 +661,17 @@ const buildReport = async (
     })
       .select(
         [
-          "pumpId",
           "customerId",
           "entryType",
           "fuelType",
+          "rate",
           "totalAmount",
           "paidAmount",
           "pendingAmount",
           "paymentAmount",
+          "advanceAmount",
+          "advanceAppliedAmount",
+          "advanceBalance",
           "entryDate",
           "note",
           "createdBy",
@@ -523,11 +714,11 @@ const buildReport = async (
       pumpId:
         normalizedPumpId,
 
+      status: "active",
+
       currentBalance: {
         $gt: 0,
       },
-
-      status: "active",
     })
       .select(
         [
@@ -542,142 +733,287 @@ const buildReport = async (
   ]);
 
   /* ===================================================
+     COMBINE SALES
+  =================================================== */
+
+  /*
+   * Keep nozzle readings and Sale records separate
+   * internally, but create a unified transaction list
+   * for report calculations.
+   */
+  const reportSales = [];
+
+  /* ---------------------------------------------------
+     NOZZLE TRANSACTIONS
+  --------------------------------------------------- */
+
+  for (
+    const reading of nozzleReadings
+  ) {
+    reportSales.push({
+      ...reading,
+
+      /*
+       * Mark this clearly so frontend/report
+       * consumers can identify the source.
+       */
+      source:
+        "nozzle",
+
+      quantity:
+        toNumber(
+          reading.litresSold
+        ),
+
+      pricePerLitre:
+        toNumber(
+          reading.pricePerLitre
+        ),
+
+      totalAmount:
+        toNumber(
+          reading.totalAmount
+        ),
+
+      saleDate:
+        reading.readingDate,
+    });
+  }
+
+  /* ---------------------------------------------------
+     MANUAL / PAYMENT TRANSACTIONS
+  --------------------------------------------------- */
+
+  for (
+    const sale of sales
+  ) {
+    reportSales.push({
+      ...sale,
+
+      quantity:
+        toNumber(
+          sale.quantity
+        ),
+
+      pricePerLitre:
+        toNumber(
+          sale.pricePerLitre
+        ),
+
+      totalAmount:
+        toNumber(
+          sale.totalAmount
+        ),
+    });
+  }
+
+  /*
+   * Keep newest transactions first.
+   */
+  reportSales.sort(
+    (a, b) => {
+      const dateA =
+        String(
+          a.saleDate ||
+            a.readingDate ||
+            ""
+        );
+
+      const dateB =
+        String(
+          b.saleDate ||
+            b.readingDate ||
+            ""
+        );
+
+      if (
+        dateA !== dateB
+      ) {
+        return dateB.localeCompare(
+          dateA
+        );
+      }
+
+      const timeA =
+        String(
+          a.readingTime ||
+            ""
+        );
+
+      const timeB =
+        String(
+          b.readingTime ||
+            ""
+        );
+
+      if (
+        timeA !== timeB
+      ) {
+        return timeB.localeCompare(
+          timeA
+        );
+      }
+
+      return (
+        new Date(
+          b.createdAt || 0
+        ).getTime() -
+        new Date(
+          a.createdAt || 0
+        ).getTime()
+      );
+    }
+  );
+
+  /* ===================================================
      SALES SUMMARY
   =================================================== */
 
-  const totalSales =
-    sumField(
-      sales,
-      "totalAmount"
-    );
+  let totalSales = 0;
+  let totalLitresSold = 0;
 
-  const totalLitresSold =
-    sumField(
-      sales,
-      "quantity"
-    );
+  let petrolLitresSold = 0;
+  let dieselLitresSold = 0;
 
-  const petrolSales =
-    sales.filter(
-      (sale) =>
-        sale.fuelType ===
-        "petrol"
-    );
+  let petrolSalesAmount = 0;
+  let dieselSalesAmount = 0;
 
-  const dieselSales =
-    sales.filter(
-      (sale) =>
-        sale.fuelType ===
-        "diesel"
-    );
+  let cashSales = 0;
+  let upiSales = 0;
+  let cardSales = 0;
+  let creditSales = 0;
 
-  const petrolLitresSold =
-    sumField(
-      petrolSales,
-      "quantity"
-    );
+  /*
+   * Single pass through all report sales.
+   *
+   * This is faster than repeatedly calling:
+   *
+   * filter()
+   * filter()
+   * filter()
+   * reduce()
+   * reduce()
+   */
+  for (
+    const sale of reportSales
+  ) {
+    const amount =
+      toNumber(
+        sale.totalAmount
+      );
 
-  const dieselLitresSold =
-    sumField(
-      dieselSales,
-      "quantity"
-    );
+    const quantity =
+      toNumber(
+        sale.quantity
+      );
 
-  const petrolSalesAmount =
-    sumField(
-      petrolSales,
-      "totalAmount"
-    );
+    const fuelType =
+      normalizeFuelType(
+        sale.fuelType
+      );
 
-  const dieselSalesAmount =
-    sumField(
-      dieselSales,
-      "totalAmount"
-    );
+    totalSales += amount;
+    totalLitresSold +=
+      quantity;
 
-  /* ===================================================
-     PAYMENT METHODS
-  =================================================== */
+    if (
+      fuelType === "petrol"
+    ) {
+      petrolLitresSold +=
+        quantity;
 
-  const cashSales =
-    sumField(
-      sales.filter(
-        (sale) =>
-          sale.paymentMethod ===
-          "cash"
-      ),
-      "totalAmount"
-    );
+      petrolSalesAmount +=
+        amount;
+    }
 
-  const upiSales =
-    sumField(
-      sales.filter(
-        (sale) =>
-          sale.paymentMethod ===
-          "upi"
-      ),
-      "totalAmount"
-    );
+    if (
+      fuelType === "diesel"
+    ) {
+      dieselLitresSold +=
+        quantity;
 
-  const cardSales =
-    sumField(
-      sales.filter(
-        (sale) =>
-          sale.paymentMethod ===
-          "card"
-      ),
-      "totalAmount"
-    );
+      dieselSalesAmount +=
+        amount;
+    }
 
-  const creditSales =
-    sumField(
-      sales.filter(
-        (sale) =>
-          sale.paymentMethod ===
-          "credit"
-      ),
-      "totalAmount"
-    );
+    /*
+     * Correctly supports:
+     *
+     * payments[]
+     *
+     * and legacy:
+     *
+     * paymentMethod
+     */
+    const breakdown =
+      getPaymentBreakdown(
+        sale
+      );
+
+    cashSales +=
+      breakdown.cash;
+
+    upiSales +=
+      breakdown.upi;
+
+    cardSales +=
+      breakdown.card;
+
+    creditSales +=
+      breakdown.credit;
+  }
 
   /* ===================================================
      EXPENSE SUMMARY
   =================================================== */
 
-  const totalExpenses =
-    sumField(
-      expenses,
-      "amount"
-    );
+  let totalExpenses = 0;
+  let salaryExpenses = 0;
+  let electricityExpenses = 0;
+  let maintenanceExpenses = 0;
 
-  const salaryExpenses =
-    sumField(
-      expenses.filter(
-        (expense) =>
-          expense.category ===
-          "salary"
-      ),
-      "amount"
-    );
+  for (
+    const expense of expenses
+  ) {
+    const amount =
+      toNumber(
+        expense.amount
+      );
 
-  const electricityExpenses =
-    sumField(
-      expenses.filter(
-        (expense) =>
-          expense.category ===
-          "electricity"
-      ),
-      "amount"
-    );
+    totalExpenses +=
+      amount;
 
-  const maintenanceExpenses =
-    sumField(
-      expenses.filter(
-        (expense) =>
-          expense.category ===
-          "maintenance"
-      ),
-      "amount"
-    );
+    const category =
+      String(
+        expense.category ||
+          ""
+      )
+        .trim()
+        .toLowerCase();
+
+    if (
+      category === "salary"
+    ) {
+      salaryExpenses +=
+        amount;
+    }
+
+    if (
+      category ===
+      "electricity"
+    ) {
+      electricityExpenses +=
+        amount;
+    }
+
+    if (
+      category ===
+      "maintenance"
+    ) {
+      maintenanceExpenses +=
+        amount;
+    }
+  }
 
   const otherExpenses =
     Math.max(
@@ -692,146 +1028,187 @@ const buildReport = async (
      FUEL PURCHASE SUMMARY
   =================================================== */
 
-  const totalFuelPurchased =
-    sumField(
-      fuelPurchases,
-      "quantity"
-    );
+  let totalFuelPurchased = 0;
+  let totalFuelPurchaseAmount = 0;
 
-  const totalFuelPurchaseAmount =
-    sumField(
-      fuelPurchases,
-      "totalAmount"
-    );
+  let petrolPurchased = 0;
+  let dieselPurchased = 0;
 
-  const petrolPurchased =
-    sumField(
-      fuelPurchases.filter(
-        (item) =>
-          item.fuelType ===
-          "petrol"
-      ),
-      "quantity"
-    );
+  for (
+    const purchase of fuelPurchases
+  ) {
+    const quantity =
+      toNumber(
+        purchase.quantity
+      );
 
-  const dieselPurchased =
-    sumField(
-      fuelPurchases.filter(
-        (item) =>
-          item.fuelType ===
-          "diesel"
-      ),
-      "quantity"
-    );
+    const amount =
+      toNumber(
+        purchase.totalAmount
+      );
+
+    const fuelType =
+      normalizeFuelType(
+        purchase.fuelType
+      );
+
+    totalFuelPurchased +=
+      quantity;
+
+    totalFuelPurchaseAmount +=
+      amount;
+
+    if (
+      fuelType === "petrol"
+    ) {
+      petrolPurchased +=
+        quantity;
+    }
+
+    if (
+      fuelType === "diesel"
+    ) {
+      dieselPurchased +=
+        quantity;
+    }
+  }
 
   /* ===================================================
      LEDGER SUMMARY
   =================================================== */
 
-  const ledgerPurchases =
-    ledgerEntries.filter(
-      (entry) =>
-        entry.entryType ===
-        "purchase"
-    );
+  let ledgerCredit = 0;
+  let ledgerPayments = 0;
+  let ledgerAdvancePayments = 0;
 
-  const ledgerPaymentEntries =
-    ledgerEntries.filter(
-      (entry) =>
-        entry.entryType ===
-        "payment"
-    );
+  let ledgerPurchasePayments = 0;
+  let ledgerPendingCreated = 0;
 
-  /*
-   * Total ledger purchase value
-   * created during this period.
-   */
-  const ledgerCredit =
-    sumField(
-      ledgerPurchases,
-      "totalAmount"
-    );
+  let ledgerAdvanceApplied = 0;
 
-  /*
-   * Amount paid immediately
-   * with purchase entries.
-   */
-  const ledgerPurchasePayments =
-    sumField(
-      ledgerPurchases,
-      "paidAmount"
-    );
+  let ledgerPurchaseTransactions = 0;
+  let ledgerPaymentTransactions = 0;
+  let ledgerAdvanceTransactions = 0;
 
-  /*
-   * Separate customer payments.
-   */
-  const ledgerPayments =
-    sumField(
-      ledgerPaymentEntries,
-      "paymentAmount"
-    );
+  for (
+    const entry of ledgerEntries
+  ) {
+    const entryType =
+      String(
+        entry.entryType ||
+          ""
+      )
+        .trim()
+        .toLowerCase();
 
-  /*
-   * Pending amount created by
-   * purchase entries.
-   */
-  const ledgerPendingCreated =
-    sumField(
-      ledgerPurchases,
-      "pendingAmount"
-    );
+    if (
+      entryType === "purchase"
+    ) {
+      ledgerPurchaseTransactions +=
+        1;
 
-  /*
-   * Current outstanding balance.
-   */
-  const pendingLedger =
-    pendingCustomers.reduce(
-      (total, customer) => {
-        const balance =
-          Number(
-            customer?.currentBalance ||
-              0
-          );
-
-        return (
-          total +
-          (Number.isFinite(balance)
-            ? Math.max(balance, 0)
-            : 0)
+      ledgerCredit +=
+        toNumber(
+          entry.totalAmount
         );
-      },
-      0
-    );
+
+      ledgerPurchasePayments +=
+        toNumber(
+          entry.paidAmount
+        );
+
+      ledgerPendingCreated +=
+        toNumber(
+          entry.pendingAmount
+        );
+
+      ledgerAdvanceApplied +=
+        toNumber(
+          entry.advanceAppliedAmount
+        );
+    }
+
+    if (
+      entryType === "payment"
+    ) {
+      ledgerPaymentTransactions +=
+        1;
+
+      ledgerPayments +=
+        toNumber(
+          entry.paymentAmount
+        );
+    }
+
+    if (
+      entryType === "advance"
+    ) {
+      ledgerAdvanceTransactions +=
+        1;
+
+      ledgerAdvancePayments +=
+        toNumber(
+          entry.advanceAmount
+        );
+    }
+  }
+
+  /* ===================================================
+     CURRENT PENDING LEDGER
+  =================================================== */
+
+  let pendingLedger = 0;
+
+  for (
+    const customer of pendingCustomers
+  ) {
+    const balance =
+      toNumber(
+        customer.currentBalance
+      );
+
+    if (
+      balance > 0
+    ) {
+      pendingLedger +=
+        balance;
+    }
+  }
 
   /* ===================================================
      CURRENT STOCK
   =================================================== */
 
-  const petrolStock =
-    fuelStocks.find(
-      (stock) =>
-        stock.fuelType ===
-        "petrol"
-    );
+  let currentPetrolStock = 0;
+  let currentDieselStock = 0;
 
-  const dieselStock =
-    fuelStocks.find(
-      (stock) =>
-        stock.fuelType ===
-        "diesel"
-    );
+  for (
+    const stock of fuelStocks
+  ) {
+    const fuelType =
+      normalizeFuelType(
+        stock.fuelType
+      );
 
-  const currentPetrolStock =
-    Number(
-      petrolStock?.currentStock ||
-        0
-    );
+    const currentStock =
+      toNumber(
+        stock.currentStock
+      );
 
-  const currentDieselStock =
-    Number(
-      dieselStock?.currentStock ||
-        0
-    );
+    if (
+      fuelType === "petrol"
+    ) {
+      currentPetrolStock +=
+        currentStock;
+    }
+
+    if (
+      fuelType === "diesel"
+    ) {
+      currentDieselStock +=
+        currentStock;
+    }
+  }
 
   /* ===================================================
      NET AMOUNT
@@ -841,6 +1218,206 @@ const buildReport = async (
     totalSales -
     totalExpenses;
 
+  /*
+   * Actual cash collected after expenses.
+   *
+   * Credit sales are not included in collected cash.
+   */
+  const netCollection =
+    cashSales +
+    upiSales +
+    cardSales -
+    totalExpenses;
+
+  /* ===================================================
+     NORMALIZE SUMMARY VALUES
+  =================================================== */
+
+  const summary = {
+    totalSales:
+      roundNumber(
+        totalSales
+      ),
+
+    totalExpenses:
+      roundNumber(
+        totalExpenses
+      ),
+
+    netAmount:
+      roundNumber(
+        netAmount
+      ),
+
+    netCollection:
+      roundNumber(
+        netCollection
+      ),
+
+    totalLitresSold:
+      roundNumber(
+        totalLitresSold
+      ),
+
+    petrolLitresSold:
+      roundNumber(
+        petrolLitresSold
+      ),
+
+    dieselLitresSold:
+      roundNumber(
+        dieselLitresSold
+      ),
+
+    petrolSalesAmount:
+      roundNumber(
+        petrolSalesAmount
+      ),
+
+    dieselSalesAmount:
+      roundNumber(
+        dieselSalesAmount
+      ),
+
+    cashSales:
+      roundNumber(
+        cashSales
+      ),
+
+    upiSales:
+      roundNumber(
+        upiSales
+      ),
+
+    cardSales:
+      roundNumber(
+        cardSales
+      ),
+
+    creditSales:
+      roundNumber(
+        creditSales
+      ),
+
+    salaryExpenses:
+      roundNumber(
+        salaryExpenses
+      ),
+
+    electricityExpenses:
+      roundNumber(
+        electricityExpenses
+      ),
+
+    maintenanceExpenses:
+      roundNumber(
+        maintenanceExpenses
+      ),
+
+    otherExpenses:
+      roundNumber(
+        otherExpenses
+      ),
+
+    totalFuelPurchased:
+      roundNumber(
+        totalFuelPurchased
+      ),
+
+    totalFuelPurchaseAmount:
+      roundNumber(
+        totalFuelPurchaseAmount
+      ),
+
+    petrolPurchased:
+      roundNumber(
+        petrolPurchased
+      ),
+
+    dieselPurchased:
+      roundNumber(
+        dieselPurchased
+      ),
+
+    ledgerCredit:
+      roundNumber(
+        ledgerCredit
+      ),
+
+    ledgerPayments:
+      roundNumber(
+        ledgerPayments
+      ),
+
+    ledgerAdvancePayments:
+      roundNumber(
+        ledgerAdvancePayments
+      ),
+
+    ledgerPurchasePayments:
+      roundNumber(
+        ledgerPurchasePayments
+      ),
+
+    ledgerPendingCreated:
+      roundNumber(
+        ledgerPendingCreated
+      ),
+
+    ledgerAdvanceApplied:
+      roundNumber(
+        ledgerAdvanceApplied
+      ),
+
+    pendingLedger:
+      roundNumber(
+        pendingLedger
+      ),
+
+    currentPetrolStock:
+      roundNumber(
+        currentPetrolStock
+      ),
+
+    currentDieselStock:
+      roundNumber(
+        currentDieselStock
+      ),
+
+    totalCurrentStock:
+      roundNumber(
+        currentPetrolStock +
+          currentDieselStock
+      ),
+
+    /*
+     * Transaction counts.
+     */
+    salesTransactions:
+      reportSales.length,
+
+    nozzleTransactions:
+      nozzleReadings.length,
+
+    manualSalesTransactions:
+      sales.length,
+
+    expenseTransactions:
+      expenses.length,
+
+    fuelPurchaseTransactions:
+      fuelPurchases.length,
+
+    ledgerTransactions:
+      ledgerEntries.length,
+
+    ledgerPurchaseTransactions,
+
+    ledgerPaymentTransactions,
+
+    ledgerAdvanceTransactions,
+  };
+
   /* ===================================================
      RESPONSE
   =================================================== */
@@ -849,65 +1426,30 @@ const buildReport = async (
     from,
     to,
 
-    summary: {
-      totalSales,
-      totalExpenses,
-      netAmount,
+    summary,
 
-      totalLitresSold,
+    /*
+     * Keep existing sales property.
+     *
+     * It now contains both:
+     * - nozzle transactions
+     * - manual/payment transactions
+     */
+    sales: reportSales,
 
-      petrolLitresSold,
-      dieselLitresSold,
+    /*
+     * Expose the original sources separately too.
+     * This is useful for future PDF/report screens
+     * without breaking the existing sales property.
+     */
+    nozzleReadings,
 
-      petrolSalesAmount,
-      dieselSalesAmount,
+    manualSales: sales,
 
-      cashSales,
-      upiSales,
-      cardSales,
-      creditSales,
-
-      salaryExpenses,
-      electricityExpenses,
-      maintenanceExpenses,
-      otherExpenses,
-
-      totalFuelPurchased,
-      totalFuelPurchaseAmount,
-
-      petrolPurchased,
-      dieselPurchased,
-
-      ledgerCredit,
-      ledgerPayments,
-
-      ledgerPurchasePayments,
-      ledgerPendingCreated,
-      pendingLedger,
-
-      currentPetrolStock,
-      currentDieselStock,
-
-      totalCurrentStock:
-        currentPetrolStock +
-        currentDieselStock,
-
-      salesTransactions:
-        sales.length,
-
-      expenseTransactions:
-        expenses.length,
-
-      fuelPurchaseTransactions:
-        fuelPurchases.length,
-
-      ledgerTransactions:
-        ledgerEntries.length,
-    },
-
-    sales,
     expenses,
+
     fuelPurchases,
+
     ledgerEntries,
   };
 };
@@ -962,7 +1504,7 @@ export const getDailyReport =
     } catch (error) {
       console.error(
         "DAILY REPORT ERROR:",
-        error
+        error.message
       );
 
       return res.status(500).json({
@@ -1076,7 +1618,7 @@ export const getWeeklyReport =
     } catch (error) {
       console.error(
         "WEEKLY REPORT ERROR:",
-        error
+        error.message
       );
 
       return res.status(500).json({
@@ -1207,7 +1749,7 @@ export const getMonthlyReport =
     } catch (error) {
       console.error(
         "MONTHLY REPORT ERROR:",
-        error
+        error.message
       );
 
       return res.status(500).json({
@@ -1316,7 +1858,7 @@ export const getCustomReport =
     } catch (error) {
       console.error(
         "CUSTOM REPORT ERROR:",
-        error
+        error.message
       );
 
       return res.status(500).json({

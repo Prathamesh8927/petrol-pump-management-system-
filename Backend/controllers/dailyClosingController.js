@@ -3,6 +3,8 @@ import mongoose from "mongoose";
 import DailyClosing from "../models/DailyClosing.js";
 
 import Sale from "../models/Sale.js";
+import NozzleReading from "../models/NozzleReading.js";
+
 import Expense from "../models/Expense.js";
 import FuelStock from "../models/FuelStock.js";
 import LedgerEntry from "../models/LedgerEntry.js";
@@ -18,6 +20,13 @@ const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 const BUSINESS_TIMEZONE =
   process.env.BUSINESS_TIMEZONE || "Asia/Kolkata";
+
+const PAYMENT_METHODS = [
+  "cash",
+  "upi",
+  "card",
+  "credit",
+];
 
 /* =====================================================
    HELPERS
@@ -49,8 +58,7 @@ const isValidDateString = (value) => {
 };
 
 /**
- * Get today's business date using the configured
- * business timezone instead of the Render server timezone.
+ * Get today's business date using configured timezone.
  */
 const getTodayBusinessDate = () => {
   try {
@@ -86,13 +94,10 @@ const getBusinessDate = (value) => {
     const date = String(value).trim();
 
     if (!isValidDateString(date)) {
-      const error = new Error(
-        "Business date must be in YYYY-MM-DD format"
+      throw createError(
+        "Business date must be in YYYY-MM-DD format",
+        400
       );
-
-      error.statusCode = 400;
-
-      throw error;
     }
 
     return date;
@@ -112,11 +117,7 @@ const getPumpId = (req) => {
     req.user?.pump?.pumpId ||
     null;
 
-  if (!pumpId) {
-    return null;
-  }
-
-  return pumpId;
+  return pumpId || null;
 };
 
 /**
@@ -132,7 +133,7 @@ const getUserId = (req) => {
 };
 
 /**
- * Numeric safe conversion.
+ * Safe numeric conversion.
  */
 const toNumber = (value) => {
   const number = Number(value);
@@ -143,18 +144,20 @@ const toNumber = (value) => {
 };
 
 /**
- * Sum a numeric field.
+ * Round monetary/fuel values.
  */
-const sum = (list, field) => {
-  if (!Array.isArray(list)) {
-    return 0;
-  }
+const roundNumber = (
+  value,
+  decimals = 2
+) => {
+  const factor =
+    10 ** decimals;
 
-  return list.reduce(
-    (total, item) =>
-      total +
-      toNumber(item?.[field]),
-    0
+  return (
+    Math.round(
+      (toNumber(value) + Number.EPSILON) *
+        factor
+    ) / factor
   );
 };
 
@@ -173,6 +176,187 @@ const createError = (
 };
 
 /* =====================================================
+   PAYMENT HELPERS
+===================================================== */
+
+/**
+ * Normalize payment method.
+ */
+const normalizePaymentMethod = (
+  method
+) => {
+  const normalized =
+    String(method || "")
+      .trim()
+      .toLowerCase();
+
+  return PAYMENT_METHODS.includes(
+    normalized
+  )
+    ? normalized
+    : null;
+};
+
+/**
+ * Normalize split payment records.
+ *
+ * Supports:
+ *
+ * payments: [
+ *   { method: "cash", amount: 500 },
+ *   { method: "upi", amount: 500 }
+ * ]
+ *
+ * Also supports older records having:
+ *
+ * paymentMethod: "cash"
+ */
+const getPaymentBreakdown = (
+  transaction
+) => {
+  const result = {
+    cash: 0,
+    upi: 0,
+    card: 0,
+    credit: 0,
+  };
+
+  const payments =
+    Array.isArray(
+      transaction?.payments
+    )
+      ? transaction.payments
+      : [];
+
+  if (payments.length > 0) {
+    for (const payment of payments) {
+      const method =
+        normalizePaymentMethod(
+          payment?.method
+        );
+
+      if (!method) {
+        continue;
+      }
+
+      const amount =
+        toNumber(
+          payment?.amount
+        );
+
+      if (amount > 0) {
+        result[method] += amount;
+      }
+    }
+
+    return result;
+  }
+
+  const method =
+    normalizePaymentMethod(
+      transaction?.paymentMethod
+    );
+
+  if (method) {
+    result[method] =
+      toNumber(
+        transaction?.totalAmount
+      );
+  }
+
+  return result;
+};
+
+/**
+ * Add payment breakdown.
+ */
+const addPaymentBreakdown = (
+  target,
+  transaction
+) => {
+  const breakdown =
+    getPaymentBreakdown(
+      transaction
+    );
+
+  target.cash += breakdown.cash;
+  target.upi += breakdown.upi;
+  target.card += breakdown.card;
+  target.credit += breakdown.credit;
+};
+
+/* =====================================================
+   SALES HELPERS
+===================================================== */
+
+/**
+ * Convert nozzle reading into a
+ * daily-closing sales object.
+ */
+const nozzleReadingToSale = (
+  reading
+) => {
+  return {
+    totalAmount: toNumber(
+      reading?.totalAmount
+    ),
+
+    quantity: toNumber(
+      reading?.litresSold
+    ),
+
+    fuelType:
+      reading?.fuelType,
+
+    payments:
+      reading?.payments,
+
+    paymentMethod:
+      reading?.paymentMethod,
+  };
+};
+
+/**
+ * Add sale transaction into summary.
+ */
+const addSaleToSummary = (
+  summary,
+  transaction
+) => {
+  const amount =
+    toNumber(
+      transaction?.totalAmount
+    );
+
+  const quantity =
+    toNumber(
+      transaction?.quantity
+    );
+
+  summary.totalSales += amount;
+  summary.totalFuelSold += quantity;
+
+  if (
+    transaction?.fuelType ===
+    "petrol"
+  ) {
+    summary.petrolSold += quantity;
+  }
+
+  if (
+    transaction?.fuelType ===
+    "diesel"
+  ) {
+    summary.dieselSold += quantity;
+  }
+
+  addPaymentBreakdown(
+    summary,
+    transaction
+  );
+};
+
+/* =====================================================
    GET DAILY CLOSING
 ===================================================== */
 
@@ -181,7 +365,8 @@ export const getDailyClosing = async (
   res
 ) => {
   try {
-    const pumpId = getPumpId(req);
+    const pumpId =
+      getPumpId(req);
 
     if (!pumpId) {
       return res.status(403).json({
@@ -245,8 +430,11 @@ export const closeDay = async (
     await mongoose.startSession();
 
   try {
-    const pumpId = getPumpId(req);
-    const userId = getUserId(req);
+    const pumpId =
+      getPumpId(req);
+
+    const userId =
+      getUserId(req);
 
     if (!pumpId || !userId) {
       return res.status(403).json({
@@ -297,7 +485,8 @@ export const closeDay = async (
           await DailyClosing.findOne({
             pumpId,
             businessDate,
-          }).session(session);
+          })
+            .session(session);
 
         if (
           existing &&
@@ -310,198 +499,84 @@ export const closeDay = async (
         }
 
         /* =========================================
-           SALES
+           LOAD ALL REQUIRED DATA IN PARALLEL
         ========================================= */
 
-        const sales =
-          await Sale.find({
+        const [
+          nozzleReadings,
+          manualSales,
+          expenses,
+          stocks,
+          pendingCustomers,
+        ] = await Promise.all([
+          /* ---------------------------------------
+             NOZZLE SALES
+          --------------------------------------- */
+
+          NozzleReading.find({
             pumpId,
-            saleDate: businessDate,
+            readingDate:
+              businessDate,
           })
             .select(
-              "totalAmount paymentMethod fuelType quantity"
+              "fuelType litresSold totalAmount paymentMethod payments"
             )
             .session(session)
-            .lean();
+            .lean(),
 
-        /*
-         * Sale already represents the actual sale
-         * transaction generated by the application.
-         *
-         * Therefore totalSales is calculated directly
-         * from Sale records.
-         */
-        const totalSales =
-          sum(
-            sales,
-            "totalAmount"
-          );
+          /* ---------------------------------------
+             MANUAL / PAYMENT SALES
+          --------------------------------------- */
 
-        const cashSales =
-          sum(
-            sales.filter(
-              (sale) =>
-                sale.paymentMethod ===
-                "cash"
-            ),
-            "totalAmount"
-          );
+          Sale.find({
+            pumpId,
+            saleDate:
+              businessDate,
 
-        const upiSales =
-          sum(
-            sales.filter(
-              (sale) =>
-                sale.paymentMethod ===
-                "upi"
-            ),
-            "totalAmount"
-          );
+            source: {
+              $in: [
+                "manual",
+                "payment",
+              ],
+            },
+          })
+            .select(
+              "totalAmount paymentMethod payments fuelType quantity"
+            )
+            .session(session)
+            .lean(),
 
-        const cardSales =
-          sum(
-            sales.filter(
-              (sale) =>
-                sale.paymentMethod ===
-                "card"
-            ),
-            "totalAmount"
-          );
+          /* ---------------------------------------
+             EXPENSES
+          --------------------------------------- */
 
-        /*
-         * Credit sales are actual Sale records
-         * having paymentMethod = credit.
-         */
-        const creditSales =
-          sum(
-            sales.filter(
-              (sale) =>
-                sale.paymentMethod ===
-                "credit"
-            ),
-            "totalAmount"
-          );
-
-        /* =========================================
-           EXPENSES
-        ========================================= */
-
-        const expenses =
-          await Expense.find({
+          Expense.find({
             pumpId,
             expenseDate:
               businessDate,
           })
             .select("amount")
             .session(session)
-            .lean();
+            .lean(),
 
-        const totalExpenses =
-          sum(
-            expenses,
-            "amount"
-          );
+          /* ---------------------------------------
+             CURRENT FUEL STOCK
+          --------------------------------------- */
 
-        /* =========================================
-           LEDGER PURCHASES
-        ========================================= */
-
-        /*
-         * Read today's ledger purchases for
-         * reporting/audit consistency.
-         *
-         * These are NOT added again to totalSales
-         * because Sale is the source of truth for
-         * sales totals.
-         */
-        const ledgerPurchases =
-          await LedgerEntry.find({
-            pumpId,
-            entryType: "purchase",
-            entryDate:
-              businessDate,
-          })
-            .select(
-              "totalAmount paidAmount pendingAmount fuelType"
-            )
-            .session(session)
-            .lean();
-
-        /* =========================================
-           FUEL STOCK
-        ========================================= */
-
-        const stocks =
-          await FuelStock.find({
+          FuelStock.find({
             pumpId,
           })
             .select(
               "fuelType currentStock totalPurchased totalSold"
             )
             .session(session)
-            .lean();
+            .lean(),
 
-        const petrolStock =
-          stocks.find(
-            (stock) =>
-              stock.fuelType ===
-              "petrol"
-          );
+          /* ---------------------------------------
+             CURRENT PENDING CREDIT
+          --------------------------------------- */
 
-        const dieselStock =
-          stocks.find(
-            (stock) =>
-              stock.fuelType ===
-              "diesel"
-          );
-
-        /* =========================================
-           TODAY'S FUEL SOLD
-        ========================================= */
-
-        const petrolSold =
-          sales
-            .filter(
-              (sale) =>
-                sale.fuelType ===
-                "petrol"
-            )
-            .reduce(
-              (
-                total,
-                sale
-              ) =>
-                total +
-                toNumber(
-                  sale.quantity
-                ),
-              0
-            );
-
-        const dieselSold =
-          sales
-            .filter(
-              (sale) =>
-                sale.fuelType ===
-                "diesel"
-            )
-            .reduce(
-              (
-                total,
-                sale
-              ) =>
-                total +
-                toNumber(
-                  sale.quantity
-                ),
-              0
-            );
-
-        /* =========================================
-           CURRENT PENDING CREDIT
-        ========================================= */
-
-        const pendingCustomers =
-          await LedgerCustomer.find({
+          LedgerCustomer.find({
             pumpId,
             currentBalance: {
               $gt: 0,
@@ -511,22 +586,154 @@ export const closeDay = async (
               "currentBalance"
             )
             .session(session)
-            .lean();
+            .lean(),
+        ]);
+
+        /* =========================================
+           SALES SUMMARY
+        ========================================= */
+
+        const salesSummary = {
+          totalSales: 0,
+
+          cash: 0,
+          upi: 0,
+          card: 0,
+          credit: 0,
+
+          petrolSold: 0,
+          dieselSold: 0,
+
+          totalFuelSold: 0,
+        };
+
+        /* -----------------------------------------
+           NOZZLE READINGS
+        ----------------------------------------- */
+
+        for (
+          const reading of nozzleReadings
+        ) {
+          const sale =
+            nozzleReadingToSale(
+              reading
+            );
+
+          addSaleToSummary(
+            salesSummary,
+            sale
+          );
+        }
+
+        /* -----------------------------------------
+           MANUAL / PAYMENT SALES
+        ----------------------------------------- */
+
+        for (
+          const sale of manualSales
+        ) {
+          addSaleToSummary(
+            salesSummary,
+            sale
+          );
+        }
+
+        /* =========================================
+           SALES TOTALS
+        ========================================= */
+
+        const totalSales =
+          roundNumber(
+            salesSummary.totalSales
+          );
+
+        const cashSales =
+          roundNumber(
+            salesSummary.cash
+          );
+
+        const upiSales =
+          roundNumber(
+            salesSummary.upi
+          );
+
+        const cardSales =
+          roundNumber(
+            salesSummary.card
+          );
+
+        const creditSales =
+          roundNumber(
+            salesSummary.credit
+          );
+
+        /* =========================================
+           EXPENSE TOTAL
+        ========================================= */
+
+        const totalExpenses =
+          roundNumber(
+            expenses.reduce(
+              (
+                total,
+                expense
+              ) =>
+                total +
+                toNumber(
+                  expense?.amount
+                ),
+              0
+            )
+          );
+
+        /* =========================================
+           CURRENT STOCK
+        ========================================= */
+
+        const petrolStock =
+          stocks.find(
+            (stock) =>
+              stock?.fuelType ===
+              "petrol"
+          );
+
+        const dieselStock =
+          stocks.find(
+            (stock) =>
+              stock?.fuelType ===
+              "diesel"
+          );
+
+        const petrolClosingStock =
+          roundNumber(
+            petrolStock?.currentStock
+          );
+
+        const dieselClosingStock =
+          roundNumber(
+            dieselStock?.currentStock
+          );
+
+        /* =========================================
+           PENDING CREDIT
+        ========================================= */
 
         const pendingCredit =
-          pendingCustomers.reduce(
-            (
-              total,
-              customer
-            ) =>
-              total +
-              Math.max(
-                toNumber(
-                  customer.currentBalance
+          roundNumber(
+            pendingCustomers.reduce(
+              (
+                total,
+                customer
+              ) =>
+                total +
+                Math.max(
+                  toNumber(
+                    customer?.currentBalance
+                  ),
+                  0
                 ),
-                0
-              ),
-            0
+              0
+            )
           );
 
         /* =========================================
@@ -535,17 +742,20 @@ export const closeDay = async (
 
         /*
          * Credit sales are not immediate
-         * cash/UPI/card collections.
+         * cash/UPI/card collection.
          *
-         * Actual collection:
+         * Therefore:
          *
          * cash + UPI + card - expenses
          */
+
         const netCollection =
-          cashSales +
-          upiSales +
-          cardSales -
-          totalExpenses;
+          roundNumber(
+            cashSales +
+              upiSales +
+              cardSales -
+              totalExpenses
+          );
 
         /* =========================================
            DAILY CLOSING DATA
@@ -553,35 +763,41 @@ export const closeDay = async (
 
         const closingData = {
           totalSales,
+
           cashSales,
           upiSales,
           cardSales,
           creditSales,
 
           totalExpenses,
+
           netCollection,
 
-          petrolSold,
-          dieselSold,
-
-          petrolClosingStock:
-            toNumber(
-              petrolStock?.currentStock
+          petrolSold:
+            roundNumber(
+              salesSummary.petrolSold
             ),
 
-          dieselClosingStock:
-            toNumber(
-              dieselStock?.currentStock
+          dieselSold:
+            roundNumber(
+              salesSummary.dieselSold
             ),
+
+          petrolClosingStock,
+
+          dieselClosingStock,
 
           pendingCredit,
 
           status: "closed",
 
           closedBy: userId,
-          closedAt: new Date(),
+
+          closedAt:
+            new Date(),
 
           reopenedBy: null,
+
           reopenedAt: null,
 
           note: String(
@@ -590,7 +806,7 @@ export const closeDay = async (
         };
 
         /* =========================================
-           UPDATE REOPENED CLOSING
+           SAVE CLOSING
         ========================================= */
 
         if (existing) {
@@ -604,16 +820,14 @@ export const closeDay = async (
               session,
             });
         } else {
-          /* =======================================
-             CREATE NEW CLOSING
-          ======================================= */
-
           const documents =
             await DailyClosing.create(
               [
                 {
                   pumpId,
+
                   businessDate,
+
                   ...closingData,
                 },
               ],
@@ -627,7 +841,7 @@ export const closeDay = async (
         }
 
         /* =========================================
-           AUDIT
+           AUDIT LOG
         ========================================= */
 
         await createAuditLog({
@@ -650,13 +864,6 @@ export const closeDay = async (
 
           session,
         });
-
-        /*
-         * ledgerPurchases is intentionally queried
-         * above for consistency and future reporting,
-         * but is not added to sales totals.
-         */
-        void ledgerPurchases;
       }
     );
 
@@ -735,11 +942,16 @@ export const reopenDay = async (
 
     await session.withTransaction(
       async () => {
+        /* =========================================
+           FIND CLOSING
+        ========================================= */
+
         closing =
           await DailyClosing.findOne({
             _id: id,
             pumpId,
-          }).session(session);
+          })
+            .session(session);
 
         if (!closing) {
           throw createError(
@@ -758,8 +970,16 @@ export const reopenDay = async (
           );
         }
 
+        /* =========================================
+           OLD STATUS
+        ========================================= */
+
         const oldStatus =
           closing.status;
+
+        /* =========================================
+           UPDATE
+        ========================================= */
 
         closing.status =
           "reopened";
@@ -773,6 +993,10 @@ export const reopenDay = async (
         await closing.save({
           session,
         });
+
+        /* =========================================
+           AUDIT
+        ========================================= */
 
         await createAuditLog({
           req,

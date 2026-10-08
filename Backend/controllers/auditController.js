@@ -19,6 +19,7 @@ const MAX_PAGE = 100000;
  * Get authenticated user's pumpId.
  *
  * Supports:
+ *
  * req.user.pumpId
  * req.user.pumpId._id
  * req.user.pumpID
@@ -34,7 +35,9 @@ const getPumpId = (req) => {
 
   if (
     !pumpId ||
-    !mongoose.Types.ObjectId.isValid(String(pumpId))
+    !mongoose.Types.ObjectId.isValid(
+      String(pumpId)
+    )
   ) {
     return null;
   }
@@ -44,41 +47,46 @@ const getPumpId = (req) => {
   );
 };
 
-/**
- * Normalize module filter.
- */
+/* =====================================================
+   MODULE FILTER
+===================================================== */
+
 const getModuleFilter = (req) => {
+  const rawModule =
+    req.query?.module;
+
   if (
-    typeof req.query?.module !== "string"
+    typeof rawModule !== "string"
   ) {
     return null;
   }
 
-  const module = req.query.module.trim();
+  const module =
+    rawModule
+      .trim()
+      .toLowerCase();
 
-  if (!module) {
+  if (
+    !module ||
+    module.length > 100
+  ) {
     return null;
   }
 
-  /*
-   * Prevent excessively large query values.
-   */
-  if (module.length > 100) {
-    return null;
-  }
-
-  return module.toLowerCase();
+  return module;
 };
 
-/**
- * Safely parse positive integer.
- */
+/* =====================================================
+   POSITIVE INTEGER
+===================================================== */
+
 const getPositiveInteger = (
   value,
   fallback,
-  maximum = Number.MAX_SAFE_INTEGER
+  maximum
 ) => {
-  const parsed = Number(value);
+  const parsed =
+    Number(value);
 
   if (
     !Number.isFinite(parsed) ||
@@ -97,76 +105,82 @@ const getPositiveInteger = (
    GET AUDIT LOGS
 ===================================================== */
 
-export const getAuditLogs = async (
-  req,
-  res
-) => {
-  try {
-    /* =================================================
-       PUMP ISOLATION
-    ================================================= */
+export const getAuditLogs =
+  async (req, res) => {
+    try {
+      /* =====================================
+         PUMP ISOLATION
+      ===================================== */
 
-    const pumpId = getPumpId(req);
+      const pumpId =
+        getPumpId(req);
 
-    /*
-     * Audit logs are pump-scoped.
-     *
-     * Superadmin must use a dedicated
-     * superadmin audit endpoint if
-     * cross-pump audit access is required.
-     */
-    if (!pumpId) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Pump information is required",
-      });
-    }
+      /*
+       * Audit logs in this endpoint are
+       * strictly pump-scoped.
+       *
+       * Super Admin cross-pump auditing should
+       * use a dedicated endpoint.
+       */
+      if (!pumpId) {
+        return res.status(400).json({
+          success: false,
 
-    /* =================================================
-       PAGINATION
-    ================================================= */
+          message:
+            "Pump information is required",
+        });
+      }
 
-    const page = getPositiveInteger(
-      req.query?.page,
-      DEFAULT_PAGE,
-      MAX_PAGE
-    );
+      /* =====================================
+         PAGINATION
+      ===================================== */
 
-    const requestedLimit =
-      getPositiveInteger(
-        req.query?.limit,
-        DEFAULT_LIMIT,
-        MAX_LIMIT
-      );
+      const page =
+        getPositiveInteger(
+          req.query?.page,
+          DEFAULT_PAGE,
+          MAX_PAGE
+        );
 
-    const limit = Math.min(
-      requestedLimit,
-      MAX_LIMIT
-    );
+      const limit =
+        getPositiveInteger(
+          req.query?.limit,
+          DEFAULT_LIMIT,
+          MAX_LIMIT
+        );
 
-    const skip = (page - 1) * limit;
+      const skip =
+        (page - 1) * limit;
 
-    /* =================================================
-       FILTER
-    ================================================= */
+      /* =====================================
+         FILTER
+      ===================================== */
 
-    const filter = {
-      pumpId,
-    };
+      const filter = {
+        pumpId,
+      };
 
-    const module = getModuleFilter(req);
+      const module =
+        getModuleFilter(req);
 
-    if (module) {
-      filter.module = module;
-    }
+      if (module) {
+        filter.module = module;
+      }
 
-    /* =================================================
-       DATABASE QUERY
-    ================================================= */
+      /* =====================================
+         DATABASE
+      ===================================== */
 
-    const [logs, total] =
-      await Promise.all([
+      /*
+       * The list query and count query are
+       * independent.
+       *
+       * Both run in parallel.
+       */
+      const [
+        logs,
+        total,
+      ] = await Promise.all([
         AuditLog.find(filter)
           .select(
             [
@@ -194,33 +208,42 @@ export const getAuditLogs = async (
           .limit(limit)
           .lean(),
 
-        AuditLog.countDocuments(filter),
+        AuditLog.countDocuments(
+          filter
+        ),
       ]);
 
-    /* =================================================
-       RESPONSE
-    ================================================= */
+      /* =====================================
+         RESPONSE
+      ===================================== */
 
-    return res.status(200).json({
-      success: true,
-      page,
-      pages: Math.ceil(
-        total / limit
-      ),
-      total,
-      limit,
-      logs,
-    });
-  } catch (error) {
-    console.error(
-      "GET AUDIT LOGS ERROR:",
-      error
-    );
+      return res.status(200).json({
+        success: true,
 
-    return res.status(500).json({
-      success: false,
-      message:
-        "Unable to load audit logs",
-    });
-  }
-};
+        page,
+
+        pages:
+          Math.ceil(
+            total / limit
+          ),
+
+        total,
+
+        limit,
+
+        logs,
+      });
+    } catch (error) {
+      console.error(
+        "GET AUDIT LOGS ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+
+        message:
+          "Unable to load audit logs",
+      });
+    }
+  };

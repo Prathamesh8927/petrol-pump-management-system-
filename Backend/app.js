@@ -1,9 +1,16 @@
 import express from "express";
 import cors from "cors";
+import crypto from "crypto";
+import helmet from "helmet";
+import compression from "compression";
+import rateLimit from "express-rate-limit";
+import mongoose from "mongoose";
 
-/* =====================================================
-   ROUTES
-===================================================== */
+/*
+|--------------------------------------------------------------------------
+| ROUTES
+|--------------------------------------------------------------------------
+*/
 
 import authRoutes from "./routes/authRoutes.js";
 import fuelRoutes from "./routes/fuelRoutes.js";
@@ -20,29 +27,169 @@ import auditRoutes from "./routes/auditRoutes.js";
 import passwordResetRoutes from "./routes/passwordResetRoutes.js";
 import recoveryRoutes from "./routes/recoveryRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
-import { handleRazorpayWebhook } from "./controllers/paymentController.js";
+
+/*
+|--------------------------------------------------------------------------
+| CONTROLLERS
+|--------------------------------------------------------------------------
+*/
+
+import {
+  handleRazorpayWebhook,
+} from "./controllers/paymentController.js";
+
+/*
+|--------------------------------------------------------------------------
+| MIDDLEWARE
+|--------------------------------------------------------------------------
+*/
+
 import authMiddleware from "./middleware/authMiddleware.js";
 import allowRoles from "./middleware/roleMiddleware.js";
 
-/* =====================================================
-   APP
-===================================================== */
+/*
+|--------------------------------------------------------------------------
+| APP
+|--------------------------------------------------------------------------
+*/
 
 const app = express();
 
-const adminOnly = [
-  authMiddleware,
-  allowRoles("owner", "manager"),
-];
+/*
+|--------------------------------------------------------------------------
+| ENVIRONMENT
+|--------------------------------------------------------------------------
+*/
 
-/* =====================================================
-   CORS
-===================================================== */
+const NODE_ENV = String(
+  process.env.NODE_ENV || "development"
+)
+  .trim()
+  .toLowerCase();
+
+const isProduction = NODE_ENV === "production";
+
+/*
+|--------------------------------------------------------------------------
+| BASIC EXPRESS SECURITY
+|--------------------------------------------------------------------------
+*/
+
+app.disable("x-powered-by");
+
+/*
+|--------------------------------------------------------------------------
+| TRUST PROXY
+|--------------------------------------------------------------------------
+|
+| Required when running behind Render/proxy.
+|
+|--------------------------------------------------------------------------
+*/
+
+const trustProxyValue =
+  process.env.TRUST_PROXY;
+
+if (trustProxyValue === "true") {
+  app.set("trust proxy", true);
+} else if (trustProxyValue === "false") {
+  app.set("trust proxy", false);
+} else if (
+  trustProxyValue !== undefined
+) {
+  const parsedTrustProxy = Number(
+    trustProxyValue
+  );
+
+  if (Number.isFinite(parsedTrustProxy)) {
+    app.set(
+      "trust proxy",
+      parsedTrustProxy
+    );
+  } else {
+    app.set(
+      "trust proxy",
+      isProduction ? 1 : 0
+    );
+  }
+} else {
+  app.set(
+    "trust proxy",
+    isProduction ? 1 : 0
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| SECURITY HEADERS
+|--------------------------------------------------------------------------
+*/
+
+app.use(
+  helmet({
+    hsts: isProduction
+      ? {
+          maxAge: 31536000,
+          includeSubDomains: true,
+          preload: true,
+        }
+      : false,
+  })
+);
+
+/*
+|--------------------------------------------------------------------------
+| RESPONSE COMPRESSION
+|--------------------------------------------------------------------------
+|
+| Compress larger JSON responses such as:
+|
+| - dashboard
+| - ledger
+| - reports
+| - sales history
+|
+|--------------------------------------------------------------------------
+*/
+
+app.use(
+  compression({
+    threshold: 1024,
+    level: 6,
+  })
+);
+
+/*
+|--------------------------------------------------------------------------
+| REQUEST ID
+|--------------------------------------------------------------------------
+|
+| Helps trace errors and slow requests in Render logs.
+|
+|--------------------------------------------------------------------------
+*/
+
+app.use((req, res, next) => {
+  const requestId = crypto.randomUUID();
+
+  req.requestId = requestId;
+
+  res.setHeader(
+    "X-Request-ID",
+    requestId
+  );
+
+  next();
+});
+
+/*
+|--------------------------------------------------------------------------
+| CORS
+|--------------------------------------------------------------------------
+*/
 
 const normalizeOrigin = (origin) => {
-  if (
-    typeof origin !== "string"
-  ) {
+  if (typeof origin !== "string") {
     return "";
   }
 
@@ -64,29 +211,45 @@ const environmentOrigins =
         .filter(Boolean)
     : [];
 
-const allowedOrigins = [
-  ...new Set([
-    ...developmentOrigins,
-    ...environmentOrigins,
-  ]),
-];
+const allowedOrigins = isProduction
+  ? [...new Set(environmentOrigins)]
+  : [
+      ...new Set([
+        ...developmentOrigins,
+        ...environmentOrigins,
+      ]),
+    ];
+
+if (
+  isProduction &&
+  allowedOrigins.length === 0
+) {
+  throw new Error(
+    "CLIENT_URL must be configured in production."
+  );
+}
+
+if (!isProduction) {
+  console.log(
+    "CORS ALLOWED ORIGINS:",
+    allowedOrigins
+  );
+}
 
 app.use(
   cors({
-    origin: (
-      origin,
-      callback
-    ) => {
+    origin: (origin, callback) => {
       /*
-       * Allow requests without Origin:
-       * Postman, server-to-server requests,
-       * health checks, etc.
+       * Requests without Origin are allowed.
+       *
+       * Examples:
+       * - Postman
+       * - server-to-server
+       * - health checks
+       * - webhook requests
        */
       if (!origin) {
-        return callback(
-          null,
-          true
-        );
+        return callback(null, true);
       }
 
       const normalizedOrigin =
@@ -97,9 +260,13 @@ app.use(
           normalizedOrigin
         )
       ) {
-        return callback(
-          null,
-          true
+        return callback(null, true);
+      }
+
+      if (!isProduction) {
+        console.warn(
+          "CORS BLOCKED:",
+          normalizedOrigin
         );
       }
 
@@ -124,21 +291,43 @@ app.use(
     allowedHeaders: [
       "Content-Type",
       "Authorization",
+      "X-Request-ID",
     ],
 
     optionsSuccessStatus: 204,
   })
 );
 
-/* =====================================================
-   BODY PARSERS
-===================================================== */
+/*
+|--------------------------------------------------------------------------
+| RAZORPAY WEBHOOK
+|--------------------------------------------------------------------------
+|
+| IMPORTANT:
+|
+| Razorpay signature verification requires
+| the ORIGINAL RAW request body.
+|
+| Therefore this route MUST be registered
+| BEFORE express.json().
+|
+|--------------------------------------------------------------------------
+*/
 
 app.post(
   "/api/payments/webhook",
-  express.raw({ type: "application/json", limit: "1mb" }),
+  express.raw({
+    type: "application/json",
+    limit: "1mb",
+  }),
   handleRazorpayWebhook
 );
+
+/*
+|--------------------------------------------------------------------------
+| BODY PARSERS
+|--------------------------------------------------------------------------
+*/
 
 app.use(
   express.json({
@@ -153,33 +342,253 @@ app.use(
   })
 );
 
-/* =====================================================
-   BASIC ROUTE
-===================================================== */
+/*
+|--------------------------------------------------------------------------
+| API RATE LIMITER
+|--------------------------------------------------------------------------
+*/
+
+const apiWindowMs =
+  Number.parseInt(
+    process.env.API_RATE_LIMIT_WINDOW_MS ||
+      String(15 * 60 * 1000),
+    10
+  );
+
+const apiMaxRequests = Math.max(
+  Number.parseInt(
+    process.env.API_RATE_LIMIT_MAX_REQUESTS ||
+      "300",
+    10
+  ),
+  1
+);
+
+const apiRateLimiter =
+  rateLimit({
+    windowMs:
+      Number.isFinite(apiWindowMs) &&
+      apiWindowMs > 0
+        ? apiWindowMs
+        : 15 * 60 * 1000,
+
+    limit: apiMaxRequests,
+
+    standardHeaders: "draft-8",
+
+    legacyHeaders: false,
+
+    message: {
+      success: false,
+      code: "TOO_MANY_REQUESTS",
+      message:
+        "Too many requests. Please try again later.",
+    },
+
+    handler: (req, res, next, options) => {
+      const retryAfter = Math.ceil(
+        options.windowMs / 1000
+      );
+
+      if (!isProduction) {
+        console.warn(
+          "API RATE LIMIT EXCEEDED:",
+          {
+            requestId:
+              req.requestId,
+            method: req.method,
+            path: req.path,
+            ip: req.ip,
+          }
+        );
+      }
+
+      res.setHeader(
+        "Retry-After",
+        String(retryAfter)
+      );
+
+      return res.status(429).json({
+        success: false,
+        code: "TOO_MANY_REQUESTS",
+        message:
+          "Too many requests. Please try again later.",
+        retryAfter,
+        requestId:
+          req.requestId,
+      });
+    },
+
+    skip: (req) => {
+      return req.path === "/health";
+    },
+  });
+
+app.use(
+  "/api",
+  apiRateLimiter
+);
+
+/*
+|--------------------------------------------------------------------------
+| REQUEST LOGGER
+|--------------------------------------------------------------------------
+|
+| Disabled in production unless explicitly enabled.
+|
+| Set:
+|
+| ENABLE_REQUEST_LOGS=true
+|
+|--------------------------------------------------------------------------
+*/
+
+const enableRequestLogs =
+  process.env.ENABLE_REQUEST_LOGS ===
+  "true";
+
+if (
+  !isProduction ||
+  enableRequestLogs
+) {
+  app.use((req, res, next) => {
+    const start =
+      process.hrtime.bigint();
+
+    res.on("finish", () => {
+      const end =
+        process.hrtime.bigint();
+
+      const durationMs =
+        Number(end - start) /
+        1_000_000;
+
+      console.log(
+        `${new Date().toISOString()} ` +
+          `${req.method} ` +
+          `${req.path} ` +
+          `${res.statusCode} ` +
+          `${durationMs.toFixed(1)}ms ` +
+          `requestId=${req.requestId}`
+      );
+    });
+
+    next();
+  });
+}
+
+/*
+|--------------------------------------------------------------------------
+| BASIC API ROUTE
+|--------------------------------------------------------------------------
+*/
+
+app.get("/", (req, res) => {
+  return res.status(200).json({
+    success: true,
+    message:
+      "Petrol Pump Management API is running",
+    requestId:
+      req.requestId,
+  });
+});
+
+/*
+|--------------------------------------------------------------------------
+| HEALTH CHECK
+|--------------------------------------------------------------------------
+|
+| Kept lightweight so Render can check the application.
+|
+|--------------------------------------------------------------------------
+*/
 
 app.get(
-  "/",
+  "/api/health",
   (req, res) => {
-    return res.status(200).json({
-      success: true,
-      message:
-        "Petrol Pump Management API is running",
-    });
+    const dbState =
+      mongoose.connection.readyState;
+
+    const databaseConnected =
+      dbState === 1;
+
+    return res
+      .status(
+        databaseConnected
+          ? 200
+          : 503
+      )
+      .json({
+        success:
+          databaseConnected,
+
+        status:
+          databaseConnected
+            ? "healthy"
+            : "degraded",
+
+        server: "running",
+
+        database:
+          databaseConnected
+            ? "connected"
+            : "disconnected",
+
+        timestamp:
+          new Date().toISOString(),
+
+        requestId:
+          req.requestId,
+      });
   }
 );
 
-/* =====================================================
-   AUTH
-===================================================== */
+/*
+|--------------------------------------------------------------------------
+| AUTH
+|--------------------------------------------------------------------------
+|
+| Login/register remain public.
+| /me is protected inside authRoutes.
+|
+|--------------------------------------------------------------------------
+*/
 
 app.use(
   "/api/auth",
   authRoutes
 );
 
-/* =====================================================
-   FUEL
-===================================================== */
+/*
+|--------------------------------------------------------------------------
+| ADMIN ROLE PROTECTION
+|--------------------------------------------------------------------------
+|
+| Existing behavior preserved:
+|
+| owner
+| manager
+|
+| The individual route files still contain their
+| authentication middleware, so we do not remove
+| authentication here and risk changing behavior.
+|
+|--------------------------------------------------------------------------
+*/
+
+const adminOnly = [
+  authMiddleware,
+  allowRoles(
+    "owner",
+    "manager"
+  ),
+];
+
+/*
+|--------------------------------------------------------------------------
+| FUEL
+|--------------------------------------------------------------------------
+*/
 
 app.use(
   "/api/fuel",
@@ -187,9 +596,11 @@ app.use(
   fuelRoutes
 );
 
-/* =====================================================
-   SALES
-===================================================== */
+/*
+|--------------------------------------------------------------------------
+| SALES
+|--------------------------------------------------------------------------
+*/
 
 app.use(
   "/api/sales",
@@ -197,18 +608,22 @@ app.use(
   salesRoutes
 );
 
-/* =====================================================
-   SUPER ADMIN
-===================================================== */
+/*
+|--------------------------------------------------------------------------
+| SUPER ADMIN
+|--------------------------------------------------------------------------
+*/
 
 app.use(
   "/api/superadmin",
   superAdminRoutes
 );
 
-/* =====================================================
-   NOZZLES
-===================================================== */
+/*
+|--------------------------------------------------------------------------
+| NOZZLES
+|--------------------------------------------------------------------------
+*/
 
 app.use(
   "/api/nozzles",
@@ -217,7 +632,11 @@ app.use(
 );
 
 /*
- * Backward compatibility.
+ * Backward-compatible endpoint.
+ *
+ * Existing frontend/API clients can continue using:
+ *
+ * /api/nozzle
  */
 app.use(
   "/api/nozzle",
@@ -225,9 +644,11 @@ app.use(
   nozzleRoutes
 );
 
-/* =====================================================
-   EXPENSES
-===================================================== */
+/*
+|--------------------------------------------------------------------------
+| EXPENSES + EMPLOYEES
+|--------------------------------------------------------------------------
+*/
 
 app.use(
   "/api/expenses",
@@ -235,9 +656,11 @@ app.use(
   expenseRoutes
 );
 
-/* =====================================================
-   LEDGER
-===================================================== */
+/*
+|--------------------------------------------------------------------------
+| LEDGER
+|--------------------------------------------------------------------------
+*/
 
 app.use(
   "/api/ledger",
@@ -245,9 +668,11 @@ app.use(
   ledgerRoutes
 );
 
-/* =====================================================
-   REPORTS
-===================================================== */
+/*
+|--------------------------------------------------------------------------
+| REPORTS
+|--------------------------------------------------------------------------
+*/
 
 app.use(
   "/api/reports",
@@ -255,9 +680,11 @@ app.use(
   reportRoutes
 );
 
-/* =====================================================
-   SETTINGS
-===================================================== */
+/*
+|--------------------------------------------------------------------------
+| SETTINGS
+|--------------------------------------------------------------------------
+*/
 
 app.use(
   "/api/settings",
@@ -265,9 +692,11 @@ app.use(
   settingsRoutes
 );
 
-/* =====================================================
-   DASHBOARD
-===================================================== */
+/*
+|--------------------------------------------------------------------------
+| DASHBOARD
+|--------------------------------------------------------------------------
+*/
 
 app.use(
   "/api/dashboard",
@@ -275,9 +704,11 @@ app.use(
   dashboardRoutes
 );
 
-/* =====================================================
-   DAILY CLOSING
-===================================================== */
+/*
+|--------------------------------------------------------------------------
+| DAILY CLOSING
+|--------------------------------------------------------------------------
+*/
 
 app.use(
   "/api/daily-closing",
@@ -285,9 +716,11 @@ app.use(
   dailyClosingRoutes
 );
 
-/* =====================================================
-   AUDIT
-===================================================== */
+/*
+|--------------------------------------------------------------------------
+| AUDIT
+|--------------------------------------------------------------------------
+*/
 
 app.use(
   "/api/audit",
@@ -295,18 +728,27 @@ app.use(
   auditRoutes
 );
 
-/* =====================================================
-   PASSWORD RESET
-===================================================== */
+/*
+|--------------------------------------------------------------------------
+| PASSWORD RESET
+|--------------------------------------------------------------------------
+|
+| These routes must remain public because the user
+| may not be authenticated when resetting a password.
+|
+|--------------------------------------------------------------------------
+*/
 
 app.use(
   "/api/password-reset",
   passwordResetRoutes
 );
 
-/* =====================================================
-   DELETED DATA RECOVERY
-===================================================== */
+/*
+|--------------------------------------------------------------------------
+| RECOVERY
+|--------------------------------------------------------------------------
+*/
 
 app.use(
   "/api/recovery",
@@ -314,40 +756,86 @@ app.use(
   recoveryRoutes
 );
 
+/*
+|--------------------------------------------------------------------------
+| PAYMENTS
+|--------------------------------------------------------------------------
+|
+| paymentRoutes handles its own role-based permissions.
+|
+|--------------------------------------------------------------------------
+*/
+
 app.use(
   "/api/payments",
   paymentRoutes
 );
 
-/* =====================================================
-   404 HANDLER
-===================================================== */
+/*
+|--------------------------------------------------------------------------
+| 404 HANDLER
+|--------------------------------------------------------------------------
+*/
+
+app.use((req, res) => {
+  return res.status(404).json({
+    success: false,
+    code: "ROUTE_NOT_FOUND",
+    message:
+      "The requested route was not found.",
+    requestId:
+      req.requestId,
+  });
+});
+
+/*
+|--------------------------------------------------------------------------
+| GLOBAL ERROR HANDLER
+|--------------------------------------------------------------------------
+*/
 
 app.use(
-  (req, res) => {
-    return res.status(404).json({
-      success: false,
-      message:
-        `Route not found: ${req.method} ${req.originalUrl}`,
-    });
-  }
-);
+  (error, req, res, next) => {
+    /*
+     * Keep detailed errors in development.
+     * Avoid exposing internal details in production.
+     */
+    if (!isProduction) {
+      console.error(
+        "SERVER ERROR:",
+        {
+          requestId:
+            req.requestId,
+          method:
+            req.method,
+          path:
+            req.path,
+          error,
+        }
+      );
+    } else {
+      console.error(
+        "SERVER ERROR:",
+        {
+          requestId:
+            req.requestId,
+          method:
+            req.method,
+          path:
+            req.path,
+          name:
+            error?.name,
+          message:
+            error?.message,
+        }
+      );
+    }
 
-/* =====================================================
-   GLOBAL ERROR HANDLER
-===================================================== */
-
-app.use(
-  (
-    error,
-    req,
-    res,
-    next
-  ) => {
-    console.error(
-      "APP ERROR:",
-      error
-    );
+    /*
+    |--------------------------------------------------------------------------
+    | CORS
+    |--------------------------------------------------------------------------
+    */
 
     if (
       error?.message ===
@@ -355,10 +843,20 @@ app.use(
     ) {
       return res.status(403).json({
         success: false,
+        code:
+          "CORS_ORIGIN_NOT_ALLOWED",
         message:
           "Request origin is not allowed.",
+        requestId:
+          req.requestId,
       });
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | INVALID JSON
+    |--------------------------------------------------------------------------
+    */
 
     if (
       error?.type ===
@@ -366,10 +864,19 @@ app.use(
     ) {
       return res.status(400).json({
         success: false,
+        code: "INVALID_JSON",
         message:
           "Invalid JSON request.",
+        requestId:
+          req.requestId,
       });
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | PAYLOAD TOO LARGE
+    |--------------------------------------------------------------------------
+    */
 
     if (
       error?.type ===
@@ -377,10 +884,20 @@ app.use(
     ) {
       return res.status(413).json({
         success: false,
+        code:
+          "PAYLOAD_TOO_LARGE",
         message:
           "Request payload is too large.",
+        requestId:
+          req.requestId,
       });
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | MONGOOSE VALIDATION
+    |--------------------------------------------------------------------------
+    */
 
     if (
       error?.name ===
@@ -388,10 +905,20 @@ app.use(
     ) {
       return res.status(400).json({
         success: false,
+        code:
+          "VALIDATION_ERROR",
         message:
           "Invalid request data.",
+        requestId:
+          req.requestId,
       });
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | MONGOOSE CAST
+    |--------------------------------------------------------------------------
+    */
 
     if (
       error?.name ===
@@ -399,25 +926,49 @@ app.use(
     ) {
       return res.status(400).json({
         success: false,
+        code:
+          "INVALID_REQUEST_DATA",
         message:
           "Invalid request data.",
+        requestId:
+          req.requestId,
       });
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | DUPLICATE KEY
+    |--------------------------------------------------------------------------
+    */
 
     if (
       error?.code === 11000
     ) {
       return res.status(409).json({
         success: false,
+        code:
+          "DUPLICATE_RECORD",
         message:
           "A record with the provided information already exists.",
+        requestId:
+          req.requestId,
       });
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | DEFAULT ERROR
+    |--------------------------------------------------------------------------
+    */
+
     return res.status(500).json({
       success: false,
+      code:
+        "INTERNAL_SERVER_ERROR",
       message:
         "Internal server error",
+      requestId:
+        req.requestId,
     });
   }
 );

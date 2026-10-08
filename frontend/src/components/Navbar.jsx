@@ -24,15 +24,12 @@ const Navbar = ({
   isMobile = false,
   onOpenMobileMenu,
 }) => {
-  const navigate =
-    useNavigate();
+  const navigate = useNavigate();
 
   const {
     user,
     logout,
-  } = useContext(
-    AuthContext
-  );
+  } = useContext(AuthContext);
 
   const [
     pump,
@@ -47,11 +44,6 @@ const Navbar = ({
     let isMounted = true;
 
     const loadPump = async () => {
-      /*
-       * Clear old pump information whenever
-       * the authenticated user changes.
-       */
-
       if (!user) {
         if (isMounted) {
           setPump(null);
@@ -60,14 +52,17 @@ const Navbar = ({
         return;
       }
 
+      const userRole = String(
+        user.role || ""
+      )
+        .trim()
+        .toLowerCase();
+
       /* ===============================================
          SUPER ADMIN
       =============================================== */
 
-      if (
-        user.role ===
-        "superadmin"
-      ) {
+      if (userRole === "superadmin") {
         if (isMounted) {
           setPump(null);
         }
@@ -103,20 +98,25 @@ const Navbar = ({
           response.data;
 
         setPump(
-          data || null
+          data &&
+            typeof data === "object"
+            ? data
+            : null
         );
       } catch (error) {
         if (!isMounted) {
           return;
         }
 
-        console.error(
-          "NAVBAR PUMP ERROR:",
-          error.response?.data
-            ?.message ||
-            error.message ||
-            "Unable to load pump information."
-        );
+        if (import.meta.env.DEV) {
+          console.error(
+            "NAVBAR PUMP ERROR:",
+            error.response?.data
+              ?.message ||
+              error.message ||
+              error
+          );
+        }
 
         setPump(null);
       }
@@ -145,28 +145,30 @@ const Navbar = ({
      DISPLAY INFORMATION
   ===================================================== */
 
+  const userRole = String(
+    user?.role || ""
+  )
+    .trim()
+    .toLowerCase();
+
   const isSuperAdmin =
-    user?.role ===
-    "superadmin";
+    userRole === "superadmin";
 
-  const displayName =
-    isSuperAdmin
-      ? "ShivShambho Super Admin"
-      : pump?.pumpName ||
-        "ShivShambho";
+  const displayName = isSuperAdmin
+    ? "ShivShambho Super Admin"
+    : pump?.pumpName ||
+      "ShivShambho";
 
-  const displayOwner =
-    isSuperAdmin
-      ? "ShivShambho Super Admin"
-      : pump?.ownerName ||
-        user?.name ||
-        "Owner";
+  const displayOwner = isSuperAdmin
+    ? "ShivShambho Super Admin"
+    : pump?.ownerName ||
+      user?.name ||
+      "Owner";
 
-  const displayRole =
-    isSuperAdmin
-      ? "Super Admin"
-      : user?.role ||
-        "User";
+  const displayRole = isSuperAdmin
+    ? "Super Admin"
+    : user?.role ||
+      "User";
 
   /* =====================================================
      UI
@@ -193,19 +195,17 @@ const Navbar = ({
             onOpenMobileMenu
           }
           aria-label="Open navigation menu"
-          aria-expanded={false}
+          aria-expanded="false"
           style={{
             width: "42px",
             height: "42px",
             minWidth: "42px",
             display: "flex",
             alignItems: "center",
-            justifyContent:
-              "center",
+            justifyContent: "center",
             border: "none",
             borderRadius: "10px",
-            background:
-              "#f1f5f9",
+            background: "#f1f5f9",
             color: "#334155",
             cursor: "pointer",
             flexShrink: 0,
@@ -235,10 +235,8 @@ const Navbar = ({
           title={displayName}
           style={{
             overflow: "hidden",
-            textOverflow:
-              "ellipsis",
-            whiteSpace:
-              "nowrap",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
           }}
         >
           {displayName}
@@ -255,10 +253,9 @@ const Navbar = ({
           <span
             style={{
               overflow: "hidden",
-              textOverflow:
-                "ellipsis",
-              whiteSpace:
-                "nowrap",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              minWidth: 0,
             }}
           >
             {displayOwner}
@@ -319,15 +316,12 @@ const Navbar = ({
 
             <span
               title={
-                user?.email ||
-                ""
+                user?.email || ""
               }
               style={{
                 overflow: "hidden",
-                textOverflow:
-                  "ellipsis",
-                whiteSpace:
-                  "nowrap",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
                 minWidth: 0,
               }}
             >
@@ -345,6 +339,7 @@ const Navbar = ({
             handleLogout
           }
           aria-label="Logout"
+          title="Logout"
           style={
             isMobile
               ? {
@@ -352,10 +347,8 @@ const Navbar = ({
                   height: "42px",
                   minWidth: "42px",
                   display: "flex",
-                  alignItems:
-                    "center",
-                  justifyContent:
-                    "center",
+                  alignItems: "center",
+                  justifyContent: "center",
                   padding: 0,
                   gap: 0,
                 }

@@ -9,32 +9,69 @@ import {
 } from "../services/recoveryService.js";
 
 /* =====================================================
+   CONSTANTS
+===================================================== */
+
+const VALID_FUEL_TYPES = new Set([
+  "petrol",
+  "diesel",
+]);
+
+const DATE_REGEX =
+  /^\d{4}-\d{2}-\d{2}$/;
+
+/* =====================================================
    HELPERS
 ===================================================== */
 
 const getPumpId = (req) => {
-  return req.user?.pumpId || null;
+  return (
+    req.user?.pumpId?._id ||
+    req.user?.pumpId ||
+    req.user?.pumpID ||
+    req.user?.pump?.pumpId ||
+    null
+  );
 };
 
 const getUserId = (req) => {
-  return req.user?._id || null;
+  return (
+    req.user?._id ||
+    req.user?.id ||
+    null
+  );
 };
 
-const normalizeFuelType = (value) => {
-  return String(value || "")
-    .trim()
-    .toLowerCase();
+const normalizeFuelType = (
+  value
+) => {
+  const type =
+    String(value || "")
+      .trim()
+      .toLowerCase();
+
+  /*
+   * Keep backward compatibility with
+   * the old "disel" spelling.
+   */
+  return type === "disel"
+    ? "diesel"
+    : type;
 };
 
-const isValidFuelType = (fuelType) => {
-  return [
-    "petrol",
-    "diesel",
-  ].includes(fuelType);
+const isValidFuelType = (
+  fuelType
+) => {
+  return VALID_FUEL_TYPES.has(
+    fuelType
+  );
 };
 
-const toPositiveNumber = (value) => {
-  const number = Number(value);
+const toPositiveNumber = (
+  value
+) => {
+  const number =
+    Number(value);
 
   if (
     !Number.isFinite(number) ||
@@ -46,8 +83,11 @@ const toPositiveNumber = (value) => {
   return number;
 };
 
-const toNonNegativeNumber = (value) => {
-  const number = Number(value);
+const toNonNegativeNumber = (
+  value
+) => {
+  const number =
+    Number(value);
 
   if (
     !Number.isFinite(number) ||
@@ -60,8 +100,49 @@ const toNonNegativeNumber = (value) => {
 };
 
 const todayString = () => {
-  return new Date().toLocaleDateString(
-    "en-CA"
+  return new Date()
+    .toLocaleDateString(
+      "en-CA"
+    );
+};
+
+const isValidDateString = (
+  value
+) => {
+  if (
+    typeof value !==
+    "string"
+  ) {
+    return false;
+  }
+
+  if (
+    !DATE_REGEX.test(value)
+  ) {
+    return false;
+  }
+
+  const date =
+    new Date(
+      `${value}T00:00:00Z`
+    );
+
+  return (
+    !Number.isNaN(
+      date.getTime()
+    ) &&
+    date
+      .toISOString()
+      .slice(0, 10) ===
+      value
+  );
+};
+
+const isValidObjectId = (
+  id
+) => {
+  return mongoose.Types.ObjectId.isValid(
+    String(id || "")
   );
 };
 
@@ -69,227 +150,259 @@ const todayString = () => {
    GET FUEL STOCK
 ===================================================== */
 
-export const getFuelStock = async (
-  req,
-  res
-) => {
-  try {
-    const pumpId =
-      getPumpId(req);
+export const getFuelStock =
+  async (req, res) => {
+    try {
+      const pumpId =
+        getPumpId(req);
 
-    if (!pumpId) {
-      return res.status(403).json({
+      if (!pumpId) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Pump access is required",
+        });
+      }
+
+      const stocks =
+        await FuelStock.find({
+          pumpId,
+        })
+          .select(
+            "pumpId fuelType currentStock totalPurchased totalSold createdAt updatedAt"
+          )
+          .sort({
+            fuelType: 1,
+          })
+          .lean();
+
+      return res.status(200).json({
+        success: true,
+
+        stock:
+          stocks,
+
+        stocks,
+      });
+    } catch (error) {
+      console.error(
+        "GET FUEL STOCK ERROR:",
+        error
+      );
+
+      return res.status(500).json({
         success: false,
         message:
-          "Pump access is required",
+          "Unable to load fuel stock",
       });
     }
-
-    const stocks =
-      await FuelStock.find({
-        pumpId,
-      }).sort({
-        fuelType: 1,
-      });
-
-    return res.status(200).json({
-      success: true,
-
-      stock: stocks,
-      stocks,
-    });
-  } catch (error) {
-    console.error(
-      "GET FUEL STOCK ERROR:",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-      message:
-        "Unable to load fuel stock",
-    });
-  }
-};
+  };
 
 /* =====================================================
    CREATE / UPDATE FUEL STOCK
 ===================================================== */
 
-export const saveFuelStock = async (
-  req,
-  res
-) => {
-  try {
-    const pumpId =
-      getPumpId(req);
+export const saveFuelStock =
+  async (req, res) => {
+    try {
+      const pumpId =
+        getPumpId(req);
 
-    if (!pumpId) {
-      return res.status(403).json({
-        success: false,
-        message:
-          "Pump access is required",
-      });
-    }
-
-    const fuelType =
-      req.params.fuelType ||
-      req.body?.fuelType;
-
-    const type =
-      normalizeFuelType(
-        fuelType
-      );
-
-    if (
-      !isValidFuelType(type)
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Invalid fuel type",
-      });
-    }
-
-    const {
-      currentStock,
-      totalPurchased,
-      totalSold,
-      purchased,
-      sold,
-    } = req.body || {};
-
-    const update = {};
-
-    if (
-      currentStock !==
-      undefined
-    ) {
-      const value =
-        toNonNegativeNumber(
-          currentStock
-        );
-
-      if (value === null) {
-        return res.status(400).json({
+      if (!pumpId) {
+        return res.status(403).json({
           success: false,
           message:
-            "Invalid current stock",
+            "Pump access is required",
         });
       }
 
-      update.currentStock =
-        value;
-    }
+      const fuelType =
+        req.params?.fuelType ??
+        req.body?.fuelType;
 
-    const purchasedValue =
-      totalPurchased !==
-      undefined
-        ? totalPurchased
-        : purchased;
-
-    if (
-      purchasedValue !==
-      undefined
-    ) {
-      const value =
-        toNonNegativeNumber(
-          purchasedValue
+      const type =
+        normalizeFuelType(
+          fuelType
         );
 
-      if (value === null) {
+      if (
+        !isValidFuelType(
+          type
+        )
+      ) {
         return res.status(400).json({
           success: false,
           message:
-            "Invalid purchased stock",
+            "Invalid fuel type",
         });
       }
 
-      update.totalPurchased =
-        value;
-    }
+      const {
+        currentStock,
+        totalPurchased,
+        totalSold,
+        purchased,
+        sold,
+      } = req.body || {};
 
-    const soldValue =
-      totalSold !==
-      undefined
-        ? totalSold
-        : sold;
+      const update = {};
 
-    if (
-      soldValue !==
-      undefined
-    ) {
-      const value =
-        toNonNegativeNumber(
-          soldValue
-        );
+      /* =====================================
+         CURRENT STOCK
+      ===================================== */
 
-      if (value === null) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Invalid sold stock",
-        });
-      }
+      if (
+        currentStock !==
+        undefined
+      ) {
+        const value =
+          toNonNegativeNumber(
+            currentStock
+          );
 
-      update.totalSold =
-        value;
-    }
-
-    if (
-      Object.keys(update)
-        .length === 0
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "No stock data provided",
-      });
-    }
-
-    const stock =
-      await FuelStock.findOneAndUpdate(
-        {
-          pumpId,
-          fuelType: type,
-        },
-        {
-          $set: update,
-
-          $setOnInsert: {
-            pumpId,
-            fuelType: type,
-          },
-        },
-        {
-          new: true,
-          upsert: true,
-          runValidators: true,
-          setDefaultsOnInsert: true,
+        if (
+          value === null
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Invalid current stock",
+          });
         }
+
+        update.currentStock =
+          value;
+      }
+
+      /* =====================================
+         PURCHASED
+      ===================================== */
+
+      const purchasedValue =
+        totalPurchased !==
+          undefined
+          ? totalPurchased
+          : purchased;
+
+      if (
+        purchasedValue !==
+        undefined
+      ) {
+        const value =
+          toNonNegativeNumber(
+            purchasedValue
+          );
+
+        if (
+          value === null
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Invalid purchased stock",
+          });
+        }
+
+        update.totalPurchased =
+          value;
+      }
+
+      /* =====================================
+         SOLD
+      ===================================== */
+
+      const soldValue =
+        totalSold !==
+          undefined
+          ? totalSold
+          : sold;
+
+      if (
+        soldValue !==
+        undefined
+      ) {
+        const value =
+          toNonNegativeNumber(
+            soldValue
+          );
+
+        if (
+          value === null
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Invalid sold stock",
+          });
+        }
+
+        update.totalSold =
+          value;
+      }
+
+      if (
+        Object.keys(
+          update
+        ).length === 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "No stock data provided",
+        });
+      }
+
+      /* =====================================
+         UPSERT
+      ===================================== */
+
+      const stock =
+        await FuelStock.findOneAndUpdate(
+          {
+            pumpId,
+            fuelType:
+              type,
+          },
+          {
+            $set:
+              update,
+
+            $setOnInsert: {
+              pumpId,
+              fuelType:
+                type,
+            },
+          },
+          {
+            new: true,
+            upsert: true,
+            runValidators: true,
+            setDefaultsOnInsert:
+              true,
+          }
+        );
+
+      return res.status(200).json({
+        success: true,
+
+        message:
+          `${type} stock updated successfully`,
+
+        stock,
+      });
+    } catch (error) {
+      console.error(
+        "SAVE FUEL STOCK ERROR:",
+        error
       );
 
-    return res.status(200).json({
-      success: true,
-
-      message:
-        `${type} stock updated successfully`,
-
-      stock,
-    });
-  } catch (error) {
-    console.error(
-      "SAVE FUEL STOCK ERROR:",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-      message:
-        "Unable to update fuel stock",
-    });
-  }
-};
+      return res.status(500).json({
+        success: false,
+        message:
+          "Unable to update fuel stock",
+      });
+    }
+  };
 
 /* =====================================================
    DELETE FUEL STOCK
@@ -297,8 +410,7 @@ export const saveFuelStock = async (
 
 export const deleteFuelStock =
   async (req, res) => {
-    const session =
-      await mongoose.startSession();
+    let session = null;
 
     try {
       const pumpId =
@@ -325,11 +437,13 @@ export const deleteFuelStock =
 
       const type =
         normalizeFuelType(
-          req.params.fuelType
+          req.params?.fuelType
         );
 
       if (
-        !isValidFuelType(type)
+        !isValidFuelType(
+          type
+        )
       ) {
         return res.status(400).json({
           success: false,
@@ -338,13 +452,19 @@ export const deleteFuelStock =
         });
       }
 
+      session =
+        await mongoose.startSession();
+
       await session.withTransaction(
         async () => {
           const stock =
             await FuelStock.findOne({
               pumpId,
-              fuelType: type,
-            }).session(session);
+              fuelType:
+                type,
+            }).session(
+              session
+            );
 
           if (!stock) {
             throw new Error(
@@ -352,8 +472,13 @@ export const deleteFuelStock =
             );
           }
 
+          /* ===============================
+             RECOVERY
+          =============================== */
+
           await createDeletedRecord({
-            document: stock,
+            document:
+              stock,
 
             originalCollection:
               FuelStock.collection.name,
@@ -374,15 +499,26 @@ export const deleteFuelStock =
             session,
           });
 
+          /* ===============================
+             DELETE
+          =============================== */
+
           const deleted =
             await FuelStock.deleteOne({
-              _id: stock._id,
+              _id:
+                stock._id,
+
               pumpId,
-              fuelType: type,
-            }).session(session);
+
+              fuelType:
+                type,
+            }).session(
+              session
+            );
 
           if (
-            deleted.deletedCount !== 1
+            deleted.deletedCount !==
+            1
           ) {
             throw new Error(
               "Fuel stock deletion failed"
@@ -409,22 +545,27 @@ export const deleteFuelStock =
       ) {
         return res.status(404).json({
           success: false,
+
           message:
             `${normalizeFuelType(
-              req.params.fuelType
+              req.params?.fuelType
             )} stock not found`,
         });
       }
 
       return res.status(500).json({
         success: false,
+
         message:
           "Unable to delete fuel stock",
+
         error:
           error.message,
       });
     } finally {
-      await session.endSession();
+      if (session) {
+        await session.endSession();
+      }
     }
   };
 
@@ -434,8 +575,7 @@ export const deleteFuelStock =
 
 export const addFuelPurchase =
   async (req, res) => {
-    const session =
-      await mongoose.startSession();
+    let session = null;
 
     try {
       const pumpId =
@@ -452,6 +592,14 @@ export const addFuelPurchase =
         });
       }
 
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message:
+            "Authenticated user not found",
+        });
+      }
+
       const {
         fuelType,
         supplierName,
@@ -462,6 +610,10 @@ export const addFuelPurchase =
         invoiceNumber = "",
         note = "",
       } = req.body || {};
+
+      /* =====================================
+         FUEL TYPE
+      ===================================== */
 
       const normalizedFuelType =
         normalizeFuelType(
@@ -480,6 +632,10 @@ export const addFuelPurchase =
         });
       }
 
+      /* =====================================
+         SUPPLIER
+      ===================================== */
+
       const cleanSupplier =
         String(
           supplierName || ""
@@ -493,13 +649,18 @@ export const addFuelPurchase =
         });
       }
 
+      /* =====================================
+         QUANTITY
+      ===================================== */
+
       const parsedQuantity =
         toPositiveNumber(
           quantity
         );
 
       if (
-        parsedQuantity === null
+        parsedQuantity ===
+        null
       ) {
         return res.status(400).json({
           success: false,
@@ -507,6 +668,10 @@ export const addFuelPurchase =
             "Quantity must be greater than zero",
         });
       }
+
+      /* =====================================
+         PURCHASE PRICE
+      ===================================== */
 
       const parsedPurchasePrice =
         toPositiveNumber(
@@ -525,6 +690,10 @@ export const addFuelPurchase =
         });
       }
 
+      /* =====================================
+         DATE
+      ===================================== */
+
       const cleanPurchaseDate =
         purchaseDate
           ? String(
@@ -532,13 +701,21 @@ export const addFuelPurchase =
             ).trim()
           : todayString();
 
-      if (!cleanPurchaseDate) {
+      if (
+        !isValidDateString(
+          cleanPurchaseDate
+        )
+      ) {
         return res.status(400).json({
           success: false,
           message:
-            "Purchase date is required",
+            "Invalid purchase date. Use YYYY-MM-DD format.",
         });
       }
+
+      /* =====================================
+         TOTAL
+      ===================================== */
 
       const calculatedTotal =
         Number(
@@ -548,8 +725,15 @@ export const addFuelPurchase =
           ).toFixed(2)
         );
 
-      let purchase;
-      let stock;
+      let purchase = null;
+      let stock = null;
+
+      /* =====================================
+         TRANSACTION
+      ===================================== */
+
+      session =
+        await mongoose.startSession();
 
       await session.withTransaction(
         async () => {
@@ -604,6 +788,7 @@ export const addFuelPurchase =
             await FuelStock.findOneAndUpdate(
               {
                 pumpId,
+
                 fuelType:
                   normalizedFuelType,
               },
@@ -618,16 +803,22 @@ export const addFuelPurchase =
 
                 $setOnInsert: {
                   pumpId,
+
                   fuelType:
                     normalizedFuelType,
                 },
               },
               {
                 new: true,
+
                 upsert: true,
-                runValidators: true,
+
+                runValidators:
+                  true,
+
                 setDefaultsOnInsert:
                   true,
+
                 session,
               }
             );
@@ -652,11 +843,17 @@ export const addFuelPurchase =
 
       return res.status(500).json({
         success: false,
+
         message:
           "Unable to add fuel purchase",
+
+        error:
+          error.message,
       });
     } finally {
-      await session.endSession();
+      if (session) {
+        await session.endSession();
+      }
     }
   };
 
@@ -682,6 +879,22 @@ export const getFuelPurchases =
         await FuelPurchase.find({
           pumpId,
         })
+          .select(
+            [
+              "pumpId",
+              "fuelType",
+              "supplierName",
+              "quantity",
+              "purchasePrice",
+              "totalAmount",
+              "purchaseDate",
+              "invoiceNumber",
+              "note",
+              "createdBy",
+              "createdAt",
+              "updatedAt",
+            ].join(" ")
+          )
           .populate(
             "createdBy",
             "name email"
@@ -689,12 +902,15 @@ export const getFuelPurchases =
           .sort({
             purchaseDate: -1,
             createdAt: -1,
-          });
+          })
+          .lean();
 
       return res.status(200).json({
         success: true,
+
         count:
           purchases.length,
+
         purchases,
       });
     } catch (error) {
@@ -705,6 +921,7 @@ export const getFuelPurchases =
 
       return res.status(500).json({
         success: false,
+
         message:
           "Unable to load purchase history",
       });
@@ -717,8 +934,7 @@ export const getFuelPurchases =
 
 export const setFuelPrice =
   async (req, res) => {
-    const session =
-      await mongoose.startSession();
+    let session = null;
 
     try {
       const pumpId =
@@ -747,7 +963,9 @@ export const setFuelPrice =
           dieselPrice
         );
 
-      if (petrol === null) {
+      if (
+        petrol === null
+      ) {
         return res.status(400).json({
           success: false,
           message:
@@ -755,7 +973,9 @@ export const setFuelPrice =
         });
       }
 
-      if (diesel === null) {
+      if (
+        diesel === null
+      ) {
         return res.status(400).json({
           success: false,
           message:
@@ -763,68 +983,107 @@ export const setFuelPrice =
         });
       }
 
-      let prices;
+      let prices = [];
+
+      session =
+        await mongoose.startSession();
 
       await session.withTransaction(
         async () => {
-          await FuelPrice.findOneAndUpdate(
-            {
-              pumpId,
-              fuelType: "petrol",
-            },
-            {
-              $set: {
-                price: petrol,
-              },
+          /* =================================
+             UPDATE BOTH PRICES IN PARALLEL
+          ================================= */
 
-              $setOnInsert: {
+          await Promise.all([
+            FuelPrice.findOneAndUpdate(
+              {
                 pumpId,
-                fuelType: "petrol",
-              },
-            },
-            {
-              upsert: true,
-              new: true,
-              runValidators: true,
-              setDefaultsOnInsert:
-                true,
-              session,
-            }
-          );
 
-          await FuelPrice.findOneAndUpdate(
-            {
-              pumpId,
-              fuelType: "diesel",
-            },
-            {
-              $set: {
-                price: diesel,
+                fuelType:
+                  "petrol",
               },
+              {
+                $set: {
+                  price:
+                    petrol,
+                },
 
-              $setOnInsert: {
+                $setOnInsert: {
+                  pumpId,
+
+                  fuelType:
+                    "petrol",
+                },
+              },
+              {
+                upsert:
+                  true,
+
+                new:
+                  true,
+
+                runValidators:
+                  true,
+
+                setDefaultsOnInsert:
+                  true,
+
+                session,
+              }
+            ),
+
+            FuelPrice.findOneAndUpdate(
+              {
                 pumpId,
-                fuelType: "diesel",
+
+                fuelType:
+                  "diesel",
               },
-            },
-            {
-              upsert: true,
-              new: true,
-              runValidators: true,
-              setDefaultsOnInsert:
-                true,
-              session,
-            }
-          );
+              {
+                $set: {
+                  price:
+                    diesel,
+                },
+
+                $setOnInsert: {
+                  pumpId,
+
+                  fuelType:
+                    "diesel",
+                },
+              },
+              {
+                upsert:
+                  true,
+
+                new:
+                  true,
+
+                runValidators:
+                  true,
+
+                setDefaultsOnInsert:
+                  true,
+
+                session,
+              }
+            ),
+          ]);
 
           prices =
             await FuelPrice.find({
               pumpId,
             })
+              .select(
+                "pumpId fuelType price createdAt updatedAt"
+              )
               .sort({
                 fuelType: 1,
               })
-              .session(session);
+              .session(
+                session
+              )
+              .lean();
         }
       );
 
@@ -852,10 +1111,12 @@ export const setFuelPrice =
           diesel,
 
         petrol:
-          petrolRecord || null,
+          petrolRecord ||
+          null,
 
         diesel:
-          dieselRecord || null,
+          dieselRecord ||
+          null,
       };
 
       return res.status(200).json({
@@ -866,7 +1127,8 @@ export const setFuelPrice =
 
         price,
 
-        fuelPrice: price,
+        fuelPrice:
+          price,
 
         prices,
       });
@@ -878,11 +1140,14 @@ export const setFuelPrice =
 
       return res.status(500).json({
         success: false,
+
         message:
           "Unable to update fuel prices",
       });
     } finally {
-      await session.endSession();
+      if (session) {
+        await session.endSession();
+      }
     }
   };
 
@@ -907,9 +1172,14 @@ export const getFuelPrice =
       const prices =
         await FuelPrice.find({
           pumpId,
-        }).sort({
-          fuelType: 1,
-        });
+        })
+          .select(
+            "pumpId fuelType price createdAt updatedAt"
+          )
+          .sort({
+            fuelType: 1,
+          })
+          .lean();
 
       const petrolRecord =
         prices.find(
@@ -935,10 +1205,12 @@ export const getFuelPrice =
           null,
 
         petrol:
-          petrolRecord || null,
+          petrolRecord ||
+          null,
 
         diesel:
-          dieselRecord || null,
+          dieselRecord ||
+          null,
       };
 
       return res.status(200).json({
@@ -946,7 +1218,8 @@ export const getFuelPrice =
 
         price,
 
-        fuelPrice: price,
+        fuelPrice:
+          price,
 
         prices,
       });
@@ -958,6 +1231,7 @@ export const getFuelPrice =
 
       return res.status(500).json({
         success: false,
+
         message:
           "Unable to load fuel prices",
       });

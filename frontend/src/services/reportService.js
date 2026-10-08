@@ -1,69 +1,108 @@
 import api from "./api";
 
-export const getDailyReport =
-  async (date) => {
-    const response =
-      await api.get(
-        "/reports/daily",
-        {
-          params: {
-            date,
-          },
-        }
-      );
+/* =====================================================
+   DAILY REPORT
+===================================================== */
 
-    return response.data;
-  };
+export const getDailyReport = async (
+  date
+) => {
+  const params = {};
 
-export const getWeeklyReport =
-  async (
-    params = {}
-  ) => {
-    const response =
-      await api.get(
-        "/reports/weekly",
-        {
-          params,
-        }
-      );
+  if (date) {
+    params.date = date;
+  }
 
-    return response.data;
-  };
+  const response = await api.get(
+    "/reports/daily",
+    {
+      params,
+    }
+  );
 
-export const getMonthlyReport =
-  async (
-    month,
-    year
-  ) => {
-    const response =
-      await api.get(
-        "/reports/monthly",
-        {
-          params: {
-            month,
-            year,
-          },
-        }
-      );
+  return response.data;
+};
 
-    return response.data;
-  };
+/* =====================================================
+   WEEKLY REPORT
+===================================================== */
 
-export const getCustomReport =
-  async (
-    from,
-    to
-  ) => {
-    const response =
-      await api.get(
-        "/reports/custom",
-        {
-          params: {
-            from,
-            to,
-          },
-        }
-      );
+export const getWeeklyReport = async (
+  params = {}
+) => {
+  const response = await api.get(
+    "/reports/weekly",
+    {
+      params,
+    }
+  );
 
-    return response.data;
-  };
+  return response.data;
+};
+
+/* =====================================================
+   MONTHLY REPORT
+===================================================== */
+
+export const getMonthlyReport = async (
+  month,
+  year
+) => {
+  const params = {};
+
+  if (month !== undefined && month !== null) {
+    params.month = month;
+  }
+
+  if (year !== undefined && year !== null) {
+    params.year = year;
+  }
+
+  const response = await api.get(
+    "/reports/monthly",
+    {
+      params,
+    }
+  );
+
+  return response.data;
+};
+
+/* =====================================================
+   CUSTOM REPORT
+===================================================== */
+
+export const getCustomReport = async (
+  from,
+  to
+) => {
+  const params = {};
+
+  if (from) {
+    params.from = from;
+  }
+
+  if (to) {
+    params.to = to;
+  }
+
+  const response = await api.get(
+    "/reports/custom",
+    {
+      params,
+    }
+  );
+
+  return response.data;
+};
+
+/* =====================================================
+   DEFAULT EXPORT
+===================================================== */
+
+export default {
+  getDailyReport,
+  getWeeklyReport,
+  getMonthlyReport,
+  getCustomReport,
+};

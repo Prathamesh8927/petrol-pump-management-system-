@@ -35,17 +35,12 @@ const Sidebar = ({
   isMobileOpen = false,
   onCloseMobile,
 }) => {
-  const navigate =
-    useNavigate();
-
-  const location =
-    useLocation();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const {
     logout,
-  } = useContext(
-    AuthContext
-  );
+  } = useContext(AuthContext);
 
   const [
     activeMenu,
@@ -66,7 +61,6 @@ const Sidebar = ({
       id: "fuel",
       name: "Fuel",
       icon: Fuel,
-
       items: [
         {
           name: "Current Stock",
@@ -87,7 +81,6 @@ const Sidebar = ({
       id: "nozzle",
       name: "Nozzles",
       icon: Gauge,
-
       items: [
         {
           name: "All Nozzles",
@@ -108,7 +101,6 @@ const Sidebar = ({
       id: "sales",
       name: "Sales",
       icon: IndianRupee,
-
       items: [
         {
           name: "Daily Sales",
@@ -129,7 +121,6 @@ const Sidebar = ({
       id: "expenses",
       name: "Expenses",
       icon: Receipt,
-
       items: [
         {
           name: "Add Expense",
@@ -146,7 +137,6 @@ const Sidebar = ({
       id: "ledger",
       name: "Ledger",
       icon: Users,
-
       items: [
         {
           name: "Customers",
@@ -171,7 +161,6 @@ const Sidebar = ({
       id: "reports",
       name: "Reports",
       icon: FileText,
-
       items: [
         {
           name: "Daily Report",
@@ -188,8 +177,7 @@ const Sidebar = ({
         {
           name: "Custom Report",
           path: "/reports/custom",
-        }
-        
+        },
       ],
     },
 
@@ -197,7 +185,6 @@ const Sidebar = ({
       id: "settings",
       name: "Settings",
       icon: Settings,
-
       items: [
         {
           name: "Pump Details",
@@ -208,9 +195,9 @@ const Sidebar = ({
           path: "/settings/fuel",
         },
         {
-  name: "Payment Setup",
-  path: "/settings/payment",
-},
+          name: "Payment Setup",
+          path: "/settings/payment",
+        },
         {
           name: "Users",
           path: "/settings/users",
@@ -230,7 +217,7 @@ const Sidebar = ({
   const closeInnerSidebar = () => {
     setIsInnerOpen(false);
 
-    setTimeout(() => {
+    window.setTimeout(() => {
       setActiveMenu(null);
     }, 350);
   };
@@ -252,9 +239,7 @@ const Sidebar = ({
      OPEN / CLOSE MENU
   ===================================================== */
 
-  const toggleMenu = (
-    menuId
-  ) => {
+  const toggleMenu = (menuId) => {
     if (
       activeMenu === menuId &&
       isInnerOpen
@@ -278,7 +263,6 @@ const Sidebar = ({
     path
   ) => {
     navigate(path);
-
     closeInnerSidebar();
 
     if (isMobile) {
@@ -299,11 +283,10 @@ const Sidebar = ({
      SELECTED MENU
   ===================================================== */
 
-  const selectedMenu =
-    menus.find(
-      (menu) =>
-        menu.id === activeMenu
-    );
+  const selectedMenu = menus.find(
+    (menu) =>
+      menu.id === activeMenu
+  );
 
   /* =====================================================
      ACTIVE MAIN MENU
@@ -341,12 +324,6 @@ const Sidebar = ({
 
   const handleLogout = () => {
     closeAllMenus();
-
-    /*
-     * AuthContext owns authentication state
-     * and sessionStorage cleanup.
-     */
-
     logout();
 
     navigate("/login", {
@@ -363,15 +340,14 @@ const Sidebar = ({
       !isMobile ||
       !isMobileOpen
     ) {
-      return;
+      return undefined;
     }
 
     const handleEscape = (
       event
     ) => {
       if (
-        event.key ===
-        "Escape"
+        event.key === "Escape"
       ) {
         closeAllMenus();
       }
@@ -392,6 +368,16 @@ const Sidebar = ({
     isMobile,
     isMobileOpen,
   ]);
+
+  /* =====================================================
+     RESET SUBMENU WHEN SWITCHING TO DESKTOP
+  ===================================================== */
+
+  useEffect(() => {
+    if (!isMobile) {
+      setIsInnerOpen(false);
+    }
+  }, [isMobile]);
 
   /* =====================================================
      MOBILE SIDEBAR STYLES
@@ -415,8 +401,7 @@ const Sidebar = ({
           transition:
             "transform 0.28s ease",
           boxSizing: "border-box",
-          overflow:
-            "hidden",
+          overflow: "hidden",
           boxShadow:
             isMobileOpen
               ? "8px 0 30px rgba(15, 23, 42, 0.18)"
@@ -430,11 +415,9 @@ const Sidebar = ({
 
   const mobileBackdrop =
     isMobile &&
-    isMobileOpen && (
+    isMobileOpen ? (
       <div
-        onClick={
-          closeAllMenus
-        }
+        onClick={closeAllMenus}
         aria-hidden="true"
         style={{
           position: "fixed",
@@ -446,7 +429,7 @@ const Sidebar = ({
             "blur(2px)",
         }}
       />
-    );
+    ) : null;
 
   /* =====================================================
      UI
@@ -454,15 +437,11 @@ const Sidebar = ({
 
   return (
     <>
-      {/* =================================================
-          MOBILE BACKDROP
-      ================================================= */}
+      {/* MOBILE BACKDROP */}
 
       {mobileBackdrop}
 
-      {/* =================================================
-          MAIN SIDEBAR
-      ================================================= */}
+      {/* MAIN SIDEBAR */}
 
       <aside
         className="main-sidebar"
@@ -471,9 +450,7 @@ const Sidebar = ({
           mobileSidebarStyle
         }
       >
-        {/* =================================================
-            BRAND
-        ================================================= */}
+        {/* BRAND */}
 
         <button
           type="button"
@@ -497,8 +474,7 @@ const Sidebar = ({
               maxHeight: "42px",
               display: "flex",
               alignItems: "center",
-              justifyContent:
-                "center",
+              justifyContent: "center",
               overflow: "hidden",
               borderRadius: "50%",
               flexShrink: 0,
@@ -517,8 +493,7 @@ const Sidebar = ({
                 maxWidth: "42px",
                 maxHeight: "42px",
                 objectFit: "cover",
-                objectPosition:
-                  "center",
+                objectPosition: "center",
                 display: "block",
                 borderRadius: "50%",
                 margin: 0,
@@ -532,9 +507,7 @@ const Sidebar = ({
           </span>
         </button>
 
-        {/* =================================================
-            NAVIGATION
-        ================================================= */}
+        {/* NAVIGATION */}
 
         <nav
           className="sidebar-navigation"
@@ -542,20 +515,15 @@ const Sidebar = ({
           style={{
             minHeight: 0,
             overflowY: "auto",
-            overflowX:
-              "hidden",
+            overflowX: "hidden",
           }}
         >
           {/* DASHBOARD */}
 
           <NavLink
             to="/dashboard"
-            onClick={
-              closeAllMenus
-            }
-            className={({
-              isActive,
-            }) =>
+            onClick={closeAllMenus}
+            className={({ isActive }) =>
               isActive
                 ? "main-sidebar-item active"
                 : "main-sidebar-item"
@@ -573,68 +541,59 @@ const Sidebar = ({
 
           {/* MAIN MODULES */}
 
-          {menus.map(
-            (menu) => {
-              const Icon =
-                menu.icon;
+          {menus.map((menu) => {
+            const Icon = menu.icon;
 
-              const routeActive =
-                isMenuActive(
-                  menu
-                );
+            const routeActive =
+              isMenuActive(menu);
 
-              const opened =
-                activeMenu ===
-                  menu.id &&
-                isInnerOpen;
+            const opened =
+              activeMenu ===
+                menu.id &&
+              isInnerOpen;
 
-              return (
-                <button
-                  key={menu.id}
-                  type="button"
-                  onClick={() =>
-                    toggleMenu(
-                      menu.id
-                    )
-                  }
+            return (
+              <button
+                key={menu.id}
+                type="button"
+                onClick={() =>
+                  toggleMenu(
+                    menu.id
+                  )
+                }
+                className={
+                  routeActive ||
+                  opened
+                    ? "main-sidebar-item active"
+                    : "main-sidebar-item"
+                }
+                aria-expanded={opened}
+                aria-controls={`sidebar-menu-${menu.id}`}
+              >
+                <Icon
+                  size={23}
+                  aria-hidden="true"
+                />
+
+                <span>
+                  {menu.name}
+                </span>
+
+                <ChevronRight
+                  size={16}
+                  aria-hidden="true"
                   className={
-                    routeActive ||
                     opened
-                      ? "main-sidebar-item active"
-                      : "main-sidebar-item"
+                      ? "menu-arrow opened"
+                      : "menu-arrow"
                   }
-                  aria-expanded={
-                    opened
-                  }
-                  aria-controls={`sidebar-menu-${menu.id}`}
-                >
-                  <Icon
-                    size={23}
-                    aria-hidden="true"
-                  />
-
-                  <span>
-                    {menu.name}
-                  </span>
-
-                  <ChevronRight
-                    size={16}
-                    aria-hidden="true"
-                    className={
-                      opened
-                        ? "menu-arrow opened"
-                        : "menu-arrow"
-                    }
-                  />
-                </button>
-              );
-            }
-          )}
+                />
+              </button>
+            );
+          })}
         </nav>
 
-        {/* =================================================
-            LOGOUT
-        ================================================= */}
+        {/* LOGOUT */}
 
         <div
           className="sidebar-bottom"
@@ -645,9 +604,7 @@ const Sidebar = ({
           <button
             type="button"
             className="main-sidebar-item logout-sidebar"
-            onClick={
-              handleLogout
-            }
+            onClick={handleLogout}
           >
             <LogOut
               size={22}
@@ -661,9 +618,7 @@ const Sidebar = ({
         </div>
       </aside>
 
-      {/* =================================================
-          INNER SIDEBAR
-      ================================================= */}
+      {/* INNER SIDEBAR */}
 
       <aside
         id={
@@ -699,10 +654,8 @@ const Sidebar = ({
                     : "translateX(-105%)",
                 transition:
                   "transform 0.28s ease",
-                overflowY:
-                  "auto",
-                boxSizing:
-                  "border-box",
+                overflowY: "auto",
+                boxSizing: "border-box",
               }
             : undefined
         }
@@ -713,9 +666,7 @@ const Sidebar = ({
 
             <div className="inner-sidebar-header">
               <h2>
-                {
-                  selectedMenu.name
-                }
+                {selectedMenu.name}
               </h2>
 
               <button
@@ -744,9 +695,7 @@ const Sidebar = ({
 
                   return (
                     <button
-                      key={
-                        item.path
-                      }
+                      key={item.path}
                       type="button"
                       onClick={() =>
                         handleInnerNavigation(
@@ -764,9 +713,7 @@ const Sidebar = ({
                           : undefined
                       }
                     >
-                      {
-                        item.name
-                      }
+                      {item.name}
                     </button>
                   );
                 }
@@ -776,9 +723,7 @@ const Sidebar = ({
         )}
       </aside>
 
-      {/* =================================================
-          DESKTOP INNER SIDEBAR BACKDROP
-      ================================================= */}
+      {/* DESKTOP INNER SIDEBAR BACKDROP */}
 
       {!isMobile &&
         isInnerOpen && (

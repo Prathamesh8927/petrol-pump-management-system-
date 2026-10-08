@@ -1,4 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import {
   Search,
@@ -23,10 +27,20 @@ const ProfessionalSearch = ({
   emptyText = "No matching records found",
   disabled = false,
 }) => {
-  const [highlightedIndex, setHighlightedIndex] =
-    useState(-1);
+  const [
+    highlightedIndex,
+    setHighlightedIndex,
+  ] = useState(-1);
 
-  const inputRef = useRef(null);
+  const inputRef =
+    useRef(null);
+
+  const listboxId =
+    useRef(
+      `professional-search-${Math.random()
+        .toString(36)
+        .slice(2, 10)}`
+    ).current;
 
   /* =====================================================
      ICON
@@ -58,7 +72,9 @@ const ProfessionalSearch = ({
      KEYBOARD NAVIGATION
   ===================================================== */
 
-  const handleKeyDown = (event) => {
+  const handleKeyDown = (
+    event
+  ) => {
     if (disabled) {
       return;
     }
@@ -67,38 +83,56 @@ const ProfessionalSearch = ({
       return;
     }
 
-    if (event.key === "ArrowDown") {
+    if (
+      event.key === "ArrowDown"
+    ) {
       event.preventDefault();
 
-      if (suggestions.length === 0) {
+      if (
+        suggestions.length === 0
+      ) {
         return;
       }
 
-      setHighlightedIndex((previous) => {
-        if (previous >= suggestions.length - 1) {
-          return 0;
-        }
+      setHighlightedIndex(
+        (previous) => {
+          if (
+            previous >=
+            suggestions.length - 1
+          ) {
+            return 0;
+          }
 
-        return previous + 1;
-      });
+          return previous + 1;
+        }
+      );
 
       return;
     }
 
-    if (event.key === "ArrowUp") {
+    if (
+      event.key === "ArrowUp"
+    ) {
       event.preventDefault();
 
-      if (suggestions.length === 0) {
+      if (
+        suggestions.length === 0
+      ) {
         return;
       }
 
-      setHighlightedIndex((previous) => {
-        if (previous <= 0) {
-          return suggestions.length - 1;
-        }
+      setHighlightedIndex(
+        (previous) => {
+          if (previous <= 0) {
+            return (
+              suggestions.length -
+              1
+            );
+          }
 
-        return previous - 1;
-      });
+          return previous - 1;
+        }
+      );
 
       return;
     }
@@ -106,12 +140,16 @@ const ProfessionalSearch = ({
     if (
       event.key === "Enter" &&
       highlightedIndex >= 0 &&
-      suggestions[highlightedIndex]
+      suggestions[
+        highlightedIndex
+      ]
     ) {
       event.preventDefault();
 
       onSelect?.(
-        suggestions[highlightedIndex]
+        suggestions[
+          highlightedIndex
+        ]
       );
 
       setHighlightedIndex(-1);
@@ -119,7 +157,9 @@ const ProfessionalSearch = ({
       return;
     }
 
-    if (event.key === "Escape") {
+    if (
+      event.key === "Escape"
+    ) {
       event.preventDefault();
 
       setHighlightedIndex(-1);
@@ -141,7 +181,9 @@ const ProfessionalSearch = ({
      CLEAR
   ===================================================== */
 
-  const handleClear = (event) => {
+  const handleClear = (
+    event
+  ) => {
     event.preventDefault();
 
     setHighlightedIndex(-1);
@@ -165,9 +207,7 @@ const ProfessionalSearch = ({
         width: "100%",
       }}
     >
-      {/* =================================================
-          SEARCH BOX
-      ================================================= */}
+      {/* SEARCH BOX */}
 
       <div
         className={`professional-search-box ${
@@ -191,6 +231,7 @@ const ProfessionalSearch = ({
 
         <input
           ref={inputRef}
+          id={listboxId}
           type="text"
           value={value}
           disabled={disabled}
@@ -207,29 +248,45 @@ const ProfessionalSearch = ({
           onBlur={onBlur}
           onKeyDown={handleKeyDown}
           role="combobox"
-          aria-expanded={showSuggestions}
+          aria-expanded={
+            showSuggestions
+          }
           aria-autocomplete="list"
+          aria-controls={
+            showSuggestions
+              ? `${listboxId}-options`
+              : undefined
+          }
+          aria-activedescendant={
+            highlightedIndex >= 0
+              ? `${listboxId}-option-${highlightedIndex}`
+              : undefined
+          }
         />
 
         {value && !disabled && (
           <button
             type="button"
             className="professional-search-clear"
-            onMouseDown={handleClear}
+            onMouseDown={
+              handleClear
+            }
             title="Clear search"
             aria-label="Clear search"
           >
-            <X size={16} />
+            <X
+              size={16}
+              aria-hidden="true"
+            />
           </button>
         )}
       </div>
 
-      {/* =================================================
-          DROPDOWN
-      ================================================= */}
+      {/* DROPDOWN */}
 
       {showSuggestions && (
         <div
+          id={`${listboxId}-options`}
           className="professional-search-dropdown"
           role="listbox"
           style={{
@@ -250,11 +307,10 @@ const ProfessionalSearch = ({
             boxSizing: "border-box",
           }}
         >
-          {/* =================================================
-              EMPTY
-          ================================================= */}
+          {/* EMPTY */}
 
-          {suggestions.length === 0 ? (
+          {suggestions.length ===
+          0 ? (
             <div
               className="professional-search-empty"
               style={{
@@ -273,6 +329,7 @@ const ProfessionalSearch = ({
               <Search
                 size={24}
                 strokeWidth={1.7}
+                aria-hidden="true"
               />
 
               <span>
@@ -281,38 +338,40 @@ const ProfessionalSearch = ({
             </div>
           ) : (
             <>
-              {/* =================================================
-                  HEADER
-              ================================================= */}
+              {/* HEADER */}
 
               {type === "customer" && (
                 <div
                   style={{
-                    padding: "7px 10px 8px",
+                    padding:
+                      "7px 10px 8px",
                     fontSize: "11px",
                     fontWeight: 700,
                     color: "#64748b",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.04em",
+                    textTransform:
+                      "uppercase",
+                    letterSpacing:
+                      "0.04em",
                   }}
                 >
                   Existing Customers
                 </div>
               )}
 
-              {/* =================================================
-                  OPTIONS
-              ================================================= */}
+              {/* OPTIONS */}
 
               {suggestions.map(
                 (item, index) => {
-                  const title = getTitle
-                    ? getTitle(item)
-                    : String(item);
+                  const title =
+                    getTitle
+                      ? getTitle(item)
+                      : String(item);
 
                   const subtitle =
                     getSubtitle
-                      ? getSubtitle(item)
+                      ? getSubtitle(
+                          item
+                        )
                       : "";
 
                   const isHighlighted =
@@ -326,6 +385,7 @@ const ProfessionalSearch = ({
                         item?.id ||
                         `${title}-${index}`
                       }
+                      id={`${listboxId}-option-${index}`}
                       type="button"
                       role="option"
                       aria-selected={
@@ -336,27 +396,36 @@ const ProfessionalSearch = ({
                           index
                         )
                       }
-                      onMouseDown={(event) => {
+                      onMouseDown={(
+                        event
+                      ) => {
                         event.preventDefault();
 
-                        handleSelect(item);
+                        handleSelect(
+                          item
+                        );
                       }}
                       style={{
                         width: "100%",
                         display: "flex",
-                        alignItems: "center",
+                        alignItems:
+                          "center",
                         gap: "11px",
                         padding: "10px",
                         border: "none",
                         borderRadius: "8px",
-                        background: isHighlighted
-                          ? "#f1f5f9"
-                          : "#ffffff",
-                        cursor: "pointer",
-                        textAlign: "left",
+                        background:
+                          isHighlighted
+                            ? "#f1f5f9"
+                            : "#ffffff",
+                        cursor:
+                          "pointer",
+                        textAlign:
+                          "left",
                         transition:
                           "background 120ms ease",
-                        boxSizing: "border-box",
+                        boxSizing:
+                          "border-box",
                       }}
                     >
                       {/* ICON */}
@@ -367,16 +436,22 @@ const ProfessionalSearch = ({
                           width: "34px",
                           height: "34px",
                           display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          borderRadius: "8px",
-                          background: "#eaf2f6",
-                          color: "#0f3d56",
+                          alignItems:
+                            "center",
+                          justifyContent:
+                            "center",
+                          borderRadius:
+                            "8px",
+                          background:
+                            "#eaf2f6",
+                          color:
+                            "#0f3d56",
                         }}
                       >
                         <ItemIcon
                           size={17}
                           strokeWidth={2}
+                          aria-hidden="true"
                         />
                       </div>
 
@@ -386,20 +461,29 @@ const ProfessionalSearch = ({
                         style={{
                           minWidth: 0,
                           flex: 1,
-                          display: "flex",
-                          flexDirection: "column",
+                          display:
+                            "flex",
+                          flexDirection:
+                            "column",
                           gap: "3px",
                         }}
                       >
                         <strong
                           style={{
-                            color: "#111827",
-                            fontSize: "14px",
-                            fontWeight: 700,
-                            lineHeight: "18px",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
+                            color:
+                              "#111827",
+                            fontSize:
+                              "14px",
+                            fontWeight:
+                              700,
+                            lineHeight:
+                              "18px",
+                            overflow:
+                              "hidden",
+                            textOverflow:
+                              "ellipsis",
+                            whiteSpace:
+                              "nowrap",
                           }}
                         >
                           {title}
@@ -408,12 +492,18 @@ const ProfessionalSearch = ({
                         {subtitle && (
                           <span
                             style={{
-                              color: "#64748b",
-                              fontSize: "12px",
-                              lineHeight: "16px",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
+                              color:
+                                "#64748b",
+                              fontSize:
+                                "12px",
+                              lineHeight:
+                                "16px",
+                              overflow:
+                                "hidden",
+                              textOverflow:
+                                "ellipsis",
+                              whiteSpace:
+                                "nowrap",
                             }}
                           >
                             {subtitle}
@@ -427,9 +517,12 @@ const ProfessionalSearch = ({
                         <span
                           style={{
                             flexShrink: 0,
-                            fontSize: "10px",
-                            fontWeight: 600,
-                            color: "#64748b",
+                            fontSize:
+                              "10px",
+                            fontWeight:
+                              600,
+                            color:
+                              "#64748b",
                           }}
                         >
                           Enter

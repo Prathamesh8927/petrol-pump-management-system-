@@ -1,15 +1,21 @@
 import api from "./api";
 
-/* =========================================
+/* =====================================================
    HEALTH CHECK
-========================================= */
+===================================================== */
 
-export const getHealth =
-  async () => {
-    const response =
-      await api.get(
-        "/health"
-      );
+export const getHealth = async () => {
+  const response = await api.get(
+    "/health"
+  );
 
-    return response.data;
-  };
+  return response.data;
+};
+
+/* =====================================================
+   DEFAULT EXPORT
+===================================================== */
+
+export default {
+  getHealth,
+};
