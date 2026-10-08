@@ -1,4 +1,4 @@
-import api from "./api";
+import api from "../services/api";
 
 /* =====================================================
    GET DELETED DATA
@@ -124,11 +124,22 @@ export const permanentlyDeleteDeletedData = async (id) => {
 ===================================================== */
 
 export const getRecoveryData = getDeletedData;
-export const getRecoveryDataById = getDeletedDataById;
-export const restoreRecoveryData = restoreDeletedData;
-export const restoreRecoveryGroup = restoreDeletedGroup;
+
+export const getRecoveryDataById =
+  getDeletedDataById;
+
+export const restoreRecoveryData =
+  restoreDeletedData;
+
+export const restoreRecoveryGroup =
+  restoreDeletedGroup;
+
 export const permanentlyDeleteRecoveryData =
   permanentlyDeleteDeletedData;
+
+/* =====================================================
+   DEFAULT EXPORT
+===================================================== */
 
 export default {
   getDeletedData,
