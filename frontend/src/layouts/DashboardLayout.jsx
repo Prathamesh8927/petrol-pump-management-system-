@@ -37,8 +37,7 @@ const DashboardLayout = () => {
   useEffect(() => {
     const handleResize = () => {
       const mobile =
-        window.innerWidth <=
-        MOBILE_BREAKPOINT;
+        window.innerWidth <= MOBILE_BREAKPOINT;
 
       setIsMobile(mobile);
 
@@ -80,17 +79,18 @@ const DashboardLayout = () => {
   ========================================================= */
 
   useEffect(() => {
-    const shouldLockScroll =
-      isMobile &&
-      isMobileMenuOpen;
+    if (!isMobile || !isMobileMenuOpen) {
+      return undefined;
+    }
 
-    document.body.style.overflow =
-      shouldLockScroll
-        ? "hidden"
-        : "";
+    const previousOverflow =
+      document.body.style.overflow;
+
+    document.body.style.overflow = "hidden";
 
     return () => {
-      document.body.style.overflow = "";
+      document.body.style.overflow =
+        previousOverflow;
     };
   }, [
     isMobile,
@@ -104,14 +104,10 @@ const DashboardLayout = () => {
   ========================================================= */
 
   useEffect(() => {
-    const handleNumberWheel = (
-      event
-    ) => {
+    const handleNumberWheel = (event) => {
       const target = event.target;
 
-      if (
-        !(target instanceof Element)
-      ) {
+      if (!(target instanceof Element)) {
         return;
       }
 
@@ -178,12 +174,8 @@ const DashboardLayout = () => {
 
       <Sidebar
         isMobile={isMobile}
-        isMobileOpen={
-          isMobileMenuOpen
-        }
-        onCloseMobile={
-          closeMobileMenu
-        }
+        isMobileOpen={isMobileMenuOpen}
+        onCloseMobile={closeMobileMenu}
       />
 
       {/* =====================================================
@@ -208,9 +200,7 @@ const DashboardLayout = () => {
 
         <Navbar
           isMobile={isMobile}
-          onOpenMobileMenu={
-            openMobileMenu
-          }
+          onOpenMobileMenu={openMobileMenu}
         />
 
         {/* =================================================
