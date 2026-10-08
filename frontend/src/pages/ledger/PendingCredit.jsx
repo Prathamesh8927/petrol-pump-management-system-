@@ -41,6 +41,24 @@ const PendingCredit = () => {
     });
   };
 
+  const openCustomerLedger = useCallback(
+    (customerId) => {
+      if (!customerId) {
+        toast.error(
+          "Customer information is unavailable."
+        );
+        return;
+      }
+
+      navigate(
+        `/ledger/customer?id=${encodeURIComponent(
+          customerId
+        )}`
+      );
+    },
+    [navigate]
+  );
+
   const loadPending = useCallback(
     async ({ silent = false } = {}) => {
       if (loadingRef.current) {
@@ -151,7 +169,9 @@ const PendingCredit = () => {
           onClick={() => loadPending()}
           disabled={loading}
         >
-          {loading ? "Refreshing..." : "Refresh"}
+          {loading
+            ? "Refreshing..."
+            : "Refresh"}
         </button>
       </div>
 
@@ -214,9 +234,42 @@ const PendingCredit = () => {
                           0
                       );
 
+                    const customerId =
+                      customer?._id;
+
                     return (
                       <tr
-                        key={customer._id}
+                        key={customerId}
+                        onClick={() =>
+                          openCustomerLedger(
+                            customerId
+                          )
+                        }
+                        onKeyDown={(event) => {
+                          if (
+                            event.key ===
+                              "Enter" ||
+                            event.key ===
+                              " "
+                          ) {
+                            event.preventDefault();
+
+                            openCustomerLedger(
+                              customerId
+                            );
+                          }
+                        }}
+                        tabIndex={
+                          customerId
+                            ? 0
+                            : -1
+                        }
+                        role="link"
+                        style={{
+                          cursor: customerId
+                            ? "pointer"
+                            : "default",
+                        }}
                       >
                         <td>
                           {index + 1}
@@ -255,13 +308,13 @@ const PendingCredit = () => {
                           <button
                             type="button"
                             className="action-view"
-                            onClick={() =>
-                              navigate(
-                                `/ledger/customer?id=${encodeURIComponent(
-                                  customer._id
-                                )}`
-                              )
-                            }
+                            onClick={(event) => {
+                              event.stopPropagation();
+
+                              openCustomerLedger(
+                                customerId
+                              );
+                            }}
                           >
                             View Ledger
                           </button>
