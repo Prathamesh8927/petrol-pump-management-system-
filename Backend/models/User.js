@@ -3,9 +3,9 @@ import bcrypt from "bcryptjs";
 
 const userSchema = new mongoose.Schema(
   {
-    /* =====================================================
-       BASIC USER INFORMATION
-    ===================================================== */
+    // =====================================================
+    // BASIC USER INFORMATION
+    // =====================================================
 
     name: {
       type: String,
@@ -32,9 +32,9 @@ const userSchema = new mongoose.Schema(
       select: false,
     },
 
-    /* =====================================================
-       ROLE
-    ===================================================== */
+    // =====================================================
+    // ROLE
+    // =====================================================
 
     role: {
       type: String,
@@ -48,9 +48,9 @@ const userSchema = new mongoose.Schema(
       default: "staff",
     },
 
-    /* =====================================================
-       PUMP ISOLATION
-    ===================================================== */
+    // =====================================================
+    // PUMP ISOLATION
+    // =====================================================
 
     pumpId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -58,9 +58,9 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
-    /* =====================================================
-       EMPLOYEE LINK
-    ===================================================== */
+    // =====================================================
+    // EMPLOYEE LINK
+    // =====================================================
 
     employeeId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -68,24 +68,18 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
-    /* =====================================================
-       ACCOUNT STATUS
-    ===================================================== */
+    // =====================================================
+    // ACCOUNT STATUS
+    // =====================================================
 
     active: {
       type: Boolean,
       default: true,
     },
 
-    /* =====================================================
-       SESSION SECURITY
-       
-       Included in JWTs.
-
-       Incrementing this value invalidates previously
-       issued JWTs when the authentication middleware
-       checks the token version.
-    ===================================================== */
+    // =====================================================
+    // SESSION SECURITY
+    // =====================================================
 
     tokenVersion: {
       type: Number,
@@ -94,9 +88,9 @@ const userSchema = new mongoose.Schema(
       required: true,
     },
 
-    /* =====================================================
-       PASSWORD SECURITY AUDIT
-    ===================================================== */
+    // =====================================================
+    // PASSWORD SECURITY AUDIT
+    // =====================================================
 
     passwordChangedAt: {
       type: Date,
@@ -109,45 +103,22 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-/* =========================================================
-   INDEXES
-========================================================= */
+// =====================================================
+// INDEXES
+// =====================================================
 
-/*
- * 1. EMAIL
- *
- * `unique: true` already creates the required unique index.
- *
- * No separate `index: true` is necessary.
- */
+// Email uniqueness
 userSchema.index(
-  {
-    email: 1,
-  },
+  { email: 1 },
   {
     unique: true,
     name: "uniq_user_email",
   }
 );
 
-/*
- * 2. EMPLOYEE LINK
- *
- * One User can be linked to one Employee.
- *
- * sparse is important because:
- *
- * - superadmin may have no employeeId
- * - owner may have no employeeId
- * - manager may have no employeeId
- * - staff may have no employeeId
- *
- * Multiple null/missing values are therefore allowed.
- */
+// One User per Employee link
 userSchema.index(
-  {
-    employeeId: 1,
-  },
+  { employeeId: 1 },
   {
     unique: true,
     sparse: true,
@@ -155,69 +126,33 @@ userSchema.index(
   }
 );
 
-/*
- * 3. PUMP + ACTIVE
- *
- * Useful for pump-specific user management:
- *
- * User.find({
- *   pumpId,
- *   active: true
- * })
- *
- * This is especially useful for your employee/user
- * management screens.
- */
+// Pump + active status
 userSchema.index(
-  {
-    pumpId: 1,
-    active: 1,
-  },
+  { pumpId: 1, active: 1 },
   {
     name: "idx_user_pump_active",
   }
 );
 
-/*
- * 4. PUMP + ROLE
- *
- * Useful for RBAC/user management queries such as:
- *
- * - owners of a pump
- * - managers of a pump
- * - staff of a pump
- * - employees of a pump
- */
+// Pump + role
 userSchema.index(
-  {
-    pumpId: 1,
-    role: 1,
-  },
+  { pumpId: 1, role: 1 },
   {
     name: "idx_user_pump_role",
   }
 );
 
-/*
- * 5. PUMP + ROLE + ACTIVE
- *
- * Useful when the application requests active users
- * of a particular role inside a pump.
- */
+// Pump + role + active status
 userSchema.index(
-  {
-    pumpId: 1,
-    role: 1,
-    active: 1,
-  },
+  { pumpId: 1, role: 1, active: 1 },
   {
     name: "idx_user_pump_role_active",
   }
 );
 
-/* =========================================================
-   PASSWORD HASH DETECTION
-========================================================= */
+// =====================================================
+// PASSWORD HASH DETECTION
+// =====================================================
 
 const isBcryptHash = (value) => {
   return (
@@ -226,61 +161,41 @@ const isBcryptHash = (value) => {
   );
 };
 
-/* =========================================================
-   PASSWORD HASHING
-========================================================= */
+// =====================================================
+// PASSWORD HASHING
+// =====================================================
 
-userSchema.pre("save", async function (next) {
-  try {
-    /*
-     * Do nothing when password was not changed.
-     *
-     * This prevents unrelated user updates from
-     * re-hashing an already hashed password.
-     */
-    if (
-      !this.isModified("password") ||
-      isBcryptHash(this.password)
-    ) {
-      return next();
-    }
-
-    this.password = await bcrypt.hash(
-      this.password,
-      12
-    );
-
-    return next();
-  } catch (error) {
-    return next(error);
+// Use promise-based middleware.
+// Do not use next() in this async pre-save hook.
+userSchema.pre("save", async function () {
+  // Do not hash an unchanged password.
+  if (!this.isModified("password")) {
+    return;
   }
+
+  // RegistrationRequest already stores a bcrypt hash.
+  // Prevent double-hashing during registration approval.
+  if (isBcryptHash(this.password)) {
+    return;
+  }
+
+  this.password = await bcrypt.hash(this.password, 12);
 });
 
-/* =========================================================
-   PASSWORD CHANGE TRACKING
-========================================================= */
+// =====================================================
+// PASSWORD CHANGE TRACKING
+// =====================================================
 
-userSchema.pre("save", function (next) {
-  /*
-   * Record the time whenever an existing user's
-   * password changes.
-   *
-   * During initial account creation, we leave the
-   * explicitly supplied/default value untouched.
-   */
-  if (
-    this.isModified("password") &&
-    !this.isNew
-  ) {
+// Track password changes for existing users.
+userSchema.pre("save", function () {
+  if (this.isModified("password") && !this.isNew) {
     this.passwordChangedAt = new Date();
   }
-
-  return next();
 });
 
-/* =========================================================
-   MODEL
-========================================================= */
+// =====================================================
+// MODEL
+// =====================================================
 
 const User =
   mongoose.models.User ||
