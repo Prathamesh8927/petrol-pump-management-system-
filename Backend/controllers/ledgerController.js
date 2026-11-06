@@ -362,6 +362,10 @@ const getCustomerSummaries = async (
         $group: {
           _id: "$customerId",
 
+          latestEntryDate: {
+            $max: "$entryDate",
+          },
+
           entries: {
             $push: {
               entryType: "$entryType",
@@ -531,10 +535,11 @@ const getCustomerSummaries = async (
         advanceCount,
 
         totalAdvanceReceived,
-
         totalAdvanceApplied,
-
         advanceBalance,
+
+        latestEntryDate:
+          group.latestEntryDate || null,
       }
     );
   }
@@ -557,6 +562,7 @@ const getCustomerSummaries = async (
         totalAdvanceReceived: 0,
         totalAdvanceApplied: 0,
         advanceBalance: 0,
+        latestEntryDate: null,
       });
     }
   }
@@ -871,6 +877,29 @@ export const getLedgerCustomers = async (
           };
         }
       );
+
+    customersWithSummary.sort(
+      (a, b) => {
+        if (
+          !a.latestEntryDate &&
+          !b.latestEntryDate
+        ) {
+          return 0;
+        }
+
+        if (!a.latestEntryDate) {
+          return 1;
+        }
+
+        if (!b.latestEntryDate) {
+          return -1;
+        }
+
+        return b.latestEntryDate.localeCompare(
+          a.latestEntryDate
+        );
+      }
+    );
 
     return res.status(200).json({
       success: true,
@@ -2446,8 +2475,8 @@ export const getCustomerLedgerHistory =
           customerId,
         })
           .sort({
-            entryDate: 1,
-            createdAt: 1,
+            entryDate: -1,
+            createdAt: -1,
           })
           .lean(),
       ]);

@@ -644,9 +644,7 @@ const Customers = () => {
 
           const latestEntry =
             entries.length > 0
-              ? entries[
-                  entries.length - 1
-                ]
+              ? entries[0]
               : null;
 
           const billDate =
@@ -1456,6 +1454,22 @@ const Customers = () => {
                 >
                   #
                 </th>
+                    <th
+                      style={{
+                        padding:
+                          "15px 16px",
+                        textAlign:
+                          "left",
+                        fontSize:
+                          "14px",
+                        fontWeight:
+                          700,
+                        minWidth:
+                          "120px",
+                      }}
+                    >
+                      Date
+                    </th>
 
                 <th
                   style={{
@@ -1479,13 +1493,13 @@ const Customers = () => {
                     padding:
                       "15px 16px",
                     textAlign:
-                      "left",
+                      "center",
                     fontSize:
                       "14px",
                     fontWeight:
                       700,
                     minWidth:
-                      "130px",
+                      "100px",
                   }}
                 >
                   Vehicle
@@ -1495,14 +1509,12 @@ const Customers = () => {
                   style={{
                     padding:
                       "15px 16px",
-                    textAlign:
-                      "right",
                     fontSize:
                       "14px",
                     fontWeight:
                       700,
                     minWidth:
-                      "120px",
+                      "130px",
                   }}
                 >
                   Credit
@@ -1513,7 +1525,7 @@ const Customers = () => {
                     padding:
                       "15px 16px",
                     textAlign:
-                      "right",
+                      "center",
                     fontSize:
                       "14px",
                     fontWeight:
@@ -1588,7 +1600,7 @@ const Customers = () => {
               {loading ? (
                 <tr>
                   <td
-                    colSpan="8"
+                    colSpan="9"
                     style={{
                       padding:
                         "55px 20px",
@@ -1607,7 +1619,7 @@ const Customers = () => {
                 0 ? (
                 <tr>
                   <td
-                    colSpan="8"
+                    colSpan="9"
                     style={{
                       padding:
                         "55px 20px",
@@ -1838,6 +1850,27 @@ const Customers = () => {
                           {index + 1}
                         </td>
 
+                            {/* LAST ENTRY DATE */}
+    
+                            <td
+                              style={{
+                                padding:
+                                  "15px 16px",
+    
+                                fontSize:
+                                  "13px",
+    
+                                color:
+                                  COLORS.text,
+    
+                                verticalAlign:
+                                  "middle",
+                              }}
+                            >
+                              {customer.latestEntryDate ||
+                                "-"}
+                            </td>
+
                         {/* CUSTOMER */}
 
                         <td
@@ -1898,6 +1931,7 @@ const Customers = () => {
                           style={{
                             padding:
                               "15px 16px",
+                              textAlign:"center",
 
                             fontSize:
                               "13px",
@@ -1913,6 +1947,7 @@ const Customers = () => {
                             "-"}
                         </td>
 
+
                         {/* CREDIT */}
 
                         <td
@@ -1921,7 +1956,7 @@ const Customers = () => {
                               "15px 16px",
 
                             textAlign:
-                              "right",
+                              "center",
 
                             fontSize:
                               "13px",
@@ -1949,7 +1984,7 @@ const Customers = () => {
                               "15px 16px",
 
                             textAlign:
-                              "right",
+                              "center",
 
                             fontSize:
                               "13px",
