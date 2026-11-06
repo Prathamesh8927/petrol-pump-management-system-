@@ -2467,32 +2467,37 @@ const CustomerLedger = () => {
 
             </div>
 
-            <div className="stat-card">
+  <div className="stat-card">
+  <h4>Status</h4>
+  <h2
+    style={{
+      color:
+        summary.advanceBalance > 0
+          ? "#16a34a"
+          : summary.totalPending > 0
+          ? "#dc2626"
+          : "#000000",
+    }}
+  >
+    {getLedgerStatus(summary)}
+  </h2>
+</div>
 
-              <h4>
-                Status
-              </h4>
-
-              <h2>
-                {getLedgerStatus(summary)}
-              </h2>
-
-            </div>
-
-            <div className="stat-card">
-
-              <h4>
-                Pending
-              </h4>
-
-              <h2>
-                ₹{" "}
-                {money(
-                  summary.totalPending
-                )}
-              </h2>
-
-            </div>
+  <div className="stat-card">
+  <h4>Pending</h4>
+  <h2
+    style={{
+      color:
+        summary.totalPending > 0
+          ? "#dc2626"
+          : summary.advanceBalance > 0
+          ? "#16a34a"
+          : "#000000",
+    }}
+  >
+    ₹ {money(summary.totalPending)}
+  </h2>
+</div>
 
           </div>
 

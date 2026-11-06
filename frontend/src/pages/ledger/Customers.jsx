@@ -1850,7 +1850,7 @@ const Customers = () => {
                           {index + 1}
                         </td>
 
-                            {/* LAST ENTRY DATE */}
+                            {/* DATE */}
     
                             <td
                               style={{
